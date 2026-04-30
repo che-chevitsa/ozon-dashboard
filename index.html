@@ -117,7 +117,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
-    <span id="cloud-status" style="font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer" onclick="promptCloudKey()" title="Нажми чтобы настроить облако">☁ не настроено</span>
+    <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -133,6 +133,13 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   </header>
 
   <div id="upload-section">
+    <div id="cloud-key-section" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px">JSONBin Master Key</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="password" id="cloud-key-input" placeholder="$2a$10$..." style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px">
+        <button onclick="applyCloudKey()" style="font-family:var(--mono);font-size:12px;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:6px;padding:8px 16px;cursor:pointer">подключить</button>
+      </div>
+    </div>
     <div class="upload-zone" id="dropzone">
       <input type="file" id="fileInput" accept=".xlsx,.xls">
       <div class="upload-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg></div>
@@ -182,7 +189,7 @@ const LS_ADJ='ozon_adjustments',LS_PREV='ozon_prev_transit',LS_LOG='ozon_load_lo
 // ===== JSONBIN =====
 const JSONBIN_BIN='69f3c4ae856a68218990cb6c';
 const JSONBIN_URL=`https://api.jsonbin.io/v3/b/${JSONBIN_BIN}`;
-let JSONBIN_KEY='$2a$10$2/ZTcWjQMovknwcxHlRxguIwMGlGhwrpsLt81vWmtwqSGie.FRHe6';
+let JSONBIN_KEY='';
 let syncTimer=null;
 
 function setJsonbinKey(key){
@@ -226,6 +233,10 @@ async function loadFromCloud(){
     if(rec.adjustments&&rec.adjustments.length>0)localStorage.setItem(LS_ADJ,JSON.stringify(rec.adjustments));
     if(rec.boxes&&rec.boxes.length>0)localStorage.setItem(LS_BOXES,JSON.stringify(rec.boxes));
     if(rec.log&&rec.log.length>0)localStorage.setItem(LS_LOG,JSON.stringify(rec.log));
+    // Перерисовываем если данные загружены
+    if(rawData)render(applyAdjustments(rawData));
+    renderLog();
+    console.log('Данные загружены из облака');
   }catch(e){console.log('Ошибка загрузки:',e.message);}
 }
 
@@ -1133,9 +1144,19 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
 document.getElementById('profileInput').addEventListener('change',e=>{if(e.target.files[0])loadProfileFile(e.target.files[0]);});
 
 function promptCloudKey(){
-  const current=localStorage.getItem('ozon_jsonbin_key')||'';
-  const key=prompt('Вставь JSONBin Master Key:',current);
-  if(key!==null)setJsonbinKey(key);
+  const section=document.getElementById('cloud-key-section');
+  if(section)section.style.display=section.style.display==='none'?'block':'none';
+}
+
+function applyCloudKey(){
+  const input=document.getElementById('cloud-key-input');
+  if(!input)return;
+  const key=input.value.trim();
+  if(!key)return;
+  setJsonbinKey(key);
+  const section=document.getElementById('cloud-key-section');
+  if(section)section.style.display='none';
+  loadFromCloud();
 }
 
 // Инициализация
@@ -1149,9 +1170,10 @@ function promptCloudKey(){
     const btn=document.getElementById('profile-btn');
     if(btn)btn.textContent=`📊 профиль (${count})`;
   }
-  // Загружаем ключ из localStorage
+  // Загружаем ключ из localStorage если был сохранён
   const savedKey=localStorage.getItem('ozon_jsonbin_key');
   if(savedKey){JSONBIN_KEY=savedKey;testConnection().then(()=>{if(JSONBIN_KEY)loadFromCloud();});}
+  else{const s=document.getElementById('cloud-status');if(s){s.textContent='☁ нажми чтобы настроить';s.style.color='var(--muted)';}}
 })();
 
 // EXPORT FOR CLAUDE
