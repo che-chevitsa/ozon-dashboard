@@ -195,7 +195,9 @@ let syncTimer=null;
 function setJsonbinKey(key){
   JSONBIN_KEY=key.trim();
   localStorage.setItem('ozon_jsonbin_key',JSONBIN_KEY);
-  testConnection();
+  testConnection().then(()=>{
+    if(JSONBIN_KEY) loadFromCloud();
+  });
 }
 
 async function testConnection(){
@@ -213,10 +215,19 @@ async function testConnection(){
 async function saveToCloud(){
   if(!JSONBIN_KEY)return;
   try{
+    const record={
+      adjustments:getAdjs(),
+      boxes:getBoxLog(),
+      log:getLog(),
+      savedAt:new Date().toISOString()
+    };
+    // Сохраняем данные файла если есть
+    if(rawData) record.rawData=rawData;
+    if(currentPeriod) record.period=currentPeriod;
     await fetch(JSONBIN_URL,{
       method:'PUT',
       headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY},
-      body:JSON.stringify({adjustments:getAdjs(),boxes:getBoxLog(),log:getLog(),savedAt:new Date().toISOString()})
+      body:JSON.stringify(record)
     });
     const s=document.getElementById('cloud-status');
     if(s){s.textContent='☁ сохранено ✓';s.style.color='var(--green)';}
@@ -233,8 +244,17 @@ async function loadFromCloud(){
     if(rec.adjustments&&rec.adjustments.length>0)localStorage.setItem(LS_ADJ,JSON.stringify(rec.adjustments));
     if(rec.boxes&&rec.boxes.length>0)localStorage.setItem(LS_BOXES,JSON.stringify(rec.boxes));
     if(rec.log&&rec.log.length>0)localStorage.setItem(LS_LOG,JSON.stringify(rec.log));
-    // Перерисовываем если данные загружены
-    if(rawData)render(applyAdjustments(rawData));
+    // Восстанавливаем данные файла
+    if(rec.rawData&&rec.rawData.length>0){
+      rawData=rec.rawData;
+      if(rec.period)currentPeriod=rec.period;
+      populateClusterSelect(rawData);
+      render(applyAdjustments(rawData));
+      // Обновляем кнопки периода
+      document.querySelectorAll('.period-tab').forEach(btn=>{
+        btn.classList.toggle('active',btn.textContent.trim()===currentPeriod+' дн');
+      });
+    }
     renderLog();
     console.log('Данные загружены из облака');
   }catch(e){console.log('Ошибка загрузки:',e.message);}
@@ -1134,6 +1154,7 @@ function handleFile(file){
         showFileInfo(rows);
         renderLog();
         render(applyAdjustments(data));
+        scheduleSave(); // сохраняем данные файла в облако
       }else alert('Не удалось прочитать файл.');
     }catch(err){alert('Ошибка: '+err.message);}
   };
