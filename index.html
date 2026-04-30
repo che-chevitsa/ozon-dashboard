@@ -109,6 +109,33 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-item .adj-qty{color:var(--green);}
 .adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0.6;font-size:14px;line-height:1;border:none;background:none;padding:0 4px;}
 .adj-item .adj-del:hover{opacity:1;}
+
+@media(max-width:600px){
+  .container{padding:1rem;}
+  header{flex-wrap:wrap;gap:8px;padding-bottom:1rem;margin-bottom:1.5rem;}
+  h1{font-size:15px;}
+  .header-right{margin-left:0;width:100%;flex-wrap:wrap;gap:6px;}
+  .period-tabs{order:-1;}
+  .reset-btn{font-size:11px;padding:4px 10px;}
+  #cloud-status{font-size:11px;}
+  .cards{grid-template-columns:1fr;}
+  .card-value{font-size:22px;}
+  .boxes-grid{grid-template-columns:1fr;}
+  /* Таблица приоритетов — скрываем лишние колонки */
+  thead th:nth-child(4),thead th:nth-child(6),thead th:nth-child(7){display:none;}
+  tbody td:nth-child(4),tbody td:nth-child(6),tbody td:nth-child(7){display:none;}
+  thead th:nth-child(1){min-width:60px;}
+  tbody td{padding:8px 10px;font-size:12px;}
+  thead th{padding:8px 10px;font-size:10px;}
+  /* Группа — компактнее */
+  tbody td[rowspan]{padding:8px 10px;min-width:60px;}
+  /* Тепловая карта — только первый товар виден без скролла */
+  .heatmap th.col-header{font-size:9px;padding:6px 6px;}
+  .heatmap td{min-width:55px;padding:5px 6px;font-size:10px;}
+  .heatmap td.row-label{min-width:110px;font-size:11px;padding:6px 8px;}
+  /* Шапка облака */
+  #cloud-key-section{padding:0.75rem;}
+}
 </style>
 </head>
 <body>
