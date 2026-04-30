@@ -121,12 +121,13 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .cards{grid-template-columns:1fr;}
   .card-value{font-size:22px;}
   .boxes-grid{grid-template-columns:1fr;}
-  /* Таблица приоритетов — скрываем лишние колонки */
+  /* Таблица приоритетов — горизонтальный скролл на мобиле */
+  .table-wrap{overflow-x:auto;}
   thead th:nth-child(4),thead th:nth-child(6),thead th:nth-child(7){display:none;}
   tbody td:nth-child(4),tbody td:nth-child(6),tbody td:nth-child(7){display:none;}
   thead th:nth-child(1){min-width:60px;}
-  tbody td{padding:8px 10px;font-size:12px;}
-  thead th{padding:8px 10px;font-size:10px;}
+  tbody td{padding:8px 8px;font-size:12px;}
+  thead th{padding:8px 8px;font-size:10px;}
   /* Группа — компактнее */
   tbody td[rowspan]{padding:8px 10px;min-width:60px;}
   /* Тепловая карта — только первый товар виден без скролла */
