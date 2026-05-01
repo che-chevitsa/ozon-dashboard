@@ -478,6 +478,59 @@ function showInlineSend(article,cluster){
   row.after(tr);
 }
 
+function toggleMplForm(id){
+  const el=document.getElementById('mpl-form-'+id);
+  if(!el)return;
+  const isOpen=el.style.display==='flex';
+  el.style.display=isOpen?'none':'flex';
+  if(!isOpen){const inp=el.querySelector('input');if(inp){inp.value='';inp.focus();}}
+}
+
+function confirmMplSend(formEl){
+  if(!formEl)return;
+  const article=formEl.dataset.article;
+  const cluster=formEl.dataset.cluster;
+  const inp=formEl.querySelector('input');
+  const qty=parseInt(inp?inp.value:0);
+  if(!qty||qty<=0)return;
+  addAdjustmentInline(article,cluster,qty);
+  formEl.style.display='none';
+}
+
+function confirmAccFormById(formId){
+  const el=document.getElementById(formId);
+  if(!el)return;
+  const article=el.dataset.article;
+  const cluster=el.dataset.cluster;
+  const inp=document.getElementById(formId+'_inp');
+  const qty=parseInt(inp?inp.value:0);
+  if(!qty||qty<=0)return;
+  addAdjustmentInline(article,cluster,qty);
+  el.style.display='none';
+}
+
+function toggleAccForm(formId){
+  const el=document.getElementById(formId);
+  if(!el)return;
+  const isOpen=el.style.display==='flex';
+  // Закрыть все открытые
+  document.querySelectorAll('[id^="accf_"]').forEach(f=>{f.style.display='none';});
+  if(!isOpen){
+    el.style.display='flex';
+    const inp=document.getElementById(formId+'_inp');
+    if(inp){inp.value='';setTimeout(()=>inp.focus(),50);}
+  }
+}
+
+function confirmAccForm(article,cluster,inputId,formId){
+  const inp=document.getElementById(inputId);
+  const qty=parseInt(inp?inp.value:0);
+  if(!qty||qty<=0)return;
+  addAdjustmentInline(article,cluster,qty);
+  const el=document.getElementById(formId);
+  if(el)el.style.display='none';
+}
+
 function toggleAccordion(id){
   const el=document.getElementById(id);
   if(!el)return;
@@ -1146,8 +1199,13 @@ function render(data){
               <span class="mpl-cluster">${groupName} · ${r.sales.toFixed(1)}/день${r.fromProfile?' ~':''}</span>
               <span class="mpl-badge ${dc}">${daysLabel}</span>
             </div>
+            <div id="mpl-form-${r.article.replace(/\W/g,'_')}_${r.cluster.replace(/\W/g,'_')}" data-article="${r.article}" data-cluster="${r.cluster}" style="display:none;margin-top:8px;gap:6px;align-items:center">
+              <input type="number" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:5px 8px">
+              <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
+              <button onclick="this.parentElement.style.display='none'" style="font-family:var(--mono);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
+            </div>
           </div>
-          <button class="mpl-btn" onclick="showInlineSend('${r.article}','${r.cluster}')">✓</button>
+          <button class="mpl-btn" onclick="toggleMplForm('${r.article.replace(/\W/g,'_')}_${r.cluster.replace(/\W/g,'_')}')">+</button>
         </div>`;
       });
     });
@@ -1252,17 +1310,36 @@ function render(data){
       </div>
       <div class="acc-body" id="${groupId}" style="display:none">`;
     groupClusters.forEach(cluster=>{
-      html+=`<div class="acc-row"><span class="acc-cluster">${cluster}</span><div class="acc-cells">`;
+      html+=`<div style="border-bottom:1px solid rgba(255,255,255,0.04)">
+        <div style="display:flex;align-items:center;padding:7px 14px;gap:8px">
+          <span class="acc-cluster">${cluster}</span>
+          <div class="acc-cells">`;
       FOCUS.filter(a=>a!=='PF-СК-D55-WH-PG2').forEach(art=>{
         const row=data.find(r=>r.article===art&&r.cluster===cluster);
         const shortName=NAMES[art].split(' ')[0];
-        if(!row||row.sales===0){html+=`<span class="acc-cell none">${shortName} —</span>`;}
-        else{
+        const formId='accf_'+art.replace(/\W/g,'_')+'_'+cluster.replace(/\W/g,'_');
+        if(!row||row.sales===0){
+          html+=`<span class="acc-cell none">${shortName} —</span>`;
+        } else {
           const dc=dayClass(row.days),label=row.days>=99?'∞':Math.round(row.days)+' дн';
-          html+=`<span class="acc-cell ${dc}">${shortName} ${label}</span>`;
+          html+=`<span class="acc-cell ${dc}" style="cursor:pointer" onclick="toggleAccForm('${formId}')">${shortName} ${label}</span>`;
         }
       });
-      html+='</div></div>';
+      html+=`</div></div>`;
+      // Формы для каждого артикула этого кластера
+      FOCUS.filter(a=>a!=='PF-СК-D55-WH-PG2').forEach(art=>{
+        const row=data.find(r=>r.article===art&&r.cluster===cluster);
+        if(!row||row.sales===0)return;
+        const formId='accf_'+art.replace(/\W/g,'_')+'_'+cluster.replace(/\W/g,'_');
+        const shortName=NAMES[art].split(' ')[0];
+        html+=`<div id="${formId}" data-article="${art}" data-cluster="${cluster}" style="display:none;padding:8px 14px;background:rgba(91,127,255,0.06);border-top:1px solid var(--border);gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">${shortName} → ${cluster}:</span>
+          <input type="number" id="${formId}_inp" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:5px 8px">
+          <button onclick="confirmAccFormById('${formId}')" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
+          <button onclick="document.getElementById('${formId}').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1">×</button>
+        </div>`;
+      });
+      html+=`</div>`;
     });
     html+='</div></div>';
   });
