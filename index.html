@@ -110,6 +110,11 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0.6;font-size:14px;line-height:1;border:none;background:none;padding:0 4px;}
 .adj-item .adj-del:hover{opacity:1;}
 
+/* Desktop defaults */
+.mobile-priority-list{display:none;}
+.heatmap-accordion{display:none;}
+.heatmap-desktop{display:block;}
+
 @media(max-width:600px){
   .container{padding:1rem;}
   header{flex-wrap:wrap;gap:8px;padding-bottom:1rem;margin-bottom:1.5rem;}
@@ -122,7 +127,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .card-value{font-size:22px;}
   .boxes-grid{grid-template-columns:1fr;}
   /* Таблица приоритетов — горизонтальный скролл на мобиле */
-  .table-wrap{overflow-x:auto;}
+  .table-wrap{overflow-x:auto;display:none;}
   .table-wrap thead th:nth-child(4),
   .table-wrap thead th:nth-child(6),
   .table-wrap thead th:nth-child(7){display:none;}
@@ -132,27 +137,18 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .table-wrap thead th:nth-child(1){min-width:60px;}
   .table-wrap tbody td{padding:8px 8px;font-size:12px;}
   .table-wrap thead th{padding:8px 8px;font-size:10px;}
-  /* Группа — компактнее */
   .table-wrap tbody td[rowspan]{padding:8px 10px;min-width:60px;}
-  /* Тепловая карта — скролл */
+  /* Мобильный список приоритетов */
+  .mobile-priority-list{display:flex;flex-direction:column;gap:6px;}
+  /* Тепловая карта — аккордеон */
   .heatmap-scroll{overflow-x:auto;}
   .heatmap th.col-header{font-size:9px;padding:6px 6px;}
   .heatmap td{min-width:55px;padding:5px 6px;font-size:10px;}
   .heatmap td.row-label{min-width:110px;font-size:11px;padding:6px 8px;}
-  /* Шапка облака */
-  #cloud-key-section{padding:0.75rem;}
-  /* Мобильный список приоритетов */
-  .mobile-priority-list{display:none;}
-  .table-wrap{display:block;}
-  /* Мобильная тепловая карта — аккордеон */
-  .heatmap-accordion{display:none;}
-  .heatmap-desktop{display:block;}
-}
-@media(max-width:600px){
-  .mobile-priority-list{display:flex;flex-direction:column;gap:6px;}
-  .table-wrap{display:none;}
   .heatmap-accordion{display:block;}
   .heatmap-desktop{display:none;}
+  /* Шапка облака */
+  #cloud-key-section{padding:0.75rem;}
   /* Элемент списка приоритетов */
   .mpl-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;}
   .mpl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
@@ -176,15 +172,14 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .acc-group-name{font-size:13px;font-weight:500;color:var(--text);}
   .acc-pct{font-size:13px;font-weight:600;font-family:var(--mono);}
   .acc-body{border-top:1px solid var(--border);padding:4px 0;}
-  .acc-row{display:flex;align-items:center;padding:7px 14px;gap:8px;border-bottom:1px solid rgba(255,255,255,0.04);}
-  .acc-row:last-child{border-bottom:none;}
   .acc-cluster{font-size:12px;color:var(--text);min-width:110px;}
   .acc-cells{display:flex;gap:6px;flex-wrap:wrap;}
-  .acc-cell{font-size:11px;font-family:var(--mono);padding:2px 7px;border-radius:4px;white-space:nowrap;}
+  .acc-cell{font-size:11px;font-family:var(--mono);padding:2px 7px;border-radius:4px;white-space:nowrap;cursor:pointer;}
   .acc-cell.red{background:rgba(255,90,90,0.15);color:var(--red);}
   .acc-cell.amber{background:rgba(255,170,59,0.15);color:var(--amber);}
   .acc-cell.green{background:rgba(61,204,122,0.12);color:var(--green);}
-  .acc-cell.none{color:var(--muted);font-size:10px;}
+  .acc-cell.none{color:var(--muted);font-size:10px;cursor:default;}
+}
 </style>
 </head>
 <body>
