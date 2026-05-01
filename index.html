@@ -141,7 +141,50 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .heatmap td.row-label{min-width:110px;font-size:11px;padding:6px 8px;}
   /* Шапка облака */
   #cloud-key-section{padding:0.75rem;}
+  /* Мобильный список приоритетов */
+  .mobile-priority-list{display:none;}
+  .table-wrap{display:block;}
+  /* Мобильная тепловая карта — аккордеон */
+  .heatmap-accordion{display:none;}
+  .heatmap-desktop{display:block;}
 }
+@media(max-width:600px){
+  .mobile-priority-list{display:flex;flex-direction:column;gap:6px;}
+  .table-wrap{display:none;}
+  .heatmap-accordion{display:block;}
+  .heatmap-desktop{display:none;}
+  /* Элемент списка приоритетов */
+  .mpl-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;}
+  .mpl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .mpl-dot.red{background:var(--red);}
+  .mpl-dot.amber{background:var(--amber);}
+  .mpl-dot.green{background:var(--green);}
+  .mpl-main{flex:1;min-width:0;}
+  .mpl-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;}
+  .mpl-name{font-size:13px;font-weight:500;color:var(--text);}
+  .mpl-qty{font-size:14px;font-weight:600;font-family:var(--mono);}
+  .mpl-qty.red{color:var(--red);} .mpl-qty.amber{color:var(--amber);}
+  .mpl-sub{display:flex;justify-content:space-between;align-items:center;}
+  .mpl-cluster{font-size:11px;color:var(--muted);}
+  .mpl-badge{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:500;}
+  .mpl-badge.red{background:var(--red-bg);color:var(--red);}
+  .mpl-badge.amber{background:var(--amber-bg);color:var(--amber);}
+  .mpl-btn{width:30px;height:30px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;}
+  /* Аккордеон тепловой карты */
+  .acc-group{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:6px;}
+  .acc-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;}
+  .acc-group-name{font-size:13px;font-weight:500;color:var(--text);}
+  .acc-pct{font-size:13px;font-weight:600;font-family:var(--mono);}
+  .acc-body{border-top:1px solid var(--border);padding:4px 0;}
+  .acc-row{display:flex;align-items:center;padding:7px 14px;gap:8px;border-bottom:1px solid rgba(255,255,255,0.04);}
+  .acc-row:last-child{border-bottom:none;}
+  .acc-cluster{font-size:12px;color:var(--text);min-width:110px;}
+  .acc-cells{display:flex;gap:6px;flex-wrap:wrap;}
+  .acc-cell{font-size:11px;font-family:var(--mono);padding:2px 7px;border-radius:4px;white-space:nowrap;}
+  .acc-cell.red{background:rgba(255,90,90,0.15);color:var(--red);}
+  .acc-cell.amber{background:rgba(255,170,59,0.15);color:var(--amber);}
+  .acc-cell.green{background:rgba(61,204,122,0.12);color:var(--green);}
+  .acc-cell.none{color:var(--muted);font-size:10px;}
 </style>
 </head>
 <body>
@@ -433,6 +476,12 @@ function showInlineSend(article,cluster){
     </div>
   </td>`;
   row.after(tr);
+}
+
+function toggleAccordion(id){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.style.display=el.style.display==='none'?'block':'none';
 }
 
 function toggleHeatmapSend(article,cluster,safeId){
@@ -1074,6 +1123,37 @@ function render(data){
   if (!hasAny) html += `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Дефицита нет</td></tr>`;
   html += '</tbody></table></div>';
 
+  // Мобильный список приоритетов (А+Б)
+  html+='<div class="mobile-priority-list">';
+  if(!hasAny){
+    html+=`<div style="text-align:center;color:var(--muted);padding:2rem;font-size:13px">Дефицита нет</div>`;
+  } else {
+    groupOrder.forEach(groupName=>{
+      const rows=filteredGrouped[groupName];
+      if(!rows||!rows.length)return;
+      const maxSales=Math.max(...rows.map(r=>r.sales));
+      rows.forEach(r=>{
+        const dc=dayClass(r.days),daysLabel=r.days<=0?'0 дн':Math.round(r.days)+' дн';
+        const isTop=r.sales===maxSales;
+        html+=`<div class="mpl-item" data-adj="${r.article}|${r.cluster}">
+          <div class="mpl-dot ${dc}"></div>
+          <div class="mpl-main">
+            <div class="mpl-top">
+              <span class="mpl-name">${NAMES[r.article]||r.article}${isTop?' ★':''} · ${r.cluster}</span>
+              <span class="mpl-qty ${dc}">${r.needed} шт</span>
+            </div>
+            <div class="mpl-sub">
+              <span class="mpl-cluster">${groupName} · ${r.sales.toFixed(1)}/день${r.fromProfile?' ~':''}</span>
+              <span class="mpl-badge ${dc}">${daysLabel}</span>
+            </div>
+          </div>
+          <button class="mpl-btn" onclick="showInlineSend('${r.article}','${r.cluster}')">✓</button>
+        </div>`;
+      });
+    });
+  }
+  html+='</div>';
+
   // Adj log inline
   html+=adjLogHtml;
 
@@ -1122,7 +1202,9 @@ function render(data){
   // Heatmap
   html+='<div class="section-label" style="margin-top:2rem">Тепловая карта · дней запаса</div>';
   html+='<div class="legend"><div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>0–7 дней</div><div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>7–14 дней</div><div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>14+ дней</div></div>';
-  html+='<div class="heatmap-scroll"><table class="heatmap"><thead><tr><th style="text-align:left;min-width:160px">Кластер</th>';
+
+  // Desktop heatmap
+  html+='<div class="heatmap-desktop"><div class="heatmap-scroll"><table class="heatmap"><thead><tr><th style="text-align:left;min-width:160px">Кластер</th>';
   FOCUS.forEach(art=>{html+=`<th class="col-header">${NAMES[art]}</th>`;});
   html+='</tr></thead><tbody>';
   allClusters.forEach(cluster=>{
@@ -1149,7 +1231,42 @@ function render(data){
     });
     html+='</tr>';
   });
-  html+='</tbody></table></div>';
+  html+='</tbody></table></div></div>';
+
+  // Mobile accordion heatmap
+  html+='<div class="heatmap-accordion">';
+  CLUSTER_GROUPS.forEach(group=>{
+    const groupClusters=group.clusters.filter(c=>allClusters.includes(c));
+    if(!groupClusters.length)return;
+    const groupId='acc-'+group.name.replace(/\W/g,'_');
+    // Покрытие группы
+    const gRows=data.filter(r=>group.clusters.includes(r.cluster)&&r.sales>0);
+    const gNeed=gRows.reduce((s,r)=>s+r.sales*period,0);
+    const gCov=gRows.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0);
+    const gPct=gNeed>0?Math.min(100,Math.round(gCov/gNeed*100)):0;
+    const gPctCls=gPct>=60?'var(--green)':gPct>=35?'var(--amber)':'var(--red)';
+    html+=`<div class="acc-group">
+      <div class="acc-header" onclick="toggleAccordion('${groupId}')">
+        <span class="acc-group-name">${group.name}</span>
+        <span class="acc-pct" style="color:${gPctCls}">${gPct}%</span>
+      </div>
+      <div class="acc-body" id="${groupId}" style="display:none">`;
+    groupClusters.forEach(cluster=>{
+      html+=`<div class="acc-row"><span class="acc-cluster">${cluster}</span><div class="acc-cells">`;
+      FOCUS.filter(a=>a!=='PF-СК-D55-WH-PG2').forEach(art=>{
+        const row=data.find(r=>r.article===art&&r.cluster===cluster);
+        const shortName=NAMES[art].split(' ')[0];
+        if(!row||row.sales===0){html+=`<span class="acc-cell none">${shortName} —</span>`;}
+        else{
+          const dc=dayClass(row.days),label=row.days>=99?'∞':Math.round(row.days)+' дн';
+          html+=`<span class="acc-cell ${dc}">${shortName} ${label}</span>`;
+        }
+      });
+      html+='</div></div>';
+    });
+    html+='</div></div>';
+  });
+  html+='</div>';
   document.getElementById('dashboard').innerHTML=html;
   renderBoxes();
 }
