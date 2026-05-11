@@ -244,7 +244,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 
 <script>
 const FOCUS=['PF-СК-D55-WH-PG','PF-OV-100x60-WH-PG','PF-СК-D70-WH-PG','PF-СК-D55-WH-PG2'];
-const NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'7 см','PF-СК-D55-WH-PG2':'Круглая 5.5 (дубль)'};
+const NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'Форма 7 см','PF-СК-D55-WH-PG2':'Круглая 5.5 (дубль)'};
 const BOX_TYPE={'PF-СК-D55-WH-PG':'a','PF-OV-100x60-WH-PG':'b','PF-СК-D70-WH-PG':'b'};
 const CLUSTER_GROUPS=[
   {name:'Центр',         clusters:['Москва, МО и Дальние регионы','Ярославль','Тверь','Воронеж','Саратов']},
@@ -377,6 +377,7 @@ function removeAdjustment(idx){
   const adj=adjs[idx];
   adjs.splice(idx,1);
   saveAdjs(adjs);
+  saveToCloud(); // сохраняем немедленно при удалении
   if(adj){
     const type=BOX_TYPE[adj.article];
     if(type){
@@ -437,16 +438,26 @@ function savePrevTransit(data){
 }
 
 function autoCleanAdjs(newData){
-  const prev=getPrevTransit(),adjs=getAdjs();
+  const adjs=getAdjs();
   if(!adjs.length)return;
+  
+  // Удаляем отправки которые отмечены как "отправлено" И уже отобразились в файле
   const cleaned=adjs.filter(adj=>{
-    const key=adj.article+'|'+adj.cluster;
-    const prevT=prev[key]||0;
-    const newRow=newData.find(r=>r.article===adj.article&&r.cluster===adj.cluster);
-    const newT=newRow?newRow.transit:0;
-    return Math.abs(newT-(prevT+adj.qty))>2;
+    if(!adj.sent)return true; // не отправленные - оставляем
+    
+    // Ищем строку в файле с этим артикулом и кластером
+    const row=newData.find(r=>r.article===adj.article&&r.cluster===adj.cluster);
+    if(!row)return true; // нет в файле - оставляем
+    
+    // Если в файле transit >= qty отправки - значит она уже учтена Озоном, удаляем
+    if(row.transit>=adj.qty)return false;
+    
+    return true; // оставляем
   });
-  if(cleaned.length<adjs.length)saveAdjs(cleaned);
+  
+  if(cleaned.length<adjs.length){
+    saveAdjs(cleaned);
+  }
 }
 
 function populateClusterSelect(data){
@@ -792,6 +803,7 @@ function cancelOrder(ts){
   const idx=log.findIndex(e=>e.ts===ts&&e.kind==='order');
   if(idx!==-1)log.splice(idx,1);
   saveBoxLog(log);
+  saveToCloud(); // сохраняем немедленно при удалении
   renderBoxes();
 }
 
