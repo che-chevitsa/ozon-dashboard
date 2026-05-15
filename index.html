@@ -441,25 +441,36 @@ function autoCleanAdjs(newData){
   const adjs=getAdjs();
   if(!adjs.length)return;
   
-  // Удаляем отправки которые уже отобразились в файле
-  const cleaned=adjs.filter(adj=>{
-    // Не удаляем только те что явно НЕ отправлены (sent === false)
-    if(adj.sent===false)return true;
-    
-    // Всё остальное (sent=true или нет поля sent у старых записей) - проверяем
-    const row=newData.find(r=>r.article===adj.article&&r.cluster===adj.cluster);
-    if(!row)return true; // нет в файле - оставляем
-    
-    // Если в файле transit >= qty отправки - значит она уже учтена Озоном, удаляем
-    if(row.transit>=adj.qty)return false;
-    
-    return true; // оставляем
+  // Группируем отправки по SKU+кластер. sent===false — запланировано, ещё не отправлено физически, не трогаем.
+  const byKey={};
+  adjs.forEach((a,idx)=>{
+    if(a.sent===false)return;
+    const key=a.article+'|'+a.cluster;
+    (byKey[key]=byKey[key]||[]).push({...a,idx});
   });
   
-  if(cleaned.length<adjs.length){
-    saveAdjs(cleaned);
-    saveToCloud(); // сохраняем немедленно при автоудалении
+  const toRemove=new Set();
+  
+  // FIFO-зачёт: для каждого SKU+кластер берём row.transit как «бюджет» и съедаем отправки от старых к новым.
+  for(const key in byKey){
+    const [article,cluster]=key.split('|');
+    const row=newData.find(r=>r.article===article&&r.cluster===cluster);
+    if(!row)continue; // нет такой строки в файле — все поправки оставляем
+    let pool=row.transit;
+    const sorted=byKey[key].sort((a,b)=>(a.ts||0)-(b.ts||0));
+    for(const a of sorted){
+      if(pool>=a.qty){
+        toRemove.add(a.idx);
+        pool-=a.qty;
+      }
+      // pool<qty — частичных списаний не делаем; эта и следующие поправки остаются
+    }
   }
+  
+  if(!toRemove.size)return;
+  const cleaned=adjs.filter((_,i)=>!toRemove.has(i));
+  saveAdjs(cleaned);
+  saveToCloud();
 }
 
 function populateClusterSelect(data){
