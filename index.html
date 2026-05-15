@@ -331,7 +331,7 @@ async function loadFromCloud(){
   }catch(e){console.log('Ошибка загрузки:',e.message);}
 }
 
-function scheduleSave(){clearTimeout(syncTimer);syncTimer=setTimeout(saveToCloud,2000);}
+function scheduleSave(){saveToCloud();} // сохраняем немедленно, без задержки
 
 let currentPeriod=14, rawData=null;
 
@@ -441,11 +441,12 @@ function autoCleanAdjs(newData){
   const adjs=getAdjs();
   if(!adjs.length)return;
   
-  // Удаляем отправки которые отмечены как "отправлено" И уже отобразились в файле
+  // Удаляем отправки которые уже отобразились в файле
   const cleaned=adjs.filter(adj=>{
-    if(!adj.sent)return true; // не отправленные - оставляем
+    // Не удаляем только те что явно НЕ отправлены (sent === false)
+    if(adj.sent===false)return true;
     
-    // Ищем строку в файле с этим артикулом и кластером
+    // Всё остальное (sent=true или нет поля sent у старых записей) - проверяем
     const row=newData.find(r=>r.article===adj.article&&r.cluster===adj.cluster);
     if(!row)return true; // нет в файле - оставляем
     
@@ -457,6 +458,7 @@ function autoCleanAdjs(newData){
   
   if(cleaned.length<adjs.length){
     saveAdjs(cleaned);
+    saveToCloud(); // сохраняем немедленно при автоудалении
   }
 }
 
