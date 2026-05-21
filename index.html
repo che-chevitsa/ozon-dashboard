@@ -320,7 +320,7 @@ async function loadFromCloud(){
       rawData=rec.rawData;
       if(rec.period)currentPeriod=rec.period;
       populateClusterSelect(rawData);
-      render(applyAdjustments(rawData));
+      redraw();
       // Обновляем кнопки периода
       document.querySelectorAll('.period-tab').forEach(btn=>{
         btn.classList.toggle('active',btn.textContent.trim()===currentPeriod+' дн');
@@ -331,9 +331,20 @@ async function loadFromCloud(){
   }catch(e){console.log('Ошибка загрузки:',e.message);}
 }
 
-function scheduleSave(){saveToCloud();} // сохраняем немедленно, без задержки
+// Debounce 1.5 сек: группирует частые клики (✓/×/добавления) в один PUT, защищает от гонок при быстрых действиях.
+let _scheduleSaveTimer=null;
+function scheduleSave(){
+  clearTimeout(_scheduleSaveTimer);
+  _scheduleSaveTimer=setTimeout(()=>{
+    _scheduleSaveTimer=null;
+    saveToCloud();
+  },1500);
+}
 
 let currentPeriod=14, rawData=null;
+
+// Единая точка перерисовки — заменяет повторяющийся вызов render(applyAdjustments(rawData)) по коду.
+function redraw(){if(rawData)render(applyAdjustments(rawData));}
 
 function pctClass(p){return p>=60?'green':p>=35?'amber':'red';}
 function dayClass(d){return d<=0?'red':d<7?'red':d<14?'amber':'green';}
@@ -360,7 +371,7 @@ function addAdjustmentInline(article,cluster,qty){
   saveAdjs(adjs);
   spendBoxes(article,qty);
   renderAdjList();
-  if(rawData)render(applyAdjustments(rawData));
+  redraw();
 }
 
 function addAdjustment(){
@@ -388,7 +399,7 @@ function removeAdjustment(idx){
   }
   renderAdjList();
   renderBoxes();
-  if(rawData)render(applyAdjustments(rawData));
+  redraw();
 }
 
 function confirmAdjustment(idx){
@@ -397,7 +408,7 @@ function confirmAdjustment(idx){
   adjs[idx].sent=true;
   saveAdjs(adjs);
   renderAdjList();
-  if(rawData)render(applyAdjustments(rawData));
+  redraw();
 }
 
 function unconfirmAdjustment(idx){
@@ -406,15 +417,15 @@ function unconfirmAdjustment(idx){
   adjs[idx].sent=false;
   saveAdjs(adjs);
   renderAdjList();
-  if(rawData)render(applyAdjustments(rawData));
+  redraw();
 }
 
-function renderAdjList(){
-  const adjs=getAdjs(),list=document.getElementById('adj-list');
-  if(!list)return;
-  if(!adjs.length){list.innerHTML='<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">нет поправок</div>';return;}
+// Общая генерация строк списка отправок — используется и в renderAdjList (#adj-list), и в render() (#adj-list-inline).
+function adjRowsHtml(){
+  const adjs=getAdjs();
+  if(!adjs.length)return '';
   const sorted=[...adjs.map((a,i)=>({...a,origIdx:i}))].sort((a,b)=>(b.sent?1:0)-(a.sent?1:0));
-  list.innerHTML=sorted.map(a=>{
+  return sorted.map(a=>{
     const i=a.origIdx;
     const sent=!!a.sent;
     const textStyle=sent?'text-decoration:line-through;opacity:0.45':'';
@@ -431,33 +442,23 @@ function renderAdjList(){
   }).join('');
 }
 
+function renderAdjList(){
+  const list=document.getElementById('adj-list');
+  if(!list)return;
+  const rows=adjRowsHtml();
+  list.innerHTML=rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">нет поправок</div>';
+}
+
 function getPrevTransit(){try{return JSON.parse(localStorage.getItem(LS_PREV)||'{}');}catch{return {};}}
 function savePrevTransit(data){
-  // Храним total=fbo+transit для каждой пары SKU+кластер, чтобы ловить и переходы transit→fbo.
-  const snap={};data.forEach(r=>{snap[r.article+'|'+r.cluster]={total:r.fbo+r.transit};});
+  // Храним transit по паре SKU+кластер (используется логом изменений addLogEntry).
+  const snap={};data.forEach(r=>{snap[r.article+'|'+r.cluster]=r.transit;});
   localStorage.setItem(LS_PREV,JSON.stringify(snap));
-}
-// Достаём prev total с обратной совместимостью. Старый формат: значение — число (был transit-only).
-function getPrevTotal(prev,key){
-  const v=prev[key];
-  if(v===undefined)return undefined;
-  if(typeof v==='number')return v; // legacy: интерпретируем старое transit как total (это даёт правильный результат для зависших отправок при первой загрузке после обновления)
-  return v.total||0;
 }
 
 function autoCleanAdjs(newData){
   const adjs=getAdjs();
   if(!adjs.length)return;
-  const prev=getPrevTransit();
-  
-  // Сколько дней прошло с предыдущей загрузки файла — нужно для компенсации продаж между файлами.
-  // Лог обновляется ПОСЛЕ autoCleanAdjs, поэтому log[0] = предыдущая загрузка.
-  const log=getLog();
-  let daysBetween=1; // fallback на 1 день
-  if(log.length&&log[0].ts){
-    const diffMs=Date.now()-log[0].ts;
-    daysBetween=Math.max(1,Math.min(14,diffMs/86400000)); // кэп 14 дней — защита от слишком щедрой компенсации при долгих перерывах
-  }
   
   // Группируем отправки по SKU+кластер. sent===false — запланировано, ещё не отправлено физически, не трогаем.
   const byKey={};
@@ -469,22 +470,13 @@ function autoCleanAdjs(newData){
   
   const toRemove=new Set();
   
-  // FIFO-зачёт: pool = прирост total + компенсация продаж за период между файлами.
-  // Если prev нет — fallback на transit (legacy, первая встреча пары).
+  // Простая логика: «в пути» в файле — это «бюджет». Съедаем отправки FIFO (старые первыми),
+  // чтобы при нескольких отправках в один кластер не списать больше, чем реально в пути.
   for(const key in byKey){
     const [article,cluster]=key.split('|');
     const row=newData.find(r=>r.article===article&&r.cluster===cluster);
     if(!row)continue;
-    const curTotal=row.fbo+row.transit;
-    const prevTotal=getPrevTotal(prev,key);
-    let pool;
-    if(prevTotal===undefined){
-      pool=row.transit;
-    } else {
-      const delta=Math.max(0,curTotal-prevTotal);
-      const salesComp=Math.ceil((row.sales||0)*daysBetween); // продажи "съели" часть прихода — возвращаем обратно
-      pool=delta+salesComp;
-    }
+    let pool=row.transit;
     const sorted=byKey[key].sort((a,b)=>(a.ts||0)-(b.ts||0));
     for(const a of sorted){
       if(pool>=a.qty){
@@ -616,12 +608,12 @@ function toggleArticleFilter(art){
   } else {
     priorityFilters.articles.add(art);
   }
-  if(rawData) render(applyAdjustments(rawData));
+  redraw();
 }
 
 function setSortBy(key){
   priorityFilters.sortBy=key;
-  if(rawData) render(applyAdjustments(rawData));
+  redraw();
 }
 
 function confirmInlineSend(article,cluster,inputId){
@@ -985,7 +977,7 @@ function loadProfileFile(file){
       const btn=document.getElementById('profile-btn');
       if(btn)btn.textContent=`📊 профиль (${count})`;
       alert(`Профиль сохранён: ${count} кластеров с данными о продажах`);
-      if(rawData)render(applyAdjustments(rawData));
+      redraw();
     }catch(err){alert('Ошибка загрузки профиля: '+err.message);}
   };
   reader.readAsArrayBuffer(file);
@@ -1044,7 +1036,7 @@ function setPeriod(days){
   document.querySelectorAll('.period-tab').forEach(btn=>{
     btn.classList.toggle('active',btn.textContent.trim()===days+' дн');
   });
-  if(rawData)render(applyAdjustments(rawData));
+  redraw();
 }
 
 function render(data){
@@ -1091,26 +1083,10 @@ function render(data){
     grouped[r.groupName].push(r);
   });
 
-  // Adj log HTML
-  const adjs=getAdjs();
+  // Adj log HTML (использует общий adjRowsHtml)
+  const adjRows=adjRowsHtml();
   let adjLogHtml='';
-  if(adjs.length){
-    const sorted=[...adjs.map((a,i)=>({...a,origIdx:i}))].sort((a,b)=>(b.sent?1:0)-(a.sent?1:0));
-    const adjRows=sorted.map(a=>{
-      const i=a.origIdx;
-      const sent=!!a.sent;
-      const textStyle=sent?'text-decoration:line-through;opacity:0.45':'';
-      const qtyStyle=sent?'text-decoration:line-through;opacity:0.45;font-family:var(--mono);font-size:12px':'color:var(--green);font-family:var(--mono);font-size:12px';
-      const btns=sent
-        ?`<button class="adj-del" style="color:var(--muted);font-size:12px" onclick="unconfirmAdjustment(${i})">↩</button><button class="adj-del" onclick="removeAdjustment(${i})">×</button>`
-        :`<button class="adj-del" style="color:var(--green);opacity:0.7;font-size:13px" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
-      return `<div class="adj-item">
-        <span style="${textStyle}">${NAMES[a.article]||a.article}</span>
-        <span style="color:var(--text);${textStyle}">→ ${a.cluster}</span>
-        <span style="${qtyStyle}">+${a.qty} шт</span>
-        ${btns}
-      </div>`;
-    }).join('');
+  if(adjRows){
     adjLogHtml=`<div class="section-label" style="margin-top:2rem">Отправки (не отображены в файле)</div>
     <div class="block" style="padding:0.75rem 1.25rem">
       <div class="adj-list" style="margin-top:0" id="adj-list-inline">${adjRows}</div></div>`;
@@ -1421,7 +1397,7 @@ function handleFile(file){
         populateClusterSelect(data);
         showFileInfo(rows);
         renderLog();
-        render(applyAdjustments(data));
+        redraw();
         scheduleSave(); // сохраняем данные файла в облако
       }else alert('Не удалось прочитать файл.');
     }catch(err){alert('Ошибка: '+err.message);}
