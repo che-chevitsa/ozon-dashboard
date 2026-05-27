@@ -188,7 +188,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.0 · 21.05.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.1 · 27.05.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -449,6 +449,19 @@ function renderAdjList(){
   if(!list)return;
   const rows=adjRowsHtml();
   list.innerHTML=rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">нет поправок</div>';
+}
+
+// Сумма запланированных (ещё не отправленных) форм: sent !== true. Для оценки масштаба упаковки.
+function plannedUnits(){
+  const adjs=getAdjs();
+  const byArticle={};
+  let total=0;
+  adjs.forEach(a=>{
+    if(a.sent===true)return; // отправленные (зачёркнутые) не считаем
+    total+=a.qty;
+    byArticle[a.article]=(byArticle[a.article]||0)+a.qty;
+  });
+  return {total,byArticle};
 }
 
 function getPrevTransit(){try{return JSON.parse(localStorage.getItem(LS_PREV)||'{}');}catch{return {};}}
@@ -1089,7 +1102,12 @@ function render(data){
   const adjRows=adjRowsHtml();
   let adjLogHtml='';
   if(adjRows){
-    adjLogHtml=`<div class="section-label" style="margin-top:2rem">Отправки (не отображены в файле)</div>
+    const pl=plannedUnits();
+    const breakdown=Object.entries(pl.byArticle).map(([art,q])=>`${NAMES[art]||art}: ${q}`).join(' · ');
+    const counter=pl.total>0
+      ?`<span style="font-family:var(--mono);font-size:12px;color:var(--green);font-weight:500;text-transform:none;letter-spacing:0">${pl.total} шт к упаковке</span>${breakdown?`<span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:8px">${breakdown}</span>`:''}`
+      :'';
+    adjLogHtml=`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span>${counter}</span></div>
     <div class="block" style="padding:0.75rem 1.25rem">
       <div class="adj-list" style="margin-top:0" id="adj-list-inline">${adjRows}</div></div>`;
   }
