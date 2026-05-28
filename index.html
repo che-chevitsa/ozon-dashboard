@@ -188,7 +188,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.3 · 28.05.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.4 · 28.05.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -245,8 +245,8 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 </div>
 
 <script>
-const FOCUS=['PF-СК-D55-WH-PG','PF-OV-100x60-WH-PG','PF-СК-D70-WH-PG','NZ-HR-3-WH-PG','PF-СК-D55-WH-PG2'];
-const NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'Форма 7 см','NZ-HR-3-WH-PG':'Хвост русалки','PF-СК-D55-WH-PG2':'Круглая 5.5 (дубль)'};
+const FOCUS=['PF-СК-D55-WH-PG','PF-OV-100x60-WH-PG','PF-СК-D70-WH-PG','NZ-HR-3-WH-PG'];
+const NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'Форма 7 см','NZ-HR-3-WH-PG':'Хвост русалки'};
 const BOX_TYPE={'PF-СК-D55-WH-PG':'a','PF-OV-100x60-WH-PG':'b','PF-СК-D70-WH-PG':'b','NZ-HR-3-WH-PG':'c'};
 // Мета по типам коробок — порядок отображения, отображаемое имя. Чтобы добавить новый тип — только сюда + в BOX_TYPE.
 const BOX_META={
@@ -1172,7 +1172,7 @@ function render(data){
 
   const filterBar = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">товар:</span>
-    ${FOCUS.filter(a=>a!=='PF-СК-D55-WH-PG2').map(art=>{
+    ${FOCUS.map(art=>{
       const active=priorityFilters.articles.has(art);
       return `<button onclick="toggleArticleFilter('${art}')" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(91,127,255,0.15)':'none'};color:${active?'var(--accent)':'var(--muted)'}">${NAMES[art]}</button>`;
     }).join('')}
@@ -1381,7 +1381,7 @@ function render(data){
         <div style="display:flex;align-items:center;padding:7px 14px;gap:8px">
           <span class="acc-cluster">${cluster}</span>
           <div class="acc-cells">`;
-      FOCUS.filter(a=>a!=='PF-СК-D55-WH-PG2').forEach(art=>{
+      FOCUS.forEach(art=>{
         const row=data.find(r=>r.article===art&&r.cluster===cluster);
         const shortName=NAMES[art].split(' ')[0];
         const formId='accf_'+(accFormCounter++);
