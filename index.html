@@ -188,7 +188,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.2 · 27.05.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.3 · 28.05.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -245,9 +245,15 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 </div>
 
 <script>
-const FOCUS=['PF-СК-D55-WH-PG','PF-OV-100x60-WH-PG','PF-СК-D70-WH-PG','PF-СК-D55-WH-PG2'];
-const NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'Форма 7 см','PF-СК-D55-WH-PG2':'Круглая 5.5 (дубль)'};
-const BOX_TYPE={'PF-СК-D55-WH-PG':'a','PF-OV-100x60-WH-PG':'b','PF-СК-D70-WH-PG':'b'};
+const FOCUS=['PF-СК-D55-WH-PG','PF-OV-100x60-WH-PG','PF-СК-D70-WH-PG','NZ-HR-3-WH-PG','PF-СК-D55-WH-PG2'];
+const NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'Форма 7 см','NZ-HR-3-WH-PG':'Хвост русалки','PF-СК-D55-WH-PG2':'Круглая 5.5 (дубль)'};
+const BOX_TYPE={'PF-СК-D55-WH-PG':'a','PF-OV-100x60-WH-PG':'b','PF-СК-D70-WH-PG':'b','NZ-HR-3-WH-PG':'c'};
+// Мета по типам коробок — порядок отображения, отображаемое имя. Чтобы добавить новый тип — только сюда + в BOX_TYPE.
+const BOX_META={
+  a:{name:'Коробки 5.5 см (тип A)'},
+  b:{name:'Коробки с окошком (овальные + 7 см)'},
+  c:{name:'Коробки для насадок'},
+};
 const CLUSTER_GROUPS=[
   {name:'Центр',         clusters:['Москва, МО и Дальние регионы','Ярославль','Тверь','Воронеж','Саратов']},
   {name:'Северо-Запад',  clusters:['Санкт-Петербург и СЗО','Калининград']},
@@ -779,15 +785,17 @@ function spendBoxes(article,qty){
 }
 
 function renderBoxes(){
-  const salesA=rawData?rawData.filter(r=>BOX_TYPE[r.article]==='a').reduce((s,r)=>s+r.sales,0):0;
-  const salesB=rawData?rawData.filter(r=>BOX_TYPE[r.article]==='b').reduce((s,r)=>s+r.sales,0):0;
+  const salesByType={};
+  Object.keys(BOX_META).forEach(t=>{
+    salesByType[t]=rawData?rawData.filter(r=>BOX_TYPE[r.article]===t).reduce((s,r)=>s+r.sales,0):0;
+  });
   const log=getBoxLog();
 
-  ['a','b'].forEach(type=>{
+  Object.keys(BOX_META).forEach(type=>{
     const count=calcBoxCount(type);
     const inTransit=log.filter(e=>e.type===type&&e.kind==='order'&&(e.remaining||0)>0).reduce((s,e)=>s+(e.remaining||0),0);
     const total=count+inTransit;
-    const sales=type==='a'?salesA:salesB;
+    const sales=salesByType[type];
     const daysLeft=sales>0?Math.floor(count/sales):99;
     const daysTotal=sales>0?Math.floor(total/sales):99;
     let cls='green',cardCls='';
@@ -1288,46 +1296,31 @@ function render(data){
   html+=adjLogHtml;
 
   // Boxes — after priorities and adj log, before heatmap
-  const salesA=data.filter(r=>BOX_TYPE[r.article]==='a').reduce((s,r)=>s+r.sales,0);
-  const salesB=data.filter(r=>BOX_TYPE[r.article]==='b').reduce((s,r)=>s+r.sales,0);
-  const boxCountA=calcBoxCount('a'),boxCountB=calcBoxCount('b');
-  const daysA=salesA>0?Math.floor(boxCountA/salesA):99,daysB=salesB>0?Math.floor(boxCountB/salesB):99;
-  const boxClsA=daysA<3?'red':daysA<7?'amber':'green',boxClsB=daysB<3?'red':daysB<7?'amber':'green';
+  const boxCardsHtml=Object.keys(BOX_META).map(type=>{
+    const sales=data.filter(r=>BOX_TYPE[r.article]===type).reduce((s,r)=>s+r.sales,0);
+    const count=calcBoxCount(type);
+    const days=sales>0?Math.floor(count/sales):99;
+    const cls=days<3?'red':days<7?'amber':'green';
+    const cardCls=days<3?' danger':days<7?' warn':'';
+    return `<div class="box-card${cardCls}" id="box-card-${type}">
+      <div class="box-name">${BOX_META[type].name}</div>
+      <div style="display:flex;align-items:baseline;gap:8px">
+        <div class="box-count ${cls}" id="box-count-${type}" title="Нажми чтобы изменить" onclick="editBoxCount('${type}')" style="cursor:pointer">${count} шт</div>
+      </div>
+      <div class="box-meta" id="box-meta-${type}">${sales>0?`~${sales.toFixed(1)} шт/день · хватит на ${days>=99?'∞':days+' дн'}`:'нет данных'}</div>
+      <div class="box-actions" style="margin-top:8px">
+        <button class="box-btn" onclick="toggleBoxInput('${type}','order')">+ заказать</button>
+      </div>
+      <div id="box-input-${type}" style="display:none"><div class="box-input-row">
+        <input type="number" id="box-val-${type}" placeholder="шт" min="1">
+        <button onclick="applyBoxInput('${type}')">сохранить</button>
+        <button class="box-btn" onclick="toggleBoxInput('${type}','')">отмена</button>
+      </div></div>
+      <div id="box-orders-${type}" style="margin-top:8px"></div>
+    </div>`;
+  }).join('');
   html+=`<div class="section-label" style="margin-top:2rem">Остаток коробок</div>
-  <div class="boxes-grid">
-    <div class="box-card${daysA<3?' danger':daysA<7?' warn':''}" id="box-card-a">
-      <div class="box-name">Коробки 5.5 см (тип A)</div>
-      <div style="display:flex;align-items:baseline;gap:8px">
-        <div class="box-count ${boxClsA}" id="box-count-a" title="Нажми чтобы изменить" onclick="editBoxCount('a')" style="cursor:pointer">${boxCountA} шт</div>
-      </div>
-      <div class="box-meta" id="box-meta-a">${salesA>0?`~${salesA.toFixed(1)} шт/день · хватит на ${daysA>=99?'∞':daysA+' дн'}`:'нет данных'}</div>
-      <div class="box-actions" style="margin-top:8px">
-        <button class="box-btn" onclick="toggleBoxInput('a','order')">+ заказать</button>
-      </div>
-      <div id="box-input-a" style="display:none"><div class="box-input-row">
-        <input type="number" id="box-val-a" placeholder="шт" min="1">
-        <button onclick="applyBoxInput('a')">сохранить</button>
-        <button class="box-btn" onclick="toggleBoxInput('a','')">отмена</button>
-      </div></div>
-      <div id="box-orders-a" style="margin-top:8px"></div>
-    </div>
-    <div class="box-card${daysB<3?' danger':daysB<7?' warn':''}" id="box-card-b">
-      <div class="box-name">Коробки с окошком (овальные + 7 см)</div>
-      <div style="display:flex;align-items:baseline;gap:8px">
-        <div class="box-count ${boxClsB}" id="box-count-b" title="Нажми чтобы изменить" onclick="editBoxCount('b')" style="cursor:pointer">${boxCountB} шт</div>
-      </div>
-      <div class="box-meta" id="box-meta-b">${salesB>0?`~${salesB.toFixed(1)} шт/день · хватит на ${daysB>=99?'∞':daysB+' дн'}`:'нет данных'}</div>
-      <div class="box-actions" style="margin-top:8px">
-        <button class="box-btn" onclick="toggleBoxInput('b','order')">+ заказать</button>
-      </div>
-      <div id="box-input-b" style="display:none"><div class="box-input-row">
-        <input type="number" id="box-val-b" placeholder="шт" min="1">
-        <button onclick="applyBoxInput('b')">сохранить</button>
-        <button class="box-btn" onclick="toggleBoxInput('b','')">отмена</button>
-      </div></div>
-      <div id="box-orders-b" style="margin-top:8px"></div>
-    </div>
-  </div>`;
+  <div class="boxes-grid">${boxCardsHtml}</div>`;
 
   // Heatmap
   html+='<div class="section-label" style="margin-top:2rem">Тепловая карта · дней запаса</div>';
