@@ -188,7 +188,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.4 · 28.05.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.5 · 31.05.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -263,7 +263,7 @@ const CLUSTER_GROUPS=[
   {name:'Дальний Восток',clusters:['Дальний Восток']},
   {name:'СНГ',           clusters:['Беларусь','Алматы','Астана','Азербайджан','Армения']},
 ];
-const LS_ADJ='ozon_adjustments',LS_PREV='ozon_prev_transit',LS_LOG='ozon_load_log',LS_BOXES='ozon_boxes_log',LS_HIDDEN_GROUPS='ozon_hidden_groups';
+const LS_ADJ='ozon_adjustments',LS_PREV='ozon_prev_transit',LS_LOG='ozon_load_log',LS_BOXES='ozon_boxes_log',LS_HIDDEN_GROUPS='ozon_hidden_groups',LS_HIDDEN_CLUSTERS='ozon_hidden_clusters';
 
 // ===== JSONBIN =====
 const JSONBIN_BIN='69f3c4ae856a68218990cb6c';
@@ -470,8 +470,8 @@ function plannedUnits(){
   return {total,byArticle};
 }
 
-// ===== СКРЫТЫЕ ГРУППЫ КЛАСТЕРОВ =====
-// Группа в скрытых → её кластеры исключаются из карточек покрытия, приоритетов и тепловой карты.
+// ===== СКРЫТЫЕ ГРУППЫ И ОТДЕЛЬНЫЕ КЛАСТЕРЫ =====
+// Скрытый кластер (или вся его группа) исключается из карточек покрытия, приоритетов и тепловой карты.
 function getHiddenGroups(){try{return new Set(JSON.parse(localStorage.getItem(LS_HIDDEN_GROUPS)||'[]'));}catch{return new Set();}}
 function saveHiddenGroups(set){localStorage.setItem(LS_HIDDEN_GROUPS,JSON.stringify([...set]));scheduleSave();}
 function toggleHiddenGroup(name){
@@ -480,12 +480,22 @@ function toggleHiddenGroup(name){
   saveHiddenGroups(s);
   redraw();
 }
-// Принимает закешированный Set чтобы не дёргать localStorage в каждом фильтре
-function isClusterHidden(cluster,hidden){
+function getHiddenClusters(){try{return new Set(JSON.parse(localStorage.getItem(LS_HIDDEN_CLUSTERS)||'[]'));}catch{return new Set();}}
+function saveHiddenClusters(set){localStorage.setItem(LS_HIDDEN_CLUSTERS,JSON.stringify([...set]));scheduleSave();}
+function hideCluster(name){
+  if(!name)return;
+  const s=getHiddenClusters();s.add(name);saveHiddenClusters(s);redraw();
+}
+function unhideCluster(name){
+  const s=getHiddenClusters();s.delete(name);saveHiddenClusters(s);redraw();
+}
+// Принимает закешированные Set'ы чтобы не дёргать localStorage в каждом фильтре
+function isClusterHidden(cluster,hiddenGroups,hiddenClusters){
+  if(hiddenClusters&&hiddenClusters.has(cluster))return true;
   for(const g of CLUSTER_GROUPS){
-    if(g.clusters.includes(cluster))return hidden.has(g.name);
+    if(g.clusters.includes(cluster))return hiddenGroups.has(g.name);
   }
-  return false; // кластеры не из CLUSTER_GROUPS (Прочее) не скрываем
+  return false;
 }
 
 function getPrevTransit(){try{return JSON.parse(localStorage.getItem(LS_PREV)||'{}');}catch{return {};}}
@@ -1088,11 +1098,12 @@ function render(data){
 
   const period=currentPeriod;
   const hiddenGroups=getHiddenGroups();
-  const allClusters=[...new Set(data.map(r=>r.cluster))].filter(c=>!isClusterHidden(c,hiddenGroups)).sort();
+  const hiddenClusters=getHiddenClusters();
+  const allClusters=[...new Set(data.map(r=>r.cluster))].filter(c=>!isClusterHidden(c,hiddenGroups,hiddenClusters)).sort();
 
   const coverage={};
   FOCUS.forEach(art=>{
-    const rows=data.filter(r=>r.article===art&&r.sales>0&&!isClusterHidden(r.cluster,hiddenGroups));
+    const rows=data.filter(r=>r.article===art&&r.sales>0&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters));
     const need=rows.reduce((s,r)=>s+r.sales*period,0);
     const covered=rows.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0);
     coverage[art]=need>0?Math.min(100,covered/need*100):0;
@@ -1100,7 +1111,7 @@ function render(data){
 
   const priorities=data
     .filter(r=>r.sales>0)
-    .filter(r=>!isClusterHidden(r.cluster,hiddenGroups))
+    .filter(r=>!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters))
     .map(r=>({...r,needed:Math.max(0,Math.round(r.sales*period-r.total)),score:Math.max(0,period-r.days)*r.sales}))
     .filter(r=>r.needed>0)
     .filter(r=>priorityFilters.articles.has(r.article))
@@ -1146,7 +1157,7 @@ function render(data){
   html+=`<div class="section-label">Покрытие потребности · ${period} дней</div><div class="cards">`;
   FOCUS.forEach(art=>{
     const pct=coverage[art],cls=pctClass(pct);
-    const rows=data.filter(r=>r.article===art&&r.sales>0&&!isClusterHidden(r.cluster,hiddenGroups));
+    const rows=data.filter(r=>r.article===art&&r.sales>0&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters));
     const totalSales=rows.reduce((s,r)=>s+r.sales,0);
     const need=Math.round(rows.reduce((s,r)=>s+r.sales*period,0));
     const cov=Math.round(rows.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0));
@@ -1191,6 +1202,14 @@ function render(data){
         :'border:1px solid var(--accent);background:rgba(91,127,255,0.15);color:var(--accent)';
       return `<button onclick="toggleHiddenGroup('${g.name}')" title="${off?'клик — включить в расчёт':'клик — скрыть из расчётов'}" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;${style}">${g.name}</button>`;
     }).join('')}
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">кластеры:</span>
+    ${[...hiddenClusters].sort().map(c=>`<button onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт" style="font-family:var(--mono);font-size:11px;padding:3px 8px 3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);opacity:0.6;text-decoration:line-through">${c} ×</button>`).join('')}
+    <select onchange="hideCluster(this.value); this.value='';" style="font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer">
+      <option value="">+ скрыть кластер</option>
+      ${[...new Set(data.map(r=>r.cluster))].sort().filter(c=>!hiddenClusters.has(c)&&!isClusterHidden(c,hiddenGroups,new Set())).map(c=>`<option value="${c}">${c}</option>`).join('')}
+    </select>
   </div>`;
 
   // Применяем фильтр и сортировку к сгруппированным данным
