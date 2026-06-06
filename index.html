@@ -188,7 +188,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.5 · 31.05.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.7 · 07.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -263,6 +263,16 @@ const CLUSTER_GROUPS=[
   {name:'Дальний Восток',clusters:['Дальний Восток']},
   {name:'СНГ',           clusters:['Беларусь','Алматы','Астана','Азербайджан','Армения']},
 ];
+// Наценка за продажу вне локального кластера (% сверх базовой цены). Влияет на маржу: 12% > 8% > 0%.
+const CLUSTER_MARKUP={
+  'Москва, МО и Дальние регионы':8,'Ярославль':8,'Тверь':8,'Воронеж':8,'Саратов':8,
+  'Санкт-Петербург и СЗО':8,'Калининград':8,
+  'Ростов':8,'Краснодар':8,'Невинномысск':8,'Махачкала':8,
+  'Казань':8,'Уфа':8,'Самара':12,'Оренбург':12,'Пермь':12,'Екатеринбург':8,'Тюмень':8,
+  'Новосибирск':8,'Красноярск':0,'Омск':12,
+  'Дальний Восток':8,
+  'Беларусь':6,'Алматы':6,'Астана':6,'Азербайджан':0,'Армения':0,
+};
 const LS_ADJ='ozon_adjustments',LS_PREV='ozon_prev_transit',LS_LOG='ozon_load_log',LS_BOXES='ozon_boxes_log',LS_HIDDEN_GROUPS='ozon_hidden_groups',LS_HIDDEN_CLUSTERS='ozon_hidden_clusters';
 
 // ===== JSONBIN =====
@@ -468,6 +478,33 @@ function plannedUnits(){
     byArticle[a.article]=(byArticle[a.article]||0)+a.qty;
   });
   return {total,byArticle};
+}
+
+// Временные исключения — в указанный период наценка заменяется на другую.
+// Когда срок истечёт — автоматически вернётся к CLUSTER_MARKUP.
+const MARKUP_EXCEPTIONS=[
+  {cluster:'Дальний Восток', markup:0, from:'2026-04-18', to:'2026-06-18'},
+  {cluster:'Воронеж',        markup:0, from:'2026-06-03', to:'2026-06-30'},
+];
+function getMarkup(cluster){
+  const today=new Date().toISOString().slice(0,10);
+  for(const ex of MARKUP_EXCEPTIONS){
+    if(ex.cluster===cluster && today>=ex.from && today<=ex.to) return ex.markup;
+  }
+  return CLUSTER_MARKUP[cluster]??null;
+}
+
+// Бейдж наценки за нелокальную доставку. 12% зелёный (маржинальнее), 0% жёлтый (без наценки).
+function markupBadge(cluster){
+  const m=getMarkup(cluster);
+  if(m===null||m===undefined)return '';
+  const isTemp=MARKUP_EXCEPTIONS.some(e=>{
+    const today=new Date().toISOString().slice(0,10);
+    return e.cluster===cluster&&today>=e.from&&today<=e.to;
+  });
+  const color=m>=12?'var(--green)':m===0?'var(--amber)':'var(--muted)';
+  const label=isTemp?`+${m}%*`:` +${m}%`;
+  return `<span style="font-size:9px;font-family:var(--mono);color:${color};margin-left:4px;opacity:0.8" title="${isTemp?'Временная акция':''}">${label}</span>`;
 }
 
 // ===== СКРЫТЫЕ ГРУППЫ И ОТДЕЛЬНЫЕ КЛАСТЕРЫ =====
@@ -1261,7 +1298,7 @@ function render(data){
       html+=`<tr data-adj="${r.article}|${r.cluster}">
         ${groupCell}
         <td class="item-name" style="${isTop?'':'opacity:0.7'}">${NAMES[r.article]||r.article}${isTop?' <span style="font-size:10px;color:var(--accent)">★</span>':''}</td>
-        <td style="${clusterStyle}">${r.cluster}</td>
+        <td style="${clusterStyle}">${r.cluster}${markupBadge(r.cluster)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.sales.toFixed(1)}${r.fromProfile?'<span style="font-size:9px;color:var(--amber);margin-left:3px" title="историческое">~</span>':''}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
@@ -1291,7 +1328,7 @@ function render(data){
           <div class="mpl-dot ${dc}"></div>
           <div class="mpl-main">
             <div class="mpl-top">
-              <span class="mpl-name">${NAMES[r.article]||r.article}${isTop?' ★':''} · ${r.cluster}</span>
+              <span class="mpl-name">${NAMES[r.article]||r.article}${isTop?' ★':''} · ${r.cluster}${markupBadge(r.cluster)}</span>
               <span class="mpl-qty ${dc}">${r.needed} шт</span>
             </div>
             <div class="mpl-sub">
