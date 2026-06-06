@@ -188,7 +188,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.7 · 07.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.8 · 07.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -1387,7 +1387,7 @@ function render(data){
   FOCUS.forEach(art=>{html+=`<th class="col-header">${NAMES[art]}</th>`;});
   html+='</tr></thead><tbody>';
   allClusters.forEach(cluster=>{
-    html+=`<tr><td class="row-label">${cluster}</td>`;
+    html+=`<tr><td class="row-label">${cluster}${markupBadge(cluster)}</td>`;
     FOCUS.forEach(art=>{
       const row=data.find(r=>r.article===art&&r.cluster===cluster);
       if(!row||row.sales===0){html+=`<td class="none">—</td>`;}
@@ -1435,7 +1435,7 @@ function render(data){
     groupClusters.forEach(cluster=>{
       html+=`<div style="border-bottom:1px solid rgba(255,255,255,0.04)">
         <div style="display:flex;align-items:center;padding:7px 14px;gap:8px">
-          <span class="acc-cluster">${cluster}</span>
+          <span class="acc-cluster">${cluster}${markupBadge(cluster)}</span>
           <div class="acc-cells">`;
       FOCUS.forEach(art=>{
         const row=data.find(r=>r.article===art&&r.cluster===cluster);
