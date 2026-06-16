@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.5 · 16.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.6 · 16.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -364,14 +364,24 @@ async function saveToCloud(){
     const record={...existing};
     record.adjustments=getAdjs();
     record.boxes=getBoxLog();
-    record.log=getLog();
+    record.log=getLog().slice(0,20); // лог обрезаем до 20 последних — глубже не нужно
     record.savedAt=new Date().toISOString();
-    // rawData/period обновляем только если они есть в памяти; иначе сохраняем то, что было в облаке
-    if(rawData){ record.rawData=rawData; if(currentPeriod) record.period=currentPeriod; }
+    // rawData храним КОМПАКТНО: только несводимые поля, без вычислимых total/days.
+    // Формат: [article, cluster, rec, sales, fbo, transit, fromProfile?1:0]
+    if(rawData){
+      record.rawDataC=rawData.map(r=>[r.article,r.cluster,r.rec,r.sales,r.fbo,r.transit,r.fromProfile?1:0]);
+      delete record.rawData; // убираем старый громоздкий формат если был
+      if(currentPeriod) record.period=currentPeriod;
+    }
     // salesDaily обновляем только если загружены продажи; иначе сохраняем облачные
     if(salesDaily) record.salesDaily=salesDaily;
 
-    const body=JSON.stringify(record);
+    let body=JSON.stringify(record);
+    // Защита от лимита JSONBin (100 КБ на free): если близко — урезаем лог агрессивнее
+    if(body.length>98000 && record.log && record.log.length>5){
+      record.log=record.log.slice(0,5);
+      body=JSON.stringify(record);
+    }
     const sizeKB=(body.length/1024).toFixed(1);
     const resp=await fetch(JSONBIN_URL,{
       method:'PUT',
@@ -399,15 +409,25 @@ async function loadFromCloud(){
     const rec=data.record||{};
     // Диагностика: что реально лежит в облаке
     const keys=Object.keys(rec);
-    const diag=`Облако содержит: ${keys.length?keys.join(', '):'(пусто)'} | rawData: ${rec.rawData?rec.rawData.length+' строк':'нет'} | salesDaily: ${rec.salesDaily?Object.keys(rec.salesDaily).length+' дней':'нет'}`;
+    const rawCount = rec.rawDataC ? rec.rawDataC.length : (rec.rawData ? rec.rawData.length : 0);
+    const diag=`Облако: ${keys.length?keys.join(', '):'(пусто)'} | поставки: ${rawCount?rawCount+' строк':'нет'} | продажи: ${rec.salesDaily?Object.keys(rec.salesDaily).length+' дней':'нет'}`;
     cloudDiag(diag);
     console.log(diag);
     if(rec.adjustments&&rec.adjustments.length>0)localStorage.setItem(LS_ADJ,JSON.stringify(rec.adjustments));
     if(rec.boxes&&rec.boxes.length>0)localStorage.setItem(LS_BOXES,JSON.stringify(rec.boxes));
     if(rec.log&&rec.log.length>0)localStorage.setItem(LS_LOG,JSON.stringify(rec.log));
-    // Восстанавливаем данные файла
-    if(rec.rawData&&rec.rawData.length>0){
-      rawData=rec.rawData;
+    // Восстанавливаем данные поставок — компактный формат rawDataC или старый rawData
+    let restoredRaw=null;
+    if(rec.rawDataC&&rec.rawDataC.length>0){
+      restoredRaw=rec.rawDataC.map(a=>{
+        const fbo=a[4]||0, transit=a[5]||0, sales=a[3]||0, total=fbo+transit;
+        return {article:a[0],cluster:a[1],rec:a[2]||0,sales,fbo,transit,total,days:sales>0?total/sales:99,fromProfile:a[6]===1};
+      });
+    }else if(rec.rawData&&rec.rawData.length>0){
+      restoredRaw=rec.rawData; // обратная совместимость со старым форматом
+    }
+    if(restoredRaw){
+      rawData=restoredRaw;
       if(rec.period)currentPeriod=rec.period;
       populateClusterSelect(rawData);
       redraw();
@@ -423,7 +443,7 @@ async function loadFromCloud(){
       rebuildSalesFromDaily();
       salesRestored=true;
     }
-    const supplyRestored = !!(rec.rawData && rec.rawData.length>0);
+    const supplyRestored = !!restoredRaw;
     if(!supplyRestored && salesRestored){
       switchMainTab('sales');
     }
