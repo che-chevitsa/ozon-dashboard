@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.3 · 16.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.4 · 16.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -385,9 +385,14 @@ async function loadFromCloud(){
   if(!JSONBIN_KEY)return;
   try{
     const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY}});
-    if(!r.ok)return;
+    if(!r.ok){ cloudDiag('Ошибка чтения облака: HTTP '+r.status); return; }
     const data=await r.json();
     const rec=data.record||{};
+    // Диагностика: что реально лежит в облаке
+    const keys=Object.keys(rec);
+    const diag=`Облако содержит: ${keys.length?keys.join(', '):'(пусто)'} | rawData: ${rec.rawData?rec.rawData.length+' строк':'нет'} | salesDaily: ${rec.salesDaily?Object.keys(rec.salesDaily).length+' дней':'нет'}`;
+    cloudDiag(diag);
+    console.log(diag);
     if(rec.adjustments&&rec.adjustments.length>0)localStorage.setItem(LS_ADJ,JSON.stringify(rec.adjustments));
     if(rec.boxes&&rec.boxes.length>0)localStorage.setItem(LS_BOXES,JSON.stringify(rec.boxes));
     if(rec.log&&rec.log.length>0)localStorage.setItem(LS_LOG,JSON.stringify(rec.log));
@@ -397,7 +402,6 @@ async function loadFromCloud(){
       if(rec.period)currentPeriod=rec.period;
       populateClusterSelect(rawData);
       redraw();
-      // Обновляем кнопки периода
       document.querySelectorAll('.period-tab').forEach(btn=>{
         btn.classList.toggle('active',btn.textContent.trim()===currentPeriod+' дн');
       });
@@ -411,12 +415,23 @@ async function loadFromCloud(){
       salesRestored=true;
     }
     const supplyRestored = !!(rec.rawData && rec.rawData.length>0);
-    console.log(`Облако: поставки ${supplyRestored?'✓':'—'}, продажи ${salesRestored?'✓':'—'}`);
-    // Если поставок нет, но есть продажи — переключаем на вкладку продаж, чтобы данные были видны
     if(!supplyRestored && salesRestored){
       switchMainTab('sales');
     }
-  }catch(e){console.log('Ошибка загрузки:',e.message);}
+  }catch(e){ cloudDiag('Ошибка загрузки: '+e.message); console.log('Ошибка загрузки:',e.message); }
+}
+
+// Показывает диагностику облака под шапкой (временно, для отладки)
+function cloudDiag(msg){
+  let el=document.getElementById('cloud-diag');
+  if(!el){
+    el=document.createElement('div');
+    el.id='cloud-diag';
+    el.style.cssText='font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 12px;margin:8px 0;background:var(--bg3);border:1px solid var(--border);border-radius:6px';
+    const tabs=document.getElementById('main-tabs');
+    if(tabs&&tabs.parentNode) tabs.parentNode.insertBefore(el,tabs);
+  }
+  el.textContent='🔍 '+msg;
 }
 
 // Debounce 1.5 сек: группирует частые клики (✓/×/добавления) в один PUT, защищает от гонок при быстрых действиях.
