@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Озон — Планирование поставок</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Golos+Text:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -41,6 +42,13 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .period-tabs{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:3px;}
 .period-tab{font-family:var(--mono);font-size:11px;color:var(--muted);background:none;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;}
 .period-tab.active{background:var(--bg2);color:var(--text);border:1px solid var(--border);}
+.main-tabs{display:flex;gap:6px;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0;}
+.main-tab{font-family:var(--mono);font-size:13px;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;padding:10px 18px;cursor:pointer;margin-bottom:-1px;}
+.main-tab.active{color:var(--text);border-bottom:2px solid var(--accent);}
+.main-tab:hover{color:var(--text);}
+.sales-toggle{font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;}
+.sales-toggle.on{color:var(--text);background:var(--bg2);}
+.sales-toggle .dot{width:10px;height:10px;border-radius:50%;}
 .reset-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;}
 .reset-btn:hover{border-color:rgba(255,255,255,0.2);color:var(--text);}
 .upload-zone{border:1px dashed rgba(91,127,255,0.4);border-radius:12px;padding:4rem 2rem;text-align:center;cursor:pointer;transition:all 0.2s;position:relative;}
@@ -188,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v1.8 · 07.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.1 · 16.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -204,6 +212,11 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
       <button class="reset-btn" onclick="resetDashboard()">← другой файл</button>
     </div>
   </header>
+
+  <div class="main-tabs" id="main-tabs" style="display:none">
+    <button class="main-tab active" id="mtab-supply" onclick="switchMainTab('supply')">⊞ Поставки</button>
+    <button class="main-tab" id="mtab-sales" onclick="switchMainTab('sales')">📈 Продажи</button>
+  </div>
 
   <div id="upload-section">
     <div id="cloud-key-section" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
@@ -222,6 +235,42 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   </div>
 
   <div id="dashboard" style="display:none"></div>
+
+  <div id="sales-section" style="display:none;margin-top:1rem">
+    <div class="upload-zone" id="sales-dropzone" style="margin-bottom:1rem">
+      <input type="file" id="salesFileInput" accept=".csv">
+      <div class="upload-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg></div>
+      <div class="upload-title">Загрузить отчёт по заказам (orders.csv)</div>
+      <div class="upload-sub">FBO/FBS → Заказы → Скачать CSV. Файл обрабатывается локально, не сохраняется.</div>
+    </div>
+    <div id="sales-content" style="display:none">
+      <div class="block">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px">
+          <div class="section-label" style="margin-top:0;flex:1">Динамика продаж</div>
+          <div class="period-tabs">
+            <button class="period-tab sgran active" onclick="setSalesGran('day')">день</button>
+            <button class="period-tab sgran" onclick="setSalesGran('week')">неделя</button>
+          </div>
+          <div class="period-tabs">
+            <button class="period-tab smetric active" onclick="setSalesMetric('qty')">штуки</button>
+            <button class="period-tab smetric" onclick="setSalesMetric('revenue')">рубли</button>
+          </div>
+          <div class="period-tabs">
+            <button class="period-tab speriod" onclick="setSalesPeriod(0)">всё</button>
+            <button class="period-tab speriod" onclick="setSalesPeriod(28)">28 дн</button>
+            <button class="period-tab speriod" onclick="setSalesPeriod(14)">14 дн</button>
+            <button class="period-tab speriod" onclick="setSalesPeriod(7)">7 дн</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="show-cancels" onchange="toggleCancels(this.checked)" style="cursor:pointer">показать отмены
+          </label>
+        </div>
+        <div id="sales-toggles" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
+        <div style="position:relative;width:100%;height:380px"><canvas id="salesChart"></canvas></div>
+        <div id="sales-summary" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
 
   <div id="ai-section" style="display:none;margin-top:2rem">
     <div class="block">
@@ -313,6 +362,8 @@ async function saveToCloud(){
     // Сохраняем данные файла если есть
     if(rawData) record.rawData=rawData;
     if(currentPeriod) record.period=currentPeriod;
+    // Агрегаты продаж (экономно: свёртка по дням, не сырой CSV)
+    if(salesDaily) record.salesDaily=salesDaily;
     await fetch(JSONBIN_URL,{
       method:'PUT',
       headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY},
@@ -345,6 +396,11 @@ async function loadFromCloud(){
       });
     }
     renderLog();
+    // Восстанавливаем агрегаты продаж
+    if(rec.salesDaily && Object.keys(rec.salesDaily).length){
+      salesDaily=rec.salesDaily;
+      rebuildSalesFromDaily();
+    }
     console.log('Данные загружены из облака');
   }catch(e){console.log('Ошибка загрузки:',e.message);}
 }
@@ -1130,6 +1186,7 @@ function setPeriod(days){
 function render(data){
   document.getElementById('upload-section').style.display='none';
   document.getElementById('reset-wrap').style.display='flex';
+  document.getElementById('main-tabs').style.display='flex';
   document.getElementById('dashboard').style.display='block';
   renderBoxes();
 
@@ -1759,6 +1816,187 @@ const dz=document.getElementById('dropzone');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
 dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+
+// ============ ВКЛАДКА ПРОДАЖ ============
+const SALES_NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'Форма 7 см','NZ-HR-3-WH-PG':'Хвост русалки','PF-СК-D55-WH-PGM':'Дубль PGM','PF-ONI-STD-WH-PL':'Онигири'};
+const SALES_COLORS={'Сырники 5.5':'#1D9E75','Овальные':'#534AB7','Форма 7 см':'#D85A30','Хвост русалки':'#C2410C','Дубль PGM':'#0891B2','Онигири':'#9333EA'};
+let salesRaw=null, salesDaily=null, salesGran='day', salesMetric='qty', salesPeriodDays=0;
+let salesHidden=new Set(), salesChartObj=null, showCancels=false;
+
+function switchMainTab(tab){
+  document.getElementById('mtab-supply').classList.toggle('active',tab==='supply');
+  document.getElementById('mtab-sales').classList.toggle('active',tab==='sales');
+  document.getElementById('dashboard').style.display = tab==='supply'?'block':'none';
+  document.getElementById('reset-wrap').style.display = tab==='supply'?'flex':'none';
+  const aiSec=document.getElementById('ai-section');
+  if(aiSec && tab==='sales') aiSec.style.display='none';
+  document.getElementById('sales-section').style.display = tab==='sales'?'block':'none';
+}
+
+function parseSalesCsv(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length) return null;
+  const delim = lines[0].split(';').length > lines[0].split(',').length ? ';' : ',';
+  const headers=lines[0].split(delim).map(h=>h.trim().replace(/^\uFEFF/,'').replace(/^"|"$/g,'').trim());
+  const idx=(name)=>headers.findIndex(h=>h.toLowerCase().includes(name.toLowerCase()));
+  const ci={
+    date: idx('Принят в обработку')>=0?idx('Принят в обработку'):idx('дата'),
+    art: idx('Артикул'),
+    qty: idx('Количество'),
+    status: idx('Статус'),
+    price: idx('Ваша цена')>=0?idx('Ваша цена'):idx('цена')
+  };
+  if(ci.date<0||ci.art<0) return null;
+  const rows=[];
+  const clean=v=>(v||'').trim().replace(/^"|"$/g,'').trim();
+  for(let i=1;i<lines.length;i++){
+    const c=lines[i].split(delim);
+    const status=clean(c[ci.status]);
+    const cancelled=status.toLowerCase().includes('отмен');
+    const date=clean(c[ci.date]).slice(0,10);
+    const art=clean(c[ci.art]);
+    if(!date||!art) continue;
+    const name=SALES_NAMES[art]||art;
+    const qty=parseInt(clean(c[ci.qty])||'1')||1;
+    const price=parseFloat(clean(c[ci.price]).replace(',','.'))||0;
+    rows.push({date,name,qty,revenue:qty*price,cancelled});
+  }
+  return rows;
+}
+
+function handleSalesFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const rows=parseSalesCsv(e.target.result);
+    if(!rows||!rows.length){ alert('Не удалось распознать файл. Нужен CSV отчёта по заказам с колонками «Принят в обработку», «Артикул», «Количество».'); return; }
+    salesRaw=rows;
+    // Экономная свёртка: {дата: {товар: {q, r, qc, rc}}} — qc/rc = отменённые
+    salesDaily={};
+    rows.forEach(r=>{
+      if(!salesDaily[r.date]) salesDaily[r.date]={};
+      if(!salesDaily[r.date][r.name]) salesDaily[r.date][r.name]={q:0,r:0,qc:0,rc:0};
+      if(r.cancelled){
+        salesDaily[r.date][r.name].qc+=r.qty;
+        salesDaily[r.date][r.name].rc+=r.revenue;
+      }else{
+        salesDaily[r.date][r.name].q+=r.qty;
+        salesDaily[r.date][r.name].r+=r.revenue;
+      }
+    });
+    salesHidden=new Set();
+    document.getElementById('sales-dropzone').style.display='none';
+    document.getElementById('sales-content').style.display='block';
+    renderSalesToggles(); renderSalesChart();
+    scheduleSave(); // сохраняем агрегат в облако
+  };
+  reader.readAsText(file,'utf-8');
+}
+
+// Восстановление salesRaw из агрегата salesDaily (после загрузки из облака)
+function rebuildSalesFromDaily(){
+  if(!salesDaily) return;
+  salesRaw=[];
+  Object.keys(salesDaily).forEach(date=>{
+    Object.keys(salesDaily[date]).forEach(name=>{
+      const cell=salesDaily[date][name];
+      if(cell.q||cell.r) salesRaw.push({date,name,qty:cell.q,revenue:cell.r,cancelled:false});
+      if(cell.qc||cell.rc) salesRaw.push({date,name,qty:cell.qc,revenue:cell.rc,cancelled:true});
+    });
+  });
+  salesHidden=new Set();
+  document.getElementById('sales-dropzone').style.display='none';
+  document.getElementById('sales-content').style.display='block';
+  renderSalesToggles(); renderSalesChart();
+}
+
+function getSalesNames(){
+  const order=['Овальные','Сырники 5.5','Форма 7 см','Хвост русалки','Дубль PGM','Онигири'];
+  const present=[...new Set(salesRaw.map(r=>r.name))];
+  return order.filter(n=>present.includes(n)).concat(present.filter(n=>!order.includes(n)));
+}
+
+function renderSalesToggles(){
+  document.getElementById('sales-toggles').innerHTML=getSalesNames().map(name=>{
+    const color=SALES_COLORS[name]||'#888';
+    const on=!salesHidden.has(name);
+    return `<button class="sales-toggle ${on?'on':''}" onclick="toggleSalesSeries('${name.replace(/'/g,"\\'")}')"><span class="dot" style="background:${on?color:'transparent'};border:1px solid ${color}"></span>${name}</button>`;
+  }).join('');
+}
+function toggleSalesSeries(name){
+  if(salesHidden.has(name)) salesHidden.delete(name); else salesHidden.add(name);
+  renderSalesToggles(); renderSalesChart();
+}
+function setSalesGran(g){ salesGran=g; document.querySelectorAll('.sgran').forEach(b=>b.classList.toggle('active',b.textContent===(g==='day'?'день':'неделя'))); renderSalesChart(); }
+function setSalesMetric(m){ salesMetric=m; document.querySelectorAll('.smetric').forEach(b=>b.classList.toggle('active',b.textContent===(m==='qty'?'штуки':'рубли'))); renderSalesChart(); }
+function setSalesPeriod(d){ salesPeriodDays=d; document.querySelectorAll('.speriod').forEach(b=>{const map={'всё':0,'28 дн':28,'14 дн':14,'7 дн':7};b.classList.toggle('active',map[b.textContent]===d);}); renderSalesChart(); }
+function toggleCancels(on){ showCancels=on; renderSalesChart(); }
+
+function isoWeek(dateStr){
+  const d=new Date(dateStr+'T00:00:00');
+  const day=(d.getDay()+6)%7;
+  d.setDate(d.getDate()-day);
+  return d.toISOString().slice(0,10);
+}
+
+function renderSalesChart(){
+  if(!salesRaw) return;
+  let rows=salesRaw;
+  const allDates=[...new Set(rows.map(r=>r.date))].sort();
+  if(salesPeriodDays>0 && allDates.length){
+    const last=new Date(allDates[allDates.length-1]+'T00:00:00');
+    const cutoff=new Date(last); cutoff.setDate(cutoff.getDate()-salesPeriodDays+1);
+    const cutStr=cutoff.toISOString().slice(0,10);
+    rows=rows.filter(r=>r.date>=cutStr);
+  }
+  const names=getSalesNames().filter(n=>!salesHidden.has(n));
+  const bucket=r=> salesGran==='week'?isoWeek(r.date):r.date;
+  const buckets=[...new Set(rows.map(bucket))].sort();
+  const agg={}; names.forEach(n=>agg[n]={});
+  const cancelAgg={}; // отмены, сумма по всем товарам
+  rows.forEach(r=>{
+    const b=bucket(r);
+    if(r.cancelled){
+      cancelAgg[b]=(cancelAgg[b]||0)+(salesMetric==='revenue'?r.revenue:r.qty);
+      return;
+    }
+    if(salesHidden.has(r.name))return;
+    if(!agg[r.name])return;
+    agg[r.name][b]=(agg[r.name][b]||0)+(salesMetric==='revenue'?r.revenue:r.qty);
+  });
+  const labels=buckets.map(b=> salesGran==='week'?b.slice(5).replace('-','.')+' нед':b.slice(5).replace('-','.'));
+  const datasets=names.map((n,i)=>{
+    const color=SALES_COLORS[n]||['#534AB7','#1D9E75','#D85A30'][i%3];
+    return {label:n,data:buckets.map(b=>agg[n][b]||0),borderColor:color,backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.25,borderDash:i===1?[6,3]:i===2?[2,2]:[]};
+  });
+  if(showCancels){
+    datasets.push({label:'Отмены',data:buckets.map(b=>cancelAgg[b]||0),borderColor:'#DC2626',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:0.25,borderDash:[3,3]});
+  }
+  if(salesChartObj) salesChartObj.destroy();
+  salesChartObj=new Chart(document.getElementById('salesChart'),{
+    type:'line', data:{labels,datasets},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>`${c.dataset.label}: ${Math.round(c.parsed.y).toLocaleString('ru')}${salesMetric==='revenue'?' ₽':' шт'}`}}},
+      scales:{x:{ticks:{maxRotation:45,font:{size:10},autoSkip:true,maxTicksLimit:18},grid:{color:'rgba(128,128,128,0.08)'}},
+              y:{beginAtZero:true,title:{display:true,text:salesMetric==='revenue'?'₽ за период':'шт за период',font:{size:11}},grid:{color:'rgba(128,128,128,0.08)'}}}
+    }
+  });
+  document.getElementById('sales-summary').innerHTML=names.map(n=>{
+    const total=Object.values(agg[n]).reduce((a,b)=>a+b,0);
+    const color=SALES_COLORS[n]||'#888';
+    return `<div style="background:var(--bg3);border-radius:8px;padding:10px 14px;border-left:3px solid ${color}"><div style="font-size:11px;color:var(--muted)">${n}</div><div style="font-size:18px;font-weight:500">${Math.round(total).toLocaleString('ru')}${salesMetric==='revenue'?' ₽':' шт'}</div></div>`;
+  }).join('');
+}
+
+(function initSalesUpload(){
+  const inp=document.getElementById('salesFileInput');
+  const zone=document.getElementById('sales-dropzone');
+  if(inp) inp.addEventListener('change',e=>{ if(e.target.files[0]) handleSalesFile(e.target.files[0]); });
+  if(zone){
+    zone.addEventListener('dragover',e=>{e.preventDefault();zone.style.borderColor='var(--accent)';});
+    zone.addEventListener('dragleave',()=>zone.style.borderColor='');
+    zone.addEventListener('drop',e=>{e.preventDefault();zone.style.borderColor='';if(e.dataTransfer.files[0])handleSalesFile(e.dataTransfer.files[0]);});
+  }
+})();
 </script>
 </body>
 </html>
