@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.1 · 16.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.2 · 16.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -1596,6 +1596,8 @@ function applyCloudKey(){
   const savedKey=localStorage.getItem('ozon_jsonbin_key');
   if(savedKey){JSONBIN_KEY=savedKey;testConnection().then(()=>{if(JSONBIN_KEY)loadFromCloud();});}
   else{const s=document.getElementById('cloud-status');if(s){s.textContent='☁ нажми чтобы настроить';s.style.color='var(--muted)';}}
+  // Вкладки видны сразу — обе равноценны, доступны до загрузки данных
+  document.getElementById('main-tabs').style.display='flex';
 })();
 
 // EXPORT FOR CLAUDE
@@ -1826,11 +1828,22 @@ let salesHidden=new Set(), salesChartObj=null, showCancels=false;
 function switchMainTab(tab){
   document.getElementById('mtab-supply').classList.toggle('active',tab==='supply');
   document.getElementById('mtab-sales').classList.toggle('active',tab==='sales');
-  document.getElementById('dashboard').style.display = tab==='supply'?'block':'none';
-  document.getElementById('reset-wrap').style.display = tab==='supply'?'flex':'none';
-  const aiSec=document.getElementById('ai-section');
-  if(aiSec && tab==='sales') aiSec.style.display='none';
-  document.getElementById('sales-section').style.display = tab==='sales'?'block':'none';
+  const supplyLoaded = !!rawData;
+  if(tab==='supply'){
+    // Поставки: если данные загружены — дашборд, иначе — зона загрузки
+    document.getElementById('upload-section').style.display = supplyLoaded?'none':'block';
+    document.getElementById('dashboard').style.display = supplyLoaded?'block':'none';
+    document.getElementById('reset-wrap').style.display = supplyLoaded?'flex':'none';
+    document.getElementById('sales-section').style.display='none';
+  }else{
+    // Продажи: своя зона (dropzone или график), всё остальное скрыто
+    document.getElementById('upload-section').style.display='none';
+    document.getElementById('dashboard').style.display='none';
+    document.getElementById('reset-wrap').style.display='none';
+    const aiSec=document.getElementById('ai-section');
+    if(aiSec) aiSec.style.display='none';
+    document.getElementById('sales-section').style.display='block';
+  }
 }
 
 function parseSalesCsv(text){
