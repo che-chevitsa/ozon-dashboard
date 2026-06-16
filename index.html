@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.6 · 16.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.7 · 16.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -391,7 +391,7 @@ async function saveToCloud(){
     const s=document.getElementById('cloud-status');
     if(resp.ok){
       if(s){s.textContent='☁ сохранено ✓';s.style.color='var(--green)';}
-      cloudDiag(`Сохранено в облако: ${sizeKB} КБ | rawData: ${record.rawData?record.rawData.length+' строк':'нет'} | salesDaily: ${record.salesDaily?Object.keys(record.salesDaily).length+' дней':'нет'}`);
+      cloudDiag(`Сохранено в облако: ${sizeKB} КБ | поставки: ${record.rawDataC?record.rawDataC.length+' строк':'нет'} | продажи: ${record.salesDaily?Object.keys(record.salesDaily).length+' дней':'нет'}`);
     }else{
       const txt=await resp.text().catch(()=>'');
       if(s){s.textContent=`☁ ошибка ${resp.status}`;s.style.color='var(--red)';}
