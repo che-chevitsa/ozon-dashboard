@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.7 · 16.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.8 · 16.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -237,16 +237,17 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <div id="dashboard" style="display:none"></div>
 
   <div id="sales-section" style="display:none;margin-top:1rem">
-    <div class="upload-zone" id="sales-dropzone" style="margin-bottom:1rem">
-      <input type="file" id="salesFileInput" accept=".csv">
+    <input type="file" id="salesFileInput" accept=".csv" style="display:none">
+    <div class="upload-zone" id="sales-dropzone" style="margin-bottom:1rem;cursor:pointer" onclick="document.getElementById('salesFileInput').click()">
       <div class="upload-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg></div>
       <div class="upload-title">Загрузить отчёт по заказам (orders.csv)</div>
-      <div class="upload-sub">FBO/FBS → Заказы → Скачать CSV. Файл обрабатывается локально, не сохраняется.</div>
+      <div class="upload-sub">FBO/FBS → Заказы → Скачать CSV. Файл обрабатывается локально.</div>
     </div>
     <div id="sales-content" style="display:none">
       <div class="block">
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px">
           <div class="section-label" style="margin-top:0;flex:1">Динамика продаж</div>
+          <button class="period-tab" onclick="document.getElementById('salesFileInput').click()" title="Загрузить свежий orders.csv">↻ обновить файл</button>
           <div class="period-tabs">
             <button class="period-tab sgran active" onclick="setSalesGran('day')">день</button>
             <button class="period-tab sgran" onclick="setSalesGran('week')">неделя</button>
@@ -2061,7 +2062,7 @@ function renderSalesChart(){
 (function initSalesUpload(){
   const inp=document.getElementById('salesFileInput');
   const zone=document.getElementById('sales-dropzone');
-  if(inp) inp.addEventListener('change',e=>{ if(e.target.files[0]) handleSalesFile(e.target.files[0]); });
+  if(inp) inp.addEventListener('change',e=>{ if(e.target.files[0]){ handleSalesFile(e.target.files[0]); e.target.value=''; } });
   if(zone){
     zone.addEventListener('dragover',e=>{e.preventDefault();zone.style.borderColor='var(--accent)';});
     zone.addEventListener('dragleave',()=>zone.style.borderColor='');
