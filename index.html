@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.8 · 16.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.9 · 25.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -247,7 +247,8 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
       <div class="block">
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px">
           <div class="section-label" style="margin-top:0;flex:1">Динамика продаж</div>
-          <button class="period-tab" onclick="document.getElementById('salesFileInput').click()" title="Загрузить свежий orders.csv">↻ обновить файл</button>
+          <button class="period-tab" onclick="document.getElementById('salesFileInput').click()" title="Подгрузить свежий orders.csv — данные объединятся с историей по датам">↻ добавить дни</button>
+          <button class="period-tab" onclick="clearSalesHistory()" title="Очистить всю накопленную историю продаж" style="color:var(--muted)">очистить</button>
           <div class="period-tabs">
             <button class="period-tab sgran active" onclick="setSalesGran('day')">день</button>
             <button class="period-tab sgran" onclick="setSalesGran('week')">неделя</button>
@@ -374,8 +375,10 @@ async function saveToCloud(){
       delete record.rawData; // убираем старый громоздкий формат если был
       if(currentPeriod) record.period=currentPeriod;
     }
-    // salesDaily обновляем только если загружены продажи; иначе сохраняем облачные
+    // salesDaily обновляем только если загружены продажи; иначе сохраняем облачные.
+    // Если историю явно очистили (salesCleared) — удаляем из облака.
     if(salesDaily) record.salesDaily=salesDaily;
+    else if(salesCleared){ delete record.salesDaily; salesCleared=false; }
 
     let body=JSON.stringify(record);
     // Защита от лимита JSONBin (100 КБ на free): если близко — урезаем лог агрессивнее
@@ -1881,7 +1884,7 @@ dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');if
 // ============ ВКЛАДКА ПРОДАЖ ============
 const SALES_NAMES={'PF-СК-D55-WH-PG':'Сырники 5.5','PF-OV-100x60-WH-PG':'Овальные','PF-СК-D70-WH-PG':'Форма 7 см','NZ-HR-3-WH-PG':'Хвост русалки','PF-СК-D55-WH-PGM':'Дубль PGM','PF-ONI-STD-WH-PL':'Онигири'};
 const SALES_COLORS={'Сырники 5.5':'#1D9E75','Овальные':'#534AB7','Форма 7 см':'#D85A30','Хвост русалки':'#C2410C','Дубль PGM':'#0891B2','Онигири':'#9333EA'};
-let salesRaw=null, salesDaily=null, salesGran='day', salesMetric='qty', salesPeriodDays=0;
+let salesRaw=null, salesDaily=null, salesGran='day', salesMetric='qty', salesPeriodDays=0, salesCleared=false;
 let salesHidden=new Set(), salesChartObj=null, showCancels=false;
 
 function switchMainTab(tab){
@@ -1942,26 +1945,50 @@ function handleSalesFile(file){
     const rows=parseSalesCsv(e.target.result);
     if(!rows||!rows.length){ alert('Не удалось распознать файл. Нужен CSV отчёта по заказам с колонками «Принят в обработку», «Артикул», «Количество».'); return; }
     salesRaw=rows;
-    // Экономная свёртка: {дата: {товар: {q, r, qc, rc}}} — qc/rc = отменённые
-    salesDaily={};
+    // Свёртка нового файла по дням: {дата: {товар: {q, r, qc, rc}}}
+    const incoming={};
     rows.forEach(r=>{
-      if(!salesDaily[r.date]) salesDaily[r.date]={};
-      if(!salesDaily[r.date][r.name]) salesDaily[r.date][r.name]={q:0,r:0,qc:0,rc:0};
+      if(!incoming[r.date]) incoming[r.date]={};
+      if(!incoming[r.date][r.name]) incoming[r.date][r.name]={q:0,r:0,qc:0,rc:0};
       if(r.cancelled){
-        salesDaily[r.date][r.name].qc+=r.qty;
-        salesDaily[r.date][r.name].rc+=r.revenue;
+        incoming[r.date][r.name].qc+=r.qty;
+        incoming[r.date][r.name].rc+=r.revenue;
       }else{
-        salesDaily[r.date][r.name].q+=r.qty;
-        salesDaily[r.date][r.name].r+=r.revenue;
+        incoming[r.date][r.name].q+=r.qty;
+        incoming[r.date][r.name].r+=r.revenue;
       }
     });
+    // СЛИЯНИЕ ПО ДАТАМ: дни из нового файла заменяют старые, остальная история сохраняется.
+    // Так можно загружать только свежие дни, не теряя накопленное.
+    const before = salesDaily ? Object.keys(salesDaily).length : 0;
+    if(!salesDaily) salesDaily={};
+    let updated=0, added=0;
+    Object.keys(incoming).forEach(date=>{
+      if(salesDaily[date]) updated++; else added++;
+      salesDaily[date]=incoming[date]; // день целиком заменяется свежими данными
+    });
+    const after = Object.keys(salesDaily).length;
+
     salesHidden=new Set();
-    document.getElementById('sales-dropzone').style.display='none';
-    document.getElementById('sales-content').style.display='block';
-    renderSalesToggles(); renderSalesChart();
-    scheduleSave(); // сохраняем агрегат в облако
+    rebuildSalesFromDaily(); // пересобираем график из объединённого salesDaily
+    scheduleSave(); // сохраняем объединённый агрегат в облако
+
+    // Сообщаем, что произошло слияние
+    const dates=Object.keys(incoming).sort();
+    cloudDiag(`Загружено ${dates[0]}–${dates[dates.length-1]}: обновлено дней ${updated}, добавлено ${added}. Всего в истории: ${after} дней (было ${before}).`);
   };
   reader.readAsText(file,'utf-8');
+}
+
+// Очистка всей накопленной истории продаж
+function clearSalesHistory(){
+  if(!confirm('Очистить всю накопленную историю продаж? Данные в облаке тоже обнулятся. Это действие необратимо.')) return;
+  salesDaily=null; salesRaw=null; salesHidden=new Set(); salesCleared=true;
+  if(salesChartObj){ salesChartObj.destroy(); salesChartObj=null; }
+  document.getElementById('sales-content').style.display='none';
+  document.getElementById('sales-dropzone').style.display='';
+  scheduleSave();
+  cloudDiag('История продаж очищена.');
 }
 
 // Восстановление salesRaw из агрегата salesDaily (после загрузки из облака)
