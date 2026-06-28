@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.9 · 25.06.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.10 · 28.06.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -1958,14 +1958,24 @@ function handleSalesFile(file){
         incoming[r.date][r.name].r+=r.revenue;
       }
     });
-    // СЛИЯНИЕ ПО ДАТАМ: дни из нового файла заменяют старые, остальная история сохраняется.
-    // Так можно загружать только свежие дни, не теряя накопленное.
+    // СЛИЯНИЕ ПО ДАТАМ: дни из нового файла обновляют историю, остальное сохраняется.
+    // Защита от частичного граничного дня: если в новом файле день содержит МЕНЬШЕ заказов,
+    // чем уже есть в истории, считаем его неполным (хвост выгрузки) и НЕ затираем полные данные.
     const before = salesDaily ? Object.keys(salesDaily).length : 0;
     if(!salesDaily) salesDaily={};
-    let updated=0, added=0;
+    const dayTotal = day => Object.values(day||{}).reduce((s,c)=>s+(c.q||0)+(c.qc||0),0);
+    let updated=0, added=0, skipped=0;
     Object.keys(incoming).forEach(date=>{
-      if(salesDaily[date]) updated++; else added++;
-      salesDaily[date]=incoming[date]; // день целиком заменяется свежими данными
+      const incTotal = dayTotal(incoming[date]);
+      const existTotal = dayTotal(salesDaily[date]);
+      if(salesDaily[date]){
+        // День уже есть: заменяем только если новый файл даёт не меньше данных (полнее или равно).
+        // Частичный хвост (меньше заказов) — пропускаем, чтобы не стереть полный день.
+        if(incTotal >= existTotal){ salesDaily[date]=incoming[date]; updated++; }
+        else { skipped++; }
+      }else{
+        salesDaily[date]=incoming[date]; added++;
+      }
     });
     const after = Object.keys(salesDaily).length;
 
@@ -1975,7 +1985,10 @@ function handleSalesFile(file){
 
     // Сообщаем, что произошло слияние
     const dates=Object.keys(incoming).sort();
-    cloudDiag(`Загружено ${dates[0]}–${dates[dates.length-1]}: обновлено дней ${updated}, добавлено ${added}. Всего в истории: ${after} дней (было ${before}).`);
+    let msg=`Загружено ${dates[0]}–${dates[dates.length-1]}: обновлено ${updated}, добавлено ${added}`;
+    if(skipped) msg+=`, пропущено неполных дней ${skipped}`;
+    msg+=`. Всего в истории: ${after} дней (было ${before}).`;
+    cloudDiag(msg);
   };
   reader.readAsText(file,'utf-8');
 }
