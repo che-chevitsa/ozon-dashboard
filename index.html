@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.25 · 09.08.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.32 · 13.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -415,6 +415,680 @@ function submitNewBoxType(){
   addBoxType(name,arts);
 }
 loadBoxTypes();
+// ===== ЗАДАНИЕ УПАКОВЩИКУ + ТРАНСПОРТНЫЕ КОРОБКИ =====
+// Транспортные коробки — данные, редактируются в конструкторе. Размеры в см: w — ширина фасада,
+// d — глубина, h — высота (нужны для пропорций иконок). color — ключ палитры BOX_PALETTE.
+const LS_PACK_RULES='ozon_pack_rules', LS_PACK_ORDER='ozon_pack_order', LS_PACK_NOTES='ozon_pack_notes',
+      LS_TBOX_LOG='ozon_transport_log', LS_PACK_SPENT='ozon_pack_spent', LS_TBOX_TYPES='ozon_transport_types';
+const BOX_PALETTE={ // [фасад, верх, бок]
+  kraft: {name:'Крафт',      colors:['#d4a66a','#e6c393','#b58449']},
+  purple:{name:'Фиолетовая', colors:['#8b5cf6','#b197fc','#6d3fd6']},
+  white: {name:'Белая',      colors:['#e9ebef','#f7f8fa','#c9ccd3']},
+  blue:  {name:'Синяя',      colors:['#4f7df3','#86a6f7','#3558c4']},
+  green: {name:'Зелёная',    colors:['#3fb07a','#7bd0a6','#2a8559']},
+  black: {name:'Чёрная',     colors:['#3a3d46','#5a5e6a','#23252b']},
+};
+const DEFAULT_TRANSPORT_BOXES=[
+  {id:'big',   name:'Большая',    w:40,d:25,h:25, color:'kraft'},
+  {id:'tall',  name:'Высокая',    w:16,d:16,h:30, color:'kraft'},
+  {id:'purple',name:'Фиолетовая', w:20,d:8, h:20, color:'purple'}, // стоит на ребре
+];
+let TRANSPORT_BOXES=[], TBOX={};
+function loadTransportBoxes(){
+  let raw=null;
+  try{ raw=JSON.parse(localStorage.getItem(LS_TBOX_TYPES)||'null'); }catch{}
+  const list=Array.isArray(raw)&&raw.length?raw:JSON.parse(JSON.stringify(DEFAULT_TRANSPORT_BOXES));
+  // фиолетовую из старых сохранений (лежала плашмя 20×20×8) ставим на ребро
+  list.forEach(b=>{ if(b.id==='purple'&&b.w===20&&b.d===20&&b.h===8){ [b.h,b.d]=[b.d,b.h]; } });
+  TRANSPORT_BOXES=list.map(b=>({...b,dims:`${b.w}×${b.d}×${b.h}`,colors:(BOX_PALETTE[b.color]||BOX_PALETTE.kraft).colors}));
+  TBOX={}; TRANSPORT_BOXES.forEach(b=>TBOX[b.id]=b);
+}
+loadTransportBoxes();
+// Вместимость: артикул → варианты укладки {box, qty, label}. Полная коробка — максимальный qty для этой коробки.
+const DEFAULT_PACK_RULES={
+  'PF-OV-100x60-WH-PG':[{box:'big',qty:68},{box:'tall',qty:24}],
+  'PF-СК-D70-WH-PG':[{box:'big',qty:72},{box:'big',qty:48,label:'2 слоя'},{box:'tall',qty:20}],
+  'PF-СК-D55-WH-PG':[{box:'big',qty:105},{box:'big',qty:90,label:'3 слоя'},{box:'big',qty:60,label:'2 слоя'},{box:'tall',qty:36}],
+  'NZ-HR-AZ-3-WH-PG':[{box:'tall',qty:36},{box:'purple',qty:18}],
+};
+function lsGet(k,def){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):def; }catch{ return def; } }
+function getPackRules(){ return lsGet(LS_PACK_RULES,JSON.parse(JSON.stringify(DEFAULT_PACK_RULES))); }
+function savePackRules(r){ localStorage.setItem(LS_PACK_RULES,JSON.stringify(r)); scheduleSave(); }
+function getPackOrder(){ return lsGet(LS_PACK_ORDER,[]); }
+function getPackNotes(){ return lsGet(LS_PACK_NOTES,{}); }
+function getTboxLog(){ return lsGet(LS_TBOX_LOG,[]); }
+function saveTboxLog(l){ localStorage.setItem(LS_TBOX_LOG,JSON.stringify(l)); scheduleSave(); }
+function escHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Единый нейтральный цвет заполнения и номеров: цвета товаров путались с цветными коробками.
+function packColor(){ return '#4b5563'; }
+
+// Полная укладка — максимальное количество этого товара в этой коробке.
+function packOptionFull(rules,art,opt){
+  return opt.qty>=Math.max(...(rules[art]||[]).filter(o=>o.box===opt.box).map(o=>o.qty));
+}
+// Подпись укладки: своя из конструктора, иначе «полная» / «неполная».
+function packOptionLabel(rules,art,opt){
+  return (opt.label||'').trim()||(packOptionFull(rules,art,opt)?'полная':'неполная');
+}
+
+// Раскладка количества одной отправки по коробкам: максимум уложенного, затем минимум коробок,
+// затем минимум неполных. Остаток (если число не раскладывается) возвращается отдельно.
+function decomposeQty(qty,opts,rules,art){
+  const best=new Array(qty+1).fill(null);
+  best[0]={boxes:0,partial:0,combo:{}};
+  for(let q=1;q<=qty;q++){
+    opts.forEach((o,i)=>{
+      if(o.qty>q||!best[q-o.qty])return;
+      const prev=best[q-o.qty];
+      const cand={boxes:prev.boxes+1,partial:prev.partial+(packOptionFull(rules,art,o)?0:1)};
+      const cur=best[q];
+      if(!cur||cand.boxes<cur.boxes||(cand.boxes===cur.boxes&&cand.partial<cur.partial)){
+        cand.combo={...prev.combo,[i]:(prev.combo[i]||0)+1};
+        best[q]=cand;
+      }
+    });
+  }
+  let packed=qty; while(packed>0&&!best[packed])packed--;
+  return {combo:best[packed].combo,rest:qty-packed};
+}
+
+// Тестовый режим: задание строится из сгенерированных отправок (по одной на каждый вариант укладки
+// + комбинации и примеры ошибок). Реальные отправки, облако и списание коробок не затрагиваются.
+let packTestMode=lsGet('ozon_pack_test',false)===true;
+function togglePackTest(){ packTestMode=!packTestMode; localStorage.setItem('ozon_pack_test',JSON.stringify(packTestMode)); redraw(); }
+function packTestAdjs(){
+  const rules=getPackRules(), clusters=CLUSTER_GROUPS.flatMap(g=>g.clusters), out=[];
+  let c=0;
+  const add=(article,qty)=>out.push({article,cluster:clusters[c++%clusters.length],qty,test:true});
+  ALL_ARTICLES.forEach(art=>{
+    const opts=(rules[art]||[]).filter(o=>TBOX[o.box]);
+    opts.forEach(o=>add(art,o.qty));                        // каждый вариант укладки отдельной отправкой
+    if(opts.length>1) add(art,opts[0].qty+opts[opts.length-1].qty); // комбинация в одной отправке
+  });
+  const withRules=ALL_ARTICLES.find(a=>(rules[a]||[]).some(o=>TBOX[o.box]));
+  if(withRules){ // количество, которое не раскладывается ни одним способом
+    let q=1; while(q<200&&decomposeQty(q,rules[withRules].filter(o=>TBOX[o.box]),rules,withRules).rest===0) q++;
+    add(withRules,q);
+  }
+  const noRules=ALL_ARTICLES.find(a=>!(rules[a]||[]).length);
+  if(noRules) add(noRules,30);                               // товар без заданной вместимости
+  return out;
+}
+function getPackAdjs(){ return packTestMode?packTestAdjs():getAdjs(); }
+
+// Собирает задание: по товару в целом, но каждую отправку (кластер) раскладываем отдельно —
+// у каждой поставки свои физические коробки.
+function buildPackTask(){
+  const rules=getPackRules();
+  const byArt={};
+  getPackAdjs().forEach(a=>{
+    if(a.sent===true)return;
+    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},rest:0,noRules:false});
+    t.total+=a.qty;
+    const opts=(rules[a.article]||[]).filter(o=>TBOX[o.box]); // варианты с удалёнными коробками не используем
+    if(!opts.length){ t.noRules=true; return; }
+    const {combo,rest}=decomposeQty(a.qty,opts,rules,a.article);
+    t.rest+=rest;
+    Object.entries(combo).forEach(([i,n])=>{
+      const o=opts[i], key=o.box+'|'+o.qty;
+      const full=packOptionFull(rules,a.article,o);
+      const g=t.groups[key]||(t.groups[key]={box:o.box,qty:o.qty,label:packOptionLabel(rules,a.article,o),full,
+        fill:full?1:o.qty/Math.max(...rules[a.article].filter(x=>x.box===o.box).map(x=>x.qty)),count:0});
+      g.count+=n;
+    });
+  });
+  const order=getPackOrder();
+  const items=Object.values(byArt).sort((x,y)=>{
+    const ix=order.indexOf(x.article), iy=order.indexOf(y.article);
+    return (ix<0?999:ix)-(iy<0?999:iy);
+  });
+  const boxTotals={};
+  items.forEach(it=>{
+    // внутри товара: сначала большие/полные коробки
+    it.groupList=Object.values(it.groups).sort((a,b)=>
+      TRANSPORT_BOXES.findIndex(x=>x.id===a.box)-TRANSPORT_BOXES.findIndex(x=>x.id===b.box)||b.qty-a.qty);
+    it.groupList.forEach(g=>{ boxTotals[g.box]=(boxTotals[g.box]||0)+g.count; });
+  });
+  const sortedTotals={};
+  TRANSPORT_BOXES.forEach(b=>{ if(boxTotals[b.id]) sortedTotals[b.id]=boxTotals[b.id]; });
+  return {items,boxTotals:sortedTotals};
+}
+
+// Сохраняет новый порядок товаров в задании (остальные артикулы из старого порядка — в хвост).
+function savePackOrder(cur){
+  const rest=getPackOrder().filter(a=>!cur.includes(a));
+  localStorage.setItem(LS_PACK_ORDER,JSON.stringify([...cur,...rest]));
+  scheduleSave();
+}
+function setPackNote(art,val){
+  const n=getPackNotes();
+  if(val.trim()) n[art]=val.trim(); else delete n[art];
+  localStorage.setItem(LS_PACK_NOTES,JSON.stringify(n));
+  scheduleSave();
+  paintPackCanvases();
+}
+
+function packTaskText(task){
+  const notes=getPackNotes();
+  const d=new Date();
+  const tot=Object.entries(task.boxTotals).map(([b,c])=>`${TBOX[b].name} × ${c}`).join(', ');
+  const lines=[`${packTestMode?'ТЕСТ · ':''}Что пакуем · ${packSubtitle(task,d)}`];
+  if(tot) lines.push(tot);
+  lines.push('');
+  task.items.forEach((it,n)=>{
+    lines.push(`${n+1}) ${artName(it.article)} — ${it.total} шт`);
+    if(notes[it.article]) lines.push(`✎ ${notes[it.article]}`);
+    it.groupList.forEach(g=>{
+      const b=TBOX[g.box];
+      lines.push(`— ${b.name} коробка, ${g.qty} шт (${g.label}) × ${g.count}`);
+    });
+    if(it.rest) lines.push(`⚠ ${it.rest} ${pkPlural(it.rest,'штука не влезает','штуки не влезают','штук не влезают')} ни в одну укладку`);
+    if(it.noRules) lines.push(`⚠ пока непонятно, в какие коробки это класть`);
+    lines.push('');
+  });
+  return lines.join('\n').trim();
+}
+
+// Иконка коробки в изометрии. (x, yBottom) — левый нижний угол фасада. fill — доля заполнения 0..1.
+function drawBoxIcon(ctx,x,yBottom,box,s,fill,fillColor,labelText){
+  const w=box.w*s, h=box.h*s, d=box.d*s*0.45;
+  const [front,top,side]=box.colors;
+  const y=yBottom-h;
+  ctx.lineJoin='round'; ctx.lineWidth=1.5; ctx.strokeStyle='rgba(60,40,20,0.55)';
+  // верх
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+d,y-d); ctx.lineTo(x+w+d,y-d); ctx.lineTo(x+w,y); ctx.closePath();
+  ctx.fillStyle=top; ctx.fill(); ctx.stroke();
+  // бок
+  ctx.beginPath(); ctx.moveTo(x+w,y); ctx.lineTo(x+w+d,y-d); ctx.lineTo(x+w+d,yBottom-d); ctx.lineTo(x+w,yBottom); ctx.closePath();
+  ctx.fillStyle=side; ctx.fill(); ctx.stroke();
+  // фасад
+  ctx.fillStyle=front; ctx.fillRect(x,y,w,h);
+  // Полная коробка — без заливки. Неполная (слои) — лёгкая красная подложка и яркий красный пунктир на уровне заполнения.
+  if(fill!=null&&fill<1){
+    const fh=Math.max(3,h*fill);
+    ctx.fillStyle='rgba(230,40,40,0.16)'; ctx.fillRect(x+1,yBottom-fh,w-2,fh-1);
+    ctx.save(); ctx.setLineDash([6,4]); ctx.lineWidth=2.5; ctx.strokeStyle='#e62828';
+    ctx.beginPath(); ctx.moveTo(x+1,yBottom-fh); ctx.lineTo(x+w-1,yBottom-fh); ctx.stroke(); ctx.restore();
+  }
+  // скотч по верху
+  ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.fillRect(x+w/2-4,y,8,Math.min(10,h*0.35));
+  ctx.strokeRect(x,y,w,h);
+  if(labelText&&h>=18){
+    let fs=Math.min(34,h*0.6);
+    const setFont=()=>ctx.font=`800 ${fs}px "Golos Text","Segoe UI",Arial,sans-serif`;
+    setFont(); while(fs>12&&ctx.measureText(labelText).width>w-8){ fs--; setFont(); }
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.strokeText(labelText,x+w/2,y+h/2);
+    ctx.fillStyle='#fff'; ctx.fillText(labelText,x+w/2,y+h/2);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.lineWidth=1.5;
+  }
+}
+
+// Картинка задания. Размеры в логических px (итоговый PNG — ×2).
+// Ширина 600 и 3 колонки: на экране телефона (~360px) картинка сжимается всего до 0.6, шрифты остаются читаемыми.
+const PK_IMG={W:600,P:24,CELL:184,ROW:236,S:2.9,F:'"Golos Text","Segoe UI",Arial,sans-serif'};
+const pkCols=()=>Math.floor((PK_IMG.W-2*PK_IMG.P)/PK_IMG.CELL);
+const pkRowsH=it=>it.groupList.length?Math.ceil(it.groupList.length/pkCols())*PK_IMG.ROW:0;
+
+// Ряд коробок одного товара: иконка, «× N», коробка и штуки, «полная»/«2 слоя».
+function drawItemGroups(ctx,it,x0,y0,onlyRow){ // onlyRow — нарисовать один ряд в y0
+  const {CELL,ROW,S,F}=PK_IMG, cols=pkCols();
+  it.groupList.forEach((g,gi)=>{
+    const row=Math.floor(gi/cols);
+    if(onlyRow!=null&&row!==onlyRow)return;
+    const cx=x0+(gi%cols)*CELL, top=y0+(onlyRow!=null?0:row*ROW), b=TBOX[g.box], mid=cx+(CELL-20)/2;
+    const sc=Math.min(S,(CELL-24)/(b.w+b.d*0.45),108/(b.h+b.d*0.45)); // крупные коробки уменьшаем под ячейку
+    drawBoxIcon(ctx,cx+(CELL-20-(b.w*sc+b.d*sc*0.45))/2,top+118,b,sc,g.fill,null,String(g.qty));
+    ctx.textAlign='center';
+    ctx.font=`800 36px ${F}`; ctx.fillStyle='#1a1d27'; ctx.fillText(`× ${g.count}`,mid,top+160);
+    ctx.font=`600 20px ${F}`; ctx.fillStyle='#1a1d27'; ctx.fillText(b.name,mid,top+188);
+    // «72 шт · полная» — штуки серым, укладка цветом, строка по центру
+    ctx.font=`500 19px ${F}`;
+    const p1=`${g.qty} шт · `, p2=g.label, w1=ctx.measureText(p1).width, w2=ctx.measureText(p2).width;
+    ctx.textAlign='left';
+    ctx.fillStyle='#6b6e80'; ctx.fillText(p1,mid-(w1+w2)/2,top+214);
+    ctx.fillStyle=g.full?'#1a8a4a':'#c47f00'; ctx.fillText(p2,mid-(w1+w2)/2+w1,top+214);
+  });
+}
+
+// Картинки для телефона: задание режется на страницы одного размера (600×1200, PNG ×2).
+// Блок товара не разрывается от шапки до первого ряда коробок; длинный товар продолжается
+// на следующей странице с пометкой «продолжение». Недозаполненная страница остаётся с пустым низом.
+const PK_PAGE_H=1200, PK_FOOTER=64;
+function buildPackPages(task){
+  const notes=getPackNotes();
+  const {W,P,F,ROW}=PK_IMG, cols=pkCols();
+  const mctx=document.createElement('canvas').getContext('2d');
+  const wrap=(t,font,maxW)=>{ mctx.font=font; const out=[]; let line='';
+    String(t).split(/\s+/).forEach(w=>{ const test=line?line+' '+w:w; if(mctx.measureText(test).width>maxW&&line){ out.push(line); line=w; } else line=test; });
+    if(line) out.push(line); return out; };
+  const txt=(ctx,t,x,y,font,color)=>{ ctx.font=font; ctx.fillStyle=color; ctx.fillText(t,x,y); };
+
+  // Кусочки страницы: {h, draw(ctx,y)}
+  const headUnit=(it,n,cont)=>{
+    if(cont) return {h:56,draw:(ctx,y)=>{
+      txt(ctx,`${n+1}. ${artName(it.article)} — продолжение`,P,y+36,`700 22px ${F}`,'#6b6e80');
+    }};
+    const noteFont=`500 20px ${F}`, noteLines=notes[it.article]?wrap(notes[it.article],noteFont,W-2*P-34):[];
+    const nh=noteLines.length?noteLines.length*28+20:0;
+    return {h:82+(nh?nh+10:0),draw:(ctx,y)=>{
+      ctx.strokeStyle='#e4e6eb'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(P,y+14); ctx.lineTo(W-P,y+14); ctx.stroke();
+      const hy=y+36;
+      ctx.fillStyle=packColor(); ctx.beginPath(); ctx.arc(P+19,hy+14,19,0,Math.PI*2); ctx.fill();
+      ctx.font=`800 22px ${F}`; ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.fillText(String(n+1),P+19,hy+22); ctx.textAlign='left';
+      txt(ctx,artName(it.article),P+50,hy+24,`800 28px ${F}`,'#1a1d27');
+      const nw=ctx.measureText(artName(it.article)).width;
+      txt(ctx,`${it.total} шт`,P+50+nw+12,hy+24,`500 22px ${F}`,'#6b6e80');
+      if(nh){
+        const ny=y+86;
+        ctx.fillStyle='#fff4c2'; ctx.beginPath(); ctx.roundRect(P,ny,W-2*P,nh,8); ctx.fill();
+        ctx.fillStyle='#f2b705'; ctx.fillRect(P,ny,4,nh);
+        noteLines.forEach((l,i)=>txt(ctx,l,P+18,ny+32+i*28,noteFont,'#2b2100'));
+      }
+    }};
+  };
+  const rowUnit=(it,r)=>({h:ROW,draw:(ctx,y)=>drawItemGroups(ctx,it,P,y,r)});
+  const warnUnit=it=>{
+    const w=[];
+    if(it.rest) w.push(`⚠ ${it.rest} ${pkPlural(it.rest,'штука не влезает','штуки не влезают','штук не влезают')} ни в одну укладку`);
+    if(it.noRules) w.push('⚠ пока непонятно, в какие коробки это класть');
+    return {h:w.length*32,draw:(ctx,y)=>w.forEach((s,i)=>txt(ctx,s,P,y+22+i*32,`600 19px ${F}`,'#d93025'))};
+  };
+  const join=(...us)=>({h:us.reduce((s,u)=>s+u.h,0),draw:(ctx,y)=>{ let yy=y; us.forEach(u=>{ u.draw(ctx,yy); yy+=u.h; }); }});
+
+  // шапка: на первой странице — заголовок, итог и какие коробки приготовить; дальше — короткая
+  const totFont=`500 17px ${F}`, totLines=packTotalsLine(task)?wrap(packTotalsLine(task),totFont,W-2*P):[]; // второстепенно — мелко и серо
+  const firstHeadH=P+72+totLines.length*24, nextHeadH=P+48;
+  const pages=[]; let page=null, y=0;
+  const newPage=()=>{ page={units:[]}; pages.push(page); y=pages.length===1?firstHeadH:nextHeadH; };
+  const limit=PK_PAGE_H-PK_FOOTER;
+  newPage();
+  task.items.forEach((it,n)=>{
+    const rows=Math.ceil(it.groupList.length/cols), warn=warnUnit(it);
+    const chunks=[];
+    if(!rows) chunks.push(join(headUnit(it,n),warn));
+    for(let r=0;r<rows;r++){
+      const parts=[rowUnit(it,r)];
+      if(r===rows-1&&warn.h) parts.push(warn);
+      chunks.push(r===0?join(headUnit(it,n),...parts):join(...parts));
+    }
+    chunks.forEach((c,ci)=>{
+      if(y+c.h>limit&&page.units.length){ // не влезает — новая страница
+        newPage();
+        if(ci>0) c=join(headUnit(it,n,true),c);
+      }
+      page.units.push({y,draw:c.draw}); y+=c.h;
+    });
+  });
+
+  const d=new Date(), total=pages.length;
+  return pages.map((pg,pi)=>({draw:ctx=>{
+    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,PK_PAGE_H);
+    const title=packTestMode?'ТЕСТ · Что пакуем':'Что пакуем', tColor=packTestMode?'#c47f00':'#1a1d27';
+    if(pi===0){
+      txt(ctx,title,P,P+32,`800 32px ${F}`,tColor);
+      txt(ctx,packSubtitle(task,d),P,P+62,`500 19px ${F}`,'#6b6e80');
+      totLines.forEach((l,i)=>txt(ctx,l,P,P+88+i*24,totFont,'#9ca0ad'));
+    }else{
+      txt(ctx,title,P,P+28,`800 26px ${F}`,tColor);
+    }
+    if(total>1){
+      ctx.font=`700 22px ${F}`; ctx.fillStyle='#6b6e80'; ctx.textAlign='right';
+      ctx.fillText(`${pi+1}/${total}`,W-P,P+(pi===0?32:28));
+      if(pi<total-1){ ctx.font=`500 18px ${F}`; ctx.fillStyle='#a3a7b3'; ctx.fillText(`дальше — картинка ${pi+2}/${total} →`,W-P,PK_PAGE_H-18); }
+      ctx.textAlign='left';
+    }
+    pg.units.forEach(u=>u.draw(ctx,u.y));
+  }}));
+}
+function packPageCanvases(){
+  return buildPackPages(buildPackTask()).map(pg=>{
+    const c=document.createElement('canvas'), dpr=2;
+    c.width=PK_IMG.W*dpr; c.height=PK_PAGE_H*dpr;
+    const ctx=c.getContext('2d'); ctx.scale(dpr,dpr); pg.draw(ctx);
+    return c;
+  });
+}
+function pkPlural(n,one,few,many){ const m10=n%10,m100=n%100; return m10===1&&m100!==11?one:m10>=2&&m10<=4&&(m100<12||m100>14)?few:many; }
+function pkDate(d){ return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`; }
+function pkUnits(task){ return task.items.reduce((s,i)=>s+i.total,0); }
+function packSubtitle(task,d){
+  const units=pkUnits(task), boxes=Object.values(task.boxTotals).reduce((s,c)=>s+c,0);
+  return `${pkDate(d)} · ${units} ${pkPlural(units,'коробочка','коробочки','коробочек')} → ${boxes} ${pkPlural(boxes,'коробка','коробки','коробок')}`;
+}
+function packTotalsLine(task){ return Object.entries(task.boxTotals).map(([b,c])=>`${TBOX[b].name} × ${c}`).join('   ·   '); }
+
+function paintPackCanvases(){
+  const task=buildPackTask();
+  // ряды коробок в блоках превью
+  document.querySelectorAll('canvas.pk-sec-boxes').forEach(cv=>{
+    const it=task.items.find(i=>i.article===cv.dataset.art); if(!it||!it.groupList.length)return;
+    const w=PK_IMG.W-2*PK_IMG.P, h=pkRowsH(it)-8, dpr=2;
+    cv.width=w*dpr; cv.height=h*dpr; cv.style.aspectRatio=`${w}/${h}`;
+    const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+    drawItemGroups(ctx,it,0,0);
+  });
+  const sheet=document.getElementById('pack-sheet');
+  if(sheet&&!sheet._dragInit){ initPackDrag(sheet); sheet._dragInit=true; }
+  document.querySelectorAll('canvas.tbox-icon').forEach(cv=>{
+    const b=TBOX[cv.dataset.box]; if(!b)return;
+    const s=1.6, dpr=2, w=b.w*s+b.d*s*0.45+6, h=b.h*s+b.d*s*0.45+6;
+    cv.width=w*dpr; cv.height=h*dpr; cv.style.width=w+'px'; cv.style.height=h+'px';
+    const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+    drawBoxIcon(ctx,3,h-3,b,s,null);
+  });
+}
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ try{ paintPackCanvases(); }catch{} });
+
+// Перетаскивание блоков товаров мышью: тянешь блок — он едет за курсором и меняется местами с соседями,
+// отпускаешь — порядок сохраняется. Поле комментария не перехватывает (в нём можно выделять текст).
+let pkDrag=null;
+function initPackDrag(sheet){ // на каждый новый лист — только pointerdown; move/up слушаются глобально один раз
+  sheet.addEventListener('pointerdown',e=>{
+    if(e.button!==0||e.target.closest('input,button,textarea'))return;
+    const sec=e.target.closest('.pk-sec'); if(!sec)return;
+    pkDrag={sheet,sec,startY:e.clientY,active:false,pid:e.pointerId};
+  });
+}
+window.addEventListener('pointermove',e=>{
+  const drag=pkDrag;
+  if(!drag||e.pointerId!==drag.pid)return;
+  if(!drag.active){
+    if(Math.abs(e.clientY-drag.startY)<5)return; // порог, чтобы клик не превращался в перетаскивание
+    drag.active=true; drag.sec.classList.add('dragging'); document.body.style.userSelect='none';
+  }
+  e.preventDefault();
+  if(e.clientY<60) window.scrollBy(0,-16); else if(e.clientY>window.innerHeight-60) window.scrollBy(0,16);
+  const list=drag.sec.parentNode;
+  const mid=el=>{ const r=el.getBoundingClientRect(); return r.top+r.height/2; };
+  let prev, next;
+  // при резком рывке мыши блок проскакивает сразу несколько соседей
+  while((prev=drag.sec.previousElementSibling)&&e.clientY<mid(prev)) list.insertBefore(drag.sec,prev);
+  while((next=drag.sec.nextElementSibling)&&e.clientY>mid(next)) list.insertBefore(next,drag.sec);
+  list.querySelectorAll('.pk-num').forEach((el,i)=>el.textContent=i+1);
+});
+function endPackDrag(e){
+  const drag=pkDrag;
+  if(!drag||(e&&e.pointerId!==drag.pid))return;
+  pkDrag=null; drag.sec.classList.remove('dragging'); document.body.style.userSelect='';
+  if(!drag.active)return;
+  savePackOrder([...drag.sheet.querySelectorAll('.pk-sec')].map(s=>s.dataset.art));
+  redraw();
+}
+window.addEventListener('pointerup',endPackDrag);
+window.addEventListener('pointercancel',endPackDrag);
+
+async function copyPackImage(i,btn){
+  const label=btn?btn.textContent:'';
+  try{
+    const c=packPageCanvases()[i];
+    const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+    if(btn){ btn.textContent='✓ скопировано'; setTimeout(()=>btn.textContent=label,1800); }
+  }catch(e){ alert('Браузер не дал скопировать картинку — используй «скачать PNG».\n'+e.message); }
+}
+async function downloadPackImage(){
+  const pages=packPageCanvases(), d=new Date();
+  const base=`упаковка_${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  for(let i=0;i<pages.length;i++){
+    const a=document.createElement('a');
+    a.download=pages.length>1?`${base}_${i+1}из${pages.length}.png`:`${base}.png`;
+    a.href=pages[i].toDataURL('image/png');
+    a.click();
+    if(i<pages.length-1) await new Promise(r=>setTimeout(r,400)); // браузеры режут пачку одновременных скачиваний
+  }
+}
+async function copyPackText(){
+  const text=packTaskText(buildPackTask());
+  const btn=document.getElementById('pack-copy-txt');
+  try{ await navigator.clipboard.writeText(text); }
+  catch{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  if(btn){ btn.textContent='✓ скопировано'; setTimeout(()=>btn.textContent='📋 копировать текст',1800); }
+}
+
+// Списание транспортных коробок по текущему заданию. Подпись задания защищает от двойного списания.
+function packSignature(task){ return JSON.stringify(Object.entries(task.boxTotals).sort()); }
+function spendPackBoxes(){
+  const task=buildPackTask();
+  const sig=packSignature(task);
+  if(!Object.keys(task.boxTotals).length)return;
+  const log=getTboxLog(), ts=Date.now();
+  const actual={}; // сколько реально списали (остаток не уходит в минус) — столько же вернёт отмена
+  Object.entries(task.boxTotals).forEach(([box,qty])=>{
+    actual[box]=Math.min(qty,calcTboxCount(box));
+    log.push({box,kind:'spend',qty,ts,pack:true});
+  });
+  saveTboxLog(log);
+  localStorage.setItem(LS_PACK_SPENT,JSON.stringify({sig,ts,totals:actual}));
+  redraw();
+}
+function undoSpendPackBoxes(){
+  const spent=lsGet(LS_PACK_SPENT,null); if(!spent)return;
+  const log=getTboxLog(), ts=Date.now();
+  Object.entries(spent.totals).forEach(([box,qty])=>log.push({box,kind:'add',qty,ts,undo:true}));
+  saveTboxLog(log);
+  localStorage.removeItem(LS_PACK_SPENT);
+  redraw();
+}
+function calcTboxCount(box){
+  let n=0;
+  getTboxLog().filter(e=>e.box===box).forEach(e=>{
+    if(e.kind==='set')n=e.qty; else if(e.kind==='add')n+=e.qty; else if(e.kind==='spend')n=Math.max(0,n-e.qty);
+  });
+  return n;
+}
+function editTbox(box,kind){
+  const cur=calcTboxCount(box);
+  const val=prompt(kind==='set'?`${TBOX[box].name} коробка. Сейчас: ${cur} шт\nНовый остаток:`:`${TBOX[box].name} коробка. Сколько пришло, шт:`,kind==='set'?cur:'');
+  if(val===null)return;
+  const qty=parseInt(val); if(isNaN(qty)||qty<0)return;
+  const log=getTboxLog(); log.push({box,kind,qty,ts:Date.now()}); saveTboxLog(log);
+  redraw();
+}
+
+// ===== КОНСТРУКТОР: коробки и варианты укладки =====
+// Редактируем черновик (packDraft) без перерисовки дашборда на каждое нажатие клавиши;
+// в хранилище попадает только по «Сохранить».
+let packRulesOpen=false, packDraft=null, packDraftMsg='';
+function makePackDraft(){
+  const r=getPackRules(), rules=[];
+  Object.keys(r).forEach(art=>(r[art]||[]).forEach(o=>rules.push({article:art,box:o.box,label:o.label||'',qty:o.qty})));
+  return {boxes:TRANSPORT_BOXES.map(b=>({id:b.id,name:b.name,w:b.w,d:b.d,h:b.h,color:b.color||'kraft'})),rules};
+}
+function togglePackRules(){
+  packRulesOpen=!packRulesOpen;
+  if(packRulesOpen){ packDraft=makePackDraft(); packDraftMsg=''; } else packDraft=null;
+  redraw();
+}
+function rerenderPackCtor(){ const el=document.getElementById('pack-ctor'); if(el) el.outerHTML=packRulesHtml(); }
+function pdSet(kind,i,field,val){ // правка поля без перерисовки
+  const row=packDraft[kind][i]; if(!row)return;
+  row[field]=['w','d','h','qty'].includes(field)?(val===''?'':Number(val)):val;
+}
+function pdAddBox(){ packDraft.boxes.push({id:'tb'+Date.now().toString(36),name:'',w:30,d:20,h:20,color:'kraft'}); packDraftMsg=''; rerenderPackCtor(); }
+function pdAddRule(){
+  const last=packDraft.rules[packDraft.rules.length-1];
+  packDraft.rules.push({article:last?last.article:ALL_ARTICLES[0],box:last?last.box:(packDraft.boxes[0]||{}).id,label:'',qty:''});
+  packDraftMsg=''; rerenderPackCtor();
+}
+function pdDel(kind,i){
+  if(kind==='boxes'){
+    const id=packDraft.boxes[i].id, used=packDraft.rules.filter(r=>r.box===id).length;
+    if(used&&!confirm(`Эта коробка используется в ${used} вариантах укладки — они тоже удалятся. Удалить?`))return;
+    packDraft.rules=packDraft.rules.filter(r=>r.box!==id);
+  }
+  packDraft[kind].splice(i,1); packDraftMsg=''; rerenderPackCtor();
+}
+function pdCancel(){ packDraft=makePackDraft(); packDraftMsg=''; rerenderPackCtor(); }
+function pdSave(){
+  const d=packDraft, err=[];
+  if(!d.boxes.length) err.push('нужна хотя бы одна коробка');
+  d.boxes.forEach((b,i)=>{
+    b.name=String(b.name||'').trim();
+    if(!b.name) err.push(`коробка №${i+1}: нет названия`);
+    ['w','d','h'].forEach(k=>{ if(!(Number.isFinite(b[k])&&b[k]>0&&b[k]<=300)) err.push(`коробка «${b.name||i+1}»: размеры должны быть от 1 до 300 см`); });
+  });
+  const seen=new Set();
+  d.rules.forEach((r,i)=>{
+    if(!Number.isInteger(r.qty)||r.qty<=0) err.push(`укладка №${i+1} (${artName(r.article)}): количество — целое число больше 0`);
+    if(!d.boxes.some(b=>b.id===r.box)) err.push(`укладка №${i+1}: не выбрана коробка`);
+    const key=r.article+'|'+r.box+'|'+r.qty;
+    if(seen.has(key)) err.push(`укладка №${i+1}: ${artName(r.article)} по ${r.qty} шт в этой коробке уже есть`);
+    seen.add(key);
+  });
+  if(err.length){ packDraftMsg='⚠ '+[...new Set(err)].join('; '); rerenderPackCtor(); return; }
+  localStorage.setItem(LS_TBOX_TYPES,JSON.stringify(d.boxes.map(b=>({id:b.id,name:b.name,w:b.w,d:b.d,h:b.h,color:b.color}))));
+  loadTransportBoxes();
+  const rules={};
+  d.rules.forEach(r=>{ (rules[r.article]=rules[r.article]||[]).push(r.label.trim()?{box:r.box,qty:r.qty,label:r.label.trim()}:{box:r.box,qty:r.qty}); });
+  Object.values(rules).forEach(list=>list.sort((a,b)=>TRANSPORT_BOXES.findIndex(x=>x.id===a.box)-TRANSPORT_BOXES.findIndex(x=>x.id===b.box)||b.qty-a.qty));
+  savePackRules(rules);
+  packDraft=makePackDraft(); packDraftMsg='✓ сохранено';
+  redraw();
+}
+
+function packRulesHtml(){
+  if(!packDraft) packDraft=makePackDraft();
+  const d=packDraft;
+  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:6px 8px;min-width:0;width:100%';
+  const del='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:14px;padding:4px 0;width:100%';
+  const head='font-size:11px;color:var(--muted);font-family:var(--mono)';
+  const opt=(v,cur,t)=>`<option value="${escHtml(v)}"${v===cur?' selected':''}>${escHtml(t)}</option>`;
+  const boxRows=d.boxes.map((b,i)=>`<div class="pk-ctor-row pk-ctor-box">
+      <input style="${inp}" value="${escHtml(b.name)}" placeholder="название" oninput="pdSet('boxes',${i},'name',this.value)">
+      <input style="${inp}" type="number" min="1" value="${b.w}" title="длина (фасад), см" oninput="pdSet('boxes',${i},'w',this.value)">
+      <input style="${inp}" type="number" min="1" value="${b.d}" title="ширина (глубина), см" oninput="pdSet('boxes',${i},'d',this.value)">
+      <input style="${inp}" type="number" min="1" value="${b.h}" title="высота, см" oninput="pdSet('boxes',${i},'h',this.value)">
+      <select style="${inp}" onchange="pdSet('boxes',${i},'color',this.value)">${Object.entries(BOX_PALETTE).map(([k,p])=>opt(k,b.color,p.name)).join('')}</select>
+      <button style="${del}" title="удалить коробку" onclick="pdDel('boxes',${i})">×</button>
+    </div>`).join('');
+  const ruleRows=d.rules.map((r,i)=>`<div class="pk-ctor-row pk-ctor-rule">
+      <select style="${inp}" onchange="pdSet('rules',${i},'article',this.value)">${ALL_ARTICLES.map(a=>opt(a,r.article,artName(a))).join('')}</select>
+      <select style="${inp}" onchange="pdSet('rules',${i},'box',this.value)">${d.boxes.map(b=>opt(b.id,r.box,b.name||'(без названия)')).join('')}</select>
+      <input style="${inp}" value="${escHtml(r.label)}" placeholder="авто: полная / неполная" oninput="pdSet('rules',${i},'label',this.value)">
+      <input style="${inp}" type="number" min="1" value="${r.qty}" placeholder="шт" oninput="pdSet('rules',${i},'qty',this.value)">
+      <button style="${del}" title="удалить вариант" onclick="pdDel('rules',${i})">×</button>
+    </div>`).join('');
+  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 12px;cursor:pointer';
+  const msgColor=packDraftMsg.startsWith('✓')?'var(--green)':'var(--red)';
+  return `<div id="pack-ctor" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+    <style>
+      .pk-ctor-row{display:grid;gap:6px;margin-top:6px;align-items:center}
+      .pk-ctor-box{grid-template-columns:minmax(120px,2fr) 64px 64px 64px minmax(100px,1fr) 36px}
+      .pk-ctor-rule{grid-template-columns:minmax(120px,2fr) minmax(100px,1.2fr) minmax(120px,2fr) 72px 36px}
+      @media(max-width:640px){.pk-ctor-box{grid-template-columns:1fr 1fr 1fr 36px}.pk-ctor-box>:first-child,.pk-ctor-box>select{grid-column:1/-1}
+        .pk-ctor-rule{grid-template-columns:1fr 1fr 36px}.pk-ctor-rule>input:nth-of-type(1){grid-column:1/3}}
+    </style>
+    <div style="font-size:13px;font-weight:500;margin-bottom:4px">Коробки</div>
+    <div class="pk-ctor-row pk-ctor-box" style="${head}"><span>название</span><span>длина</span><span>ширина</span><span>высота</span><span>цвет</span><span></span></div>
+    ${boxRows}
+    <button style="${btn};margin-top:8px" onclick="pdAddBox()">＋ коробка</button>
+
+    <div style="font-size:13px;font-weight:500;margin:18px 0 4px">Варианты укладки</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Сколько штук товара кладём в коробку. Раскладка идёт только по этим вариантам, произвольного заполнения нет. Самый большой вариант для пары «товар + коробка» считается полной коробкой, остальные неполными. Название можно не писать или написать своё, например «2 слоя».</div>
+    <div class="pk-ctor-row pk-ctor-rule" style="${head}"><span>товар</span><span>коробка</span><span>название укладки</span><span>штук</span><span></span></div>
+    ${ruleRows||`<div style="font-size:12px;color:var(--muted);margin-top:6px">вариантов нет</div>`}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+      <button style="${btn}" onclick="pdAddRule()">＋ вариант укладки</button>
+      <button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4)" onclick="pdSave()">Сохранить</button>
+      <button style="${btn};color:var(--muted)" onclick="pdCancel()">Отменить изменения</button>
+      ${packDraftMsg?`<span style="font-size:12px;color:${msgColor};line-height:1.5">${escHtml(packDraftMsg)}</span>`:''}
+    </div>
+  </div>`;
+}
+
+const PACK_SHEET_CSS=`<style>
+#pack-sheet{background:#fff;color:#1a1d27;border-radius:10px;border:1px solid var(--border);padding:24px;max-width:600px;font-family:"Golos Text","Segoe UI",Arial,sans-serif}
+#pack-sheet .pk-h1{font-size:32px;font-weight:800;line-height:1.2}
+#pack-sheet .pk-sub{font-size:19px;font-weight:500;color:#6b6e80;margin:4px 0 14px}
+.pk-sec{border-top:1px solid #e4e6eb;padding:16px 12px 8px;margin:0 -12px;border-radius:12px;cursor:grab;position:relative;background:#fff;touch-action:pan-y}
+.pk-sec:hover{background:#f7f8fb}
+.pk-sec.dragging{cursor:grabbing;background:#eef2ff;outline:2px dashed #3a5ff0;outline-offset:-2px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:2}
+.pk-sec-head{display:flex;align-items:center;gap:12px}
+.pk-num{width:38px;height:38px;border-radius:50%;background:#4b5563;color:#fff;font-weight:800;font-size:22px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.pk-name{font-size:28px;font-weight:800;line-height:1.15}
+.pk-qty{font-size:22px;color:#6b6e80;font-weight:500;white-space:nowrap}
+.pk-grip{margin-left:auto;color:#b8bcc8;font-size:20px;line-height:1;user-select:none}
+.pk-sec:hover .pk-grip{color:#6b6e80}
+.pk-note{display:block;width:100%;margin:10px 0 2px;border:0;border-left:4px solid #f2b705;border-radius:8px;background:#fff4c2;color:#2b2100;font:500 20px/1.4 "Golos Text","Segoe UI",Arial,sans-serif;padding:9px 14px;cursor:text}
+.pk-note:placeholder-shown{background:transparent;border-left-color:transparent;padding:4px 14px;font-size:16px}
+.pk-note:placeholder-shown:hover,.pk-note:focus{background:#fff9dd;border-left-color:#f2b705}
+.pk-note:focus{outline:none;box-shadow:0 0 0 2px #f2b70566}
+.pk-note::placeholder{color:#a3a7b3}
+.pk-sec-boxes{width:100%;display:block;margin-top:8px;pointer-events:none}
+.pk-warn{color:#d93025;font-weight:600;font-size:19px;margin:4px 0}
+.pk-total{margin:-8px 0 12px}
+.pk-total-sub{font-size:17px;font-weight:500;color:#9ca0ad;line-height:1.35}
+@media(max-width:640px){#pack-sheet{padding:14px}}
+</style>`;
+
+function packTaskHtml(){
+  const task=buildPackTask();
+  const notes=getPackNotes();
+  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  let body;
+  if(!task.items.length){
+    body=`<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">пока нечего паковать — запланированных отправок нет</div>`;
+  }else{
+    const spent=lsGet(LS_PACK_SPENT,null);
+    const alreadySpent=spent&&spent.sig===packSignature(task);
+    // Превью — живые блоки (перетаскиваются, комментарий правится прямо в блоке); PNG рисуется из тех же данных.
+    const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
+        <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(artName(it.article))}</span><span class="pk-qty">${it.total} шт</span><span class="pk-grip">⠿</span></div>
+        <input class="pk-note" type="text" value="${escHtml(notes[it.article]||'')}" placeholder="✎ добавить комментарий" onchange="setPackNote('${it.article}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+        ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
+        ${it.rest?`<div class="pk-warn">⚠ ${it.rest} ${pkPlural(it.rest,'штука не влезает','штуки не влезают','штук не влезают')} ни в одну укладку</div>`:''}
+        ${it.noRules?`<div class="pk-warn">⚠ пока непонятно, в какие коробки это класть — добавь в ⚙ вместимость коробок</div>`:''}
+      </div>`).join('');
+    const tot=packTotalsLine(task);
+    const pageCount=buildPackPages(task).length;
+    body=`${PACK_SHEET_CSS}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px">
+        ${pageCount>1
+          ?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button style="${btn}" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
+          :`<button style="${btn}" onclick="copyPackImage(0,this)">🖼 копировать картинку</button>`}
+        <button style="${btn}" onclick="downloadPackImage()">⬇ скачать PNG${pageCount>1?` (${pageCount} шт)`:''}</button>
+        <button id="pack-copy-txt" style="${btn}" onclick="copyPackText()">📋 копировать текст</button>
+        ${packTestMode?'':alreadySpent
+          ?`<button style="${btn};color:var(--muted)" onclick="undoSpendPackBoxes()" title="вернуть коробки на остаток">коробки списаны ✓ ↩</button>`
+          :`<button style="${btn};color:var(--green)" onclick="spendPackBoxes()">📦 упаковано — списать коробки</button>`}
+      </div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
+      <div id="pack-sheet">
+        <div class="pk-h1" style="${packTestMode?'color:#c47f00':''}">${packTestMode?'ТЕСТ · ':''}Что пакуем</div>
+        <div class="pk-sub">${packSubtitle(task,new Date())}</div>
+        ${tot?`<div class="pk-total"><div class="pk-total-sub">${escHtml(tot)}</div></div>`:''}
+        <div class="pk-secs">${secs}</div>
+      </div>`;
+  }
+  return `<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <span>📦 Упаковка</span>
+      <span style="display:flex;gap:16px;text-transform:none;letter-spacing:0;font-size:11px;font-family:var(--mono)">
+        <span style="color:${packTestMode?'var(--amber)':'var(--accent)'};cursor:pointer" onclick="togglePackTest()">${packTestMode?'✕ выключить тест':'🧪 тест: все варианты'}</span>
+        <span style="color:var(--accent);cursor:pointer" onclick="togglePackRules()">⚙ вместимость коробок</span></span></div>
+    <div class="block" style="padding:0.75rem 1.25rem;margin-top:0${packTestMode?';border-color:var(--amber)':''}">${packTestMode?`<div style="background:var(--amber-bg);color:var(--amber);font-size:12px;font-family:var(--mono);padding:8px 12px;border-radius:6px;margin:4px 0 8px;line-height:1.5">🧪 Тест: здесь показаны все варианты укладки, их сочетания и примеры ошибок. Настоящие отправки и остатки коробок не меняются. Тест остаётся включённым после перезагрузки, пока не нажмёшь «выключить тест».</div>`:''}${body}${packRulesOpen?packRulesHtml():''}</div>`;
+}
+
+function transportBoxesHtml(){
+  const task=buildPackTask();
+  const spent=lsGet(LS_PACK_SPENT,null);
+  const alreadySpent=spent&&spent.sig===packSignature(task);
+  const cards=TRANSPORT_BOXES.map(b=>{
+    const count=calcTboxCount(b.id);
+    const need=alreadySpent?0:(task.boxTotals[b.id]||0);
+    const short=need>count;
+    return `<div class="box-card${short?' danger':''}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px">
+        <div><div class="box-name">${escHtml(b.name)}</div><div class="box-meta" style="margin-top:2px">${b.dims} см</div></div>
+        <canvas class="tbox-icon" data-box="${b.id}"></canvas>
+      </div>
+      <div class="box-count ${short?'red':'green'}" style="cursor:pointer" title="Нажми чтобы изменить" onclick="editTbox('${b.id}','set')">${count} шт</div>
+      <div class="box-meta">${need?`сейчас нужно ${need}${short?` · не хватает ${need-count}`:''}`:'сейчас не нужны'}</div>
+      <div class="box-actions" style="margin-top:8px"><button class="box-btn" onclick="editTbox('${b.id}','add')">+ пришло</button></div>
+    </div>`;
+  }).join('');
+  return `<div class="section-label" style="margin-top:2rem">Транспортные коробки</div><div class="boxes-grid">${cards}</div>`;
+}
 const CLUSTER_GROUPS=[
   {name:'Центр',         clusters:['Москва, МО и Дальние регионы','Ярославль','Тверь','Воронеж','Саратов']},
   {name:'Северо-Запад',  clusters:['Санкт-Петербург и СЗО','Калининград']},
@@ -546,6 +1220,7 @@ async function saveToCloud(){
     record.hiddenArticles=[...getHiddenArticles()];
     record.allArticles=ALL_ARTICLES;
     record.boxTypes=BOX_TYPES; // пользовательские типы коробок
+    record.packRules=getPackRules(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
 
     let body=JSON.stringify(record);
     // Защита от лимита JSONBin (100 КБ на free). Урезаем по нарастающей, пока не влезем:
@@ -619,6 +1294,11 @@ async function loadFromCloud(){
     if(cloudIsNewer){
       if(Array.isArray(rec.allArticles)) rec.allArticles.forEach(a=>{ if(!ALL_ARTICLES.includes(a)) ALL_ARTICLES.push(a); });
       if(Array.isArray(rec.hiddenArticles)) localStorage.setItem(LS_HIDDEN_ARTICLES,JSON.stringify(rec.hiddenArticles));
+      if(rec.packRules) localStorage.setItem(LS_PACK_RULES,JSON.stringify(rec.packRules));
+      if(Array.isArray(rec.transportTypes)&&rec.transportTypes.length){ localStorage.setItem(LS_TBOX_TYPES,JSON.stringify(rec.transportTypes)); loadTransportBoxes(); }
+      if(Array.isArray(rec.packOrder)) localStorage.setItem(LS_PACK_ORDER,JSON.stringify(rec.packOrder));
+      if(rec.packNotes) localStorage.setItem(LS_PACK_NOTES,JSON.stringify(rec.packNotes));
+      if(Array.isArray(rec.transportBoxes)&&rec.transportBoxes.length) localStorage.setItem(LS_TBOX_LOG,JSON.stringify(rec.transportBoxes));
       if(Array.isArray(rec.boxTypes)&&rec.boxTypes.length){ localStorage.setItem(LS_BOX_TYPES,JSON.stringify(rec.boxTypes)); loadBoxTypes(); }
     }else{
       // локальный выбор свежее — но новые артикулы из облака всё равно добавим в список (это не сбрасывает галочки)
@@ -1735,6 +2415,9 @@ function render(data){
   // Adj log inline
   html+=adjLogHtml;
 
+  // Задание упаковщику — сразу под списком отправок
+  html+=packTaskHtml();
+
   // Boxes — after priorities and adj log, before heatmap
   const boxCardsHtml=Object.keys(BOX_META).map(type=>{
     const sales=data.filter(r=>BOX_TYPE[r.article]===type).reduce((s,r)=>s+r.sales,0);
@@ -1764,6 +2447,7 @@ function render(data){
     <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleBoxTypeForm()">＋ тип коробки</span></div>
   <div id="box-type-form" style="display:none"></div>
   <div class="boxes-grid">${boxCardsHtml}</div>`;
+  html+=transportBoxesHtml();
 
   // Heatmap
   html+='<div class="section-label" style="margin-top:2rem">Тепловая карта · дней запаса</div>';
@@ -1850,6 +2534,7 @@ function render(data){
   html+='</div>';
   document.getElementById('dashboard').innerHTML=html;
   renderBoxes();
+  paintPackCanvases();
 }
 
 function resetDashboard(){
