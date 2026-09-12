@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.32 · 13.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.33 · 13.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -512,19 +512,31 @@ function packTestAdjs(){
   }
   const noRules=ALL_ARTICLES.find(a=>!(rules[a]||[]).length);
   if(noRules) add(noRules,30);                               // товар без заданной вместимости
+  if(withRules) out.push({article:withRules,cluster:LEFTOVER_CLUSTER,qty:14,test:true}); // остатки к коробкам
+  const onlyLoose=ALL_ARTICLES.find(a=>a!==withRules&&a!==noRules&&!(rules[a]||[]).length);
+  if(onlyLoose) out.push({article:onlyLoose,cluster:LEFTOVER_CLUSTER,qty:25,test:true}); // только остатки
   return out;
 }
 function getPackAdjs(){ return packTestMode?packTestAdjs():getAdjs(); }
 
 // Собирает задание: по товару в целом, но каждую отправку (кластер) раскладываем отдельно —
 // у каждой поставки свои физические коробки.
+// Псевдо-кластер «Остатки»: коробочки, которые пакуем без большой коробки (на полку).
+// На расчёты Озона не влияет — applyAdjustments ищет строки файла по кластеру, а такого кластера в файле нет.
+const LEFTOVER_CLUSTER='Остатки';
+function addLeftover(){
+  const art=document.getElementById('lo-art').value, qty=parseInt(document.getElementById('lo-qty').value);
+  if(!art||!qty||qty<=0){ alert('Укажи товар и количество'); return; }
+  addAdjustmentInline(art,LEFTOVER_CLUSTER,qty);
+}
 function buildPackTask(){
   const rules=getPackRules();
   const byArt={};
   getPackAdjs().forEach(a=>{
     if(a.sent===true)return;
-    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},rest:0,noRules:false});
+    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},rest:0,loose:0,noRules:false});
     t.total+=a.qty;
+    if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; return; }
     const opts=(rules[a.article]||[]).filter(o=>TBOX[o.box]); // варианты с удалёнными коробками не используем
     if(!opts.length){ t.noRules=true; return; }
     const {combo,rest}=decomposeQty(a.qty,opts,rules,a.article);
@@ -548,6 +560,7 @@ function buildPackTask(){
     it.groupList=Object.values(it.groups).sort((a,b)=>
       TRANSPORT_BOXES.findIndex(x=>x.id===a.box)-TRANSPORT_BOXES.findIndex(x=>x.id===b.box)||b.qty-a.qty);
     it.groupList.forEach(g=>{ boxTotals[g.box]=(boxTotals[g.box]||0)+g.count; });
+    if(it.loose) it.groupList.push({loose:true,qty:it.loose}); // остатки — последней ячейкой, в итог коробок не входят
   });
   const sortedTotals={};
   TRANSPORT_BOXES.forEach(b=>{ if(boxTotals[b.id]) sortedTotals[b.id]=boxTotals[b.id]; });
@@ -579,6 +592,7 @@ function packTaskText(task){
     lines.push(`${n+1}) ${artName(it.article)} — ${it.total} шт`);
     if(notes[it.article]) lines.push(`✎ ${notes[it.article]}`);
     it.groupList.forEach(g=>{
+      if(g.loose){ lines.push(`— остатки: ${g.qty} шт без большой коробки`); return; }
       const b=TBOX[g.box];
       lines.push(`— ${b.name} коробка, ${g.qty} шт (${g.label}) × ${g.count}`);
     });
@@ -631,12 +645,29 @@ const pkCols=()=>Math.floor((PK_IMG.W-2*PK_IMG.P)/PK_IMG.CELL);
 const pkRowsH=it=>it.groupList.length?Math.ceil(it.groupList.length/pkCols())*PK_IMG.ROW:0;
 
 // Ряд коробок одного товара: иконка, «× N», коробка и штуки, «полная»/«2 слоя».
+// Остатки: пунктирный кружок с числом коробочек, подпись «остатки / без коробки».
+function drawLooseCell(ctx,mid,top,qty){
+  const {F}=PK_IMG, r=50, cy=top+66;
+  ctx.save();
+  ctx.fillStyle='#f1f3f7'; ctx.beginPath(); ctx.arc(mid,cy,r,0,Math.PI*2); ctx.fill();
+  ctx.setLineDash([7,5]); ctx.lineWidth=3; ctx.strokeStyle='#8a8fa8'; ctx.stroke();
+  ctx.restore();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  let fs=40; do{ ctx.font=`800 ${fs}px ${F}`; fs--; }while(fs>16&&ctx.measureText(String(qty)).width>r*1.6);
+  ctx.fillStyle='#1a1d27'; ctx.fillText(String(qty),mid,cy+2);
+  ctx.textBaseline='alphabetic';
+  ctx.font=`600 20px ${F}`; ctx.fillText('Остатки',mid,top+188);
+  ctx.font=`500 19px ${F}`; ctx.fillStyle='#6b6e80'; ctx.fillText('без коробки',mid,top+214);
+  ctx.textAlign='left';
+}
 function drawItemGroups(ctx,it,x0,y0,onlyRow){ // onlyRow — нарисовать один ряд в y0
   const {CELL,ROW,S,F}=PK_IMG, cols=pkCols();
   it.groupList.forEach((g,gi)=>{
     const row=Math.floor(gi/cols);
     if(onlyRow!=null&&row!==onlyRow)return;
-    const cx=x0+(gi%cols)*CELL, top=y0+(onlyRow!=null?0:row*ROW), b=TBOX[g.box], mid=cx+(CELL-20)/2;
+    const cx=x0+(gi%cols)*CELL, top=y0+(onlyRow!=null?0:row*ROW), mid=cx+(CELL-20)/2;
+    if(g.loose){ drawLooseCell(ctx,mid,top,g.qty); return; }
+    const b=TBOX[g.box];
     const sc=Math.min(S,(CELL-24)/(b.w+b.d*0.45),108/(b.h+b.d*0.45)); // крупные коробки уменьшаем под ячейку
     drawBoxIcon(ctx,cx+(CELL-20-(b.w*sc+b.d*sc*0.45))/2,top+118,b,sc,g.fill,null,String(g.qty));
     ctx.textAlign='center';
@@ -1026,9 +1057,16 @@ function packTaskHtml(){
   const task=buildPackTask();
   const notes=getPackNotes();
   const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px';
+  const leftoverForm=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px;font-family:var(--mono);font-size:12px;color:var(--muted)">
+      <span title="коробочки без большой коробки — на полку; на расчёты Озона не влияет">＋ в остатки:</span>
+      <select id="lo-art" style="${inp}">${ALL_ARTICLES.map(a=>`<option value="${escHtml(a)}">${escHtml(artName(a))}</option>`).join('')}</select>
+      <input id="lo-qty" type="number" min="1" placeholder="шт" style="${inp};width:70px" onkeydown="if(event.key==='Enter')addLeftover()">
+      <button class="box-btn" onclick="addLeftover()">добавить</button>
+    </div>`;
   let body;
   if(!task.items.length){
-    body=`<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">пока нечего паковать — запланированных отправок нет</div>`;
+    body=`${leftoverForm}<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">пока нечего паковать — запланированных отправок нет</div>`;
   }else{
     const spent=lsGet(LS_PACK_SPENT,null);
     const alreadySpent=spent&&spent.sig===packSignature(task);
@@ -1042,7 +1080,7 @@ function packTaskHtml(){
       </div>`).join('');
     const tot=packTotalsLine(task);
     const pageCount=buildPackPages(task).length;
-    body=`${PACK_SHEET_CSS}
+    body=`${PACK_SHEET_CSS}${leftoverForm}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px">
         ${pageCount>1
           ?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button style="${btn}" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
