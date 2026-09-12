@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.33 · 13.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.36 · 13.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -524,11 +524,8 @@ function getPackAdjs(){ return packTestMode?packTestAdjs():getAdjs(); }
 // Псевдо-кластер «Остатки»: коробочки, которые пакуем без большой коробки (на полку).
 // На расчёты Озона не влияет — applyAdjustments ищет строки файла по кластеру, а такого кластера в файле нет.
 const LEFTOVER_CLUSTER='Остатки';
-function addLeftover(){
-  const art=document.getElementById('lo-art').value, qty=parseInt(document.getElementById('lo-qty').value);
-  if(!art||!qty||qty<=0){ alert('Укажи товар и количество'); return; }
-  addAdjustmentInline(art,LEFTOVER_CLUSTER,qty);
-}
+// Сколько остатков по товару уже запланировано (неотправленные).
+function plannedLeftover(art){ return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&a.sent!==true).reduce((s,a)=>s+a.qty,0); }
 function buildPackTask(){
   const rules=getPackRules();
   const byArt={};
@@ -647,15 +644,17 @@ const pkRowsH=it=>it.groupList.length?Math.ceil(it.groupList.length/pkCols())*PK
 // Ряд коробок одного товара: иконка, «× N», коробка и штуки, «полная»/«2 слоя».
 // Остатки: пунктирный кружок с числом коробочек, подпись «остатки / без коробки».
 function drawLooseCell(ctx,mid,top,qty){
-  const {F}=PK_IMG, r=50, cy=top+66;
+  const {F}=PK_IMG, r=60, cy=top+76;
   ctx.save();
   ctx.fillStyle='#f1f3f7'; ctx.beginPath(); ctx.arc(mid,cy,r,0,Math.PI*2); ctx.fill();
   ctx.setLineDash([7,5]); ctx.lineWidth=3; ctx.strokeStyle='#8a8fa8'; ctx.stroke();
   ctx.restore();
   ctx.textAlign='center'; ctx.textBaseline='middle';
-  let fs=40; do{ ctx.font=`800 ${fs}px ${F}`; fs--; }while(fs>16&&ctx.measureText(String(qty)).width>r*1.6);
-  ctx.fillStyle='#1a1d27'; ctx.fillText(String(qty),mid,cy+2);
+  let fs=40; do{ ctx.font=`800 ${fs}px ${F}`; fs--; }while(fs>16&&ctx.measureText(String(qty)).width>r*1.5);
+  ctx.fillStyle='#1a1d27'; ctx.fillText(String(qty),mid,cy-9);
+  ctx.font=`600 20px ${F}`; ctx.fillStyle='#6b6e80'; ctx.fillText('шт',mid,cy+25); // «шт» внутри круга, под числом
   ctx.textBaseline='alphabetic';
+  ctx.fillStyle='#1a1d27';
   ctx.font=`600 20px ${F}`; ctx.fillText('Остатки',mid,top+188);
   ctx.font=`500 19px ${F}`; ctx.fillStyle='#6b6e80'; ctx.fillText('без коробки',mid,top+214);
   ctx.textAlign='left';
@@ -789,6 +788,11 @@ function packSubtitle(task,d){
 }
 function packTotalsLine(task){ return Object.entries(task.boxTotals).map(([b,c])=>`${TBOX[b].name} × ${c}`).join('   ·   '); }
 
+// Комментарий — contenteditable: высота сама по тексту, без замеров. Сохраняем при уходе из поля.
+function pkNoteSave(el){ const t=el.innerText.replace(/\s+/g,' ').trim(); if(!t) el.innerHTML=''; if((getPackNotes()[el.dataset.art]||'')!==t) setPackNote(el.dataset.art,t); }
+let pkNoteTimer=null;
+function pkNoteInput(el){ clearTimeout(pkNoteTimer); pkNoteTimer=setTimeout(()=>pkNoteSave(el),600); } // сохраняем и во время набора
+function pkNotePaste(e){ e.preventDefault(); document.execCommand('insertText',false,(e.clipboardData||window.clipboardData).getData('text').replace(/\s+/g,' ')); }
 function paintPackCanvases(){
   const task=buildPackTask();
   // ряды коробок в блоках превью
@@ -816,7 +820,7 @@ if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ try{ pa
 let pkDrag=null;
 function initPackDrag(sheet){ // на каждый новый лист — только pointerdown; move/up слушаются глобально один раз
   sheet.addEventListener('pointerdown',e=>{
-    if(e.button!==0||e.target.closest('input,button,textarea'))return;
+    if(e.button!==0||e.target.closest('input,button,textarea,[contenteditable]'))return;
     const sec=e.target.closest('.pk-sec'); if(!sec)return;
     pkDrag={sheet,sec,startY:e.clientY,active:false,pid:e.pointerId};
   });
@@ -1041,11 +1045,12 @@ const PACK_SHEET_CSS=`<style>
 .pk-qty{font-size:22px;color:#6b6e80;font-weight:500;white-space:nowrap}
 .pk-grip{margin-left:auto;color:#b8bcc8;font-size:20px;line-height:1;user-select:none}
 .pk-sec:hover .pk-grip{color:#6b6e80}
-.pk-note{display:block;width:100%;margin:10px 0 2px;border:0;border-left:4px solid #f2b705;border-radius:8px;background:#fff4c2;color:#2b2100;font:500 20px/1.4 "Golos Text","Segoe UI",Arial,sans-serif;padding:9px 14px;cursor:text}
-.pk-note:placeholder-shown{background:transparent;border-left-color:transparent;padding:4px 14px;font-size:16px}
-.pk-note:placeholder-shown:hover,.pk-note:focus{background:#fff9dd;border-left-color:#f2b705}
+.pk-note{display:block;width:100%;min-height:1em;word-break:break-word;margin:10px 0 2px;border:0;border-left:4px solid #f2b705;border-radius:8px;background:#fff4c2;color:#2b2100;font:500 20px/1.4 "Golos Text","Segoe UI",Arial,sans-serif;padding:9px 14px;cursor:text}
+.pk-note:empty{background:transparent;border-left-color:transparent;padding:4px 14px;font-size:16px}
+.pk-note:empty:hover,.pk-note:focus{background:#fff9dd;border-left-color:#f2b705}
 .pk-note:focus{outline:none;box-shadow:0 0 0 2px #f2b70566}
-.pk-note::placeholder{color:#a3a7b3}
+.pk-note:empty::before{content:'✎ добавить комментарий';color:#a3a7b3}
+.pk-note:focus:empty::before{content:''}
 .pk-sec-boxes{width:100%;display:block;margin-top:8px;pointer-events:none}
 .pk-warn{color:#d93025;font-weight:600;font-size:19px;margin:4px 0}
 .pk-total{margin:-8px 0 12px}
@@ -1057,30 +1062,23 @@ function packTaskHtml(){
   const task=buildPackTask();
   const notes=getPackNotes();
   const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
-  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px';
-  const leftoverForm=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px;font-family:var(--mono);font-size:12px;color:var(--muted)">
-      <span title="коробочки без большой коробки — на полку; на расчёты Озона не влияет">＋ в остатки:</span>
-      <select id="lo-art" style="${inp}">${ALL_ARTICLES.map(a=>`<option value="${escHtml(a)}">${escHtml(artName(a))}</option>`).join('')}</select>
-      <input id="lo-qty" type="number" min="1" placeholder="шт" style="${inp};width:70px" onkeydown="if(event.key==='Enter')addLeftover()">
-      <button class="box-btn" onclick="addLeftover()">добавить</button>
-    </div>`;
   let body;
   if(!task.items.length){
-    body=`${leftoverForm}<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">пока нечего паковать — запланированных отправок нет</div>`;
+    body=`<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">пока нечего паковать — запланированных отправок нет</div>`;
   }else{
     const spent=lsGet(LS_PACK_SPENT,null);
     const alreadySpent=spent&&spent.sig===packSignature(task);
     // Превью — живые блоки (перетаскиваются, комментарий правится прямо в блоке); PNG рисуется из тех же данных.
     const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
         <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(artName(it.article))}</span><span class="pk-qty">${it.total} шт</span><span class="pk-grip">⠿</span></div>
-        <input class="pk-note" type="text" value="${escHtml(notes[it.article]||'')}" placeholder="✎ добавить комментарий" onchange="setPackNote('${it.article}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+        <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
         ${it.rest?`<div class="pk-warn">⚠ ${it.rest} ${pkPlural(it.rest,'штука не влезает','штуки не влезают','штук не влезают')} ни в одну укладку</div>`:''}
         ${it.noRules?`<div class="pk-warn">⚠ пока непонятно, в какие коробки это класть — добавь в ⚙ вместимость коробок</div>`:''}
       </div>`).join('');
     const tot=packTotalsLine(task);
     const pageCount=buildPackPages(task).length;
-    body=`${PACK_SHEET_CSS}${leftoverForm}
+    body=`${PACK_SHEET_CSS}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px">
         ${pageCount>1
           ?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button style="${btn}" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
@@ -1662,7 +1660,7 @@ function showInlineSend(article,cluster){
   const tr=document.createElement('tr');tr.id=safeId;
   tr.innerHTML=`<td colspan="9" style="padding:6px 16px;background:rgba(91,127,255,0.05)">
     <div style="display:flex;gap:8px;align-items:center">
-      <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">отправил:</span>
+      <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">${cluster===LEFTOVER_CLUSTER?'в остатки:':'отправил:'}</span>
       <input type="number" id="qty-${safeId}" placeholder="шт" min="1" style="width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 8px">
       <button onclick="confirmInlineSend('${article}','${cluster}','qty-${safeId}')" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:4px 12px;cursor:pointer">сохранить</button>
       <button onclick="document.getElementById('${safeId}').remove()" style="font-family:var(--mono);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">отмена</button>
@@ -2412,6 +2410,26 @@ function render(data){
   });
 
   if (!hasAny) html += `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Дефицита нет</td></tr>`;
+  // Группа «Остатки» — всегда видна, по строке на каждый товар в расчёте. Кнопка добавляет коробочки «на полку».
+  FOCUS.forEach((art,idx)=>{
+    const planned=plannedLeftover(art);
+    const groupCell = idx===0
+      ? `<td rowspan="${FOCUS.length}" style="font-family:var(--mono);font-size:11px;color:var(--muted);vertical-align:top;padding:12px 16px;white-space:nowrap;border-right:1px solid var(--border);border-top:2px solid var(--border);min-width:110px">
+          <div style="margin-bottom:6px">Остатки</div>
+          <div style="font-size:11px;line-height:1.4">без большой<br>коробки</div>
+        </td>` : '';
+    html+=`<tr data-adj="${art}|${LEFTOVER_CLUSTER}">
+      ${groupCell}
+      <td class="item-name"${idx===0?' style="border-top:2px solid var(--border)"':''}>${artName(art)}</td>
+      <td style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">на полку</td>
+      <td class="mono" style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">—</td>
+      <td class="mono"${idx===0?' style="border-top:2px solid var(--border)"':''}>${planned?`<span style="color:var(--green)">${planned} шт</span>`:'<span style="color:var(--muted)">—</span>'}</td>
+      <td class="mono" style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">—</td>
+      <td class="mono" style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">—</td>
+      <td${idx===0?' style="border-top:2px solid var(--border)"':''}></td>
+      <td${idx===0?' style="border-top:2px solid var(--border)"':''}><button onclick="showInlineSend('${art}','${LEFTOVER_CLUSTER}')" style="font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer">+ остатки</button></td>
+    </tr>`;
+  });
   html += '</tbody></table></div>';
 
   // Мобильный список приоритетов (А+Б)
@@ -2448,6 +2466,26 @@ function render(data){
       });
     });
   }
+  // Остатки — всегда видны и на телефоне
+  FOCUS.forEach(art=>{
+    const planned=plannedLeftover(art), fid=`${art.replace(/\W/g,'_')}_ostatki`;
+    html+=`<div class="mpl-item" data-adj="${art}|${LEFTOVER_CLUSTER}">
+      <div class="mpl-dot" style="background:var(--muted)"></div>
+      <div class="mpl-main">
+        <div class="mpl-top">
+          <span class="mpl-name">${artName(art)} · Остатки</span>
+          <span class="mpl-qty" style="color:${planned?'var(--green)':'var(--muted)'}">${planned?planned+' шт':'—'}</span>
+        </div>
+        <div class="mpl-sub"><span class="mpl-cluster">без большой коробки · на полку</span></div>
+        <div id="mpl-form-${fid}" data-article="${art}" data-cluster="${LEFTOVER_CLUSTER}" style="display:none;margin-top:8px;gap:6px;align-items:center">
+          <input type="number" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:5px 8px">
+          <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
+          <button onclick="this.parentElement.style.display='none'" style="font-family:var(--mono);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
+        </div>
+      </div>
+      <button class="mpl-btn" onclick="toggleMplForm('${fid}')">+</button>
+    </div>`;
+  });
   html+='</div>';
 
   // Adj log inline
