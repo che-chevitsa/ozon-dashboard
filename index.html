@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.38 · 14.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.39 · 14.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -471,26 +471,6 @@ function packOptionLabel(rules,art,opt){
   return (opt.label||'').trim()||(packOptionFull(rules,art,opt)?'полная':'неполная');
 }
 
-// Раскладка количества одной отправки по коробкам: максимум уложенного, затем минимум коробок,
-// затем минимум неполных. Остаток (если число не раскладывается) возвращается отдельно.
-function decomposeQty(qty,opts,rules,art){
-  const best=new Array(qty+1).fill(null);
-  best[0]={boxes:0,partial:0,combo:{}};
-  for(let q=1;q<=qty;q++){
-    opts.forEach((o,i)=>{
-      if(o.qty>q||!best[q-o.qty])return;
-      const prev=best[q-o.qty];
-      const cand={boxes:prev.boxes+1,partial:prev.partial+(packOptionFull(rules,art,o)?0:1)};
-      const cur=best[q];
-      if(!cur||cand.boxes<cur.boxes||(cand.boxes===cur.boxes&&cand.partial<cur.partial)){
-        cand.combo={...prev.combo,[i]:(prev.combo[i]||0)+1};
-        best[q]=cand;
-      }
-    });
-  }
-  let packed=qty; while(packed>0&&!best[packed])packed--;
-  return {combo:best[packed].combo,rest:qty-packed};
-}
 
 // Тестовый режим: задание строится из сгенерированных отправок (по одной на каждый вариант укладки
 // + комбинации и примеры ошибок). Реальные отправки, облако и списание коробок не затрагиваются.
@@ -503,11 +483,10 @@ function packTestAdjs(){
   ALL_ARTICLES.forEach(art=>{
     const opts=(rules[art]||[]).filter(o=>TBOX[o.box]);
     opts.forEach(o=>add(art,o.qty));                        // каждый вариант укладки отдельной отправкой
-    if(opts.length>1) add(art,opts[0].qty+opts[opts.length-1].qty); // комбинация в одной отправке
   });
   const withRules=ALL_ARTICLES.find(a=>(rules[a]||[]).some(o=>TBOX[o.box]));
-  if(withRules){ // количество, которое не раскладывается ни одним способом
-    let q=1; while(q<200&&decomposeQty(q,rules[withRules].filter(o=>TBOX[o.box]),rules,withRules).rest===0) q++;
+  if(withRules){ // количество, которого нет во вместимости, — остаётся нерасфасованным
+    const qs=rules[withRules].map(o=>o.qty); let q=Math.max(...qs)+13; while(qs.includes(q)) q++;
     add(withRules,q);
   }
   const noRules=ALL_ARTICLES.find(a=>!(rules[a]||[]).length);
@@ -536,20 +515,17 @@ function buildPackTask(){
   const byArt={};
   getPackAdjs().forEach(a=>{
     if(a.sent===true)return;
-    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},rest:0,loose:0,noRules:false});
+    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,loose:0});
     t.total+=a.qty;
     if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; return; }
-    const opts=(rules[a.article]||[]).filter(o=>TBOX[o.box]); // варианты с удалёнными коробками не используем
-    if(!opts.length){ t.noRules=true; return; }
-    const {combo,rest}=decomposeQty(a.qty,opts,rules,a.article);
-    t.rest+=rest;
-    Object.entries(combo).forEach(([i,n])=>{
-      const o=opts[i], key=o.box+'|'+o.qty;
-      const full=packOptionFull(rules,a.article,o);
-      const g=t.groups[key]||(t.groups[key]={box:o.box,qty:o.qty,label:packOptionLabel(rules,a.article,o),full,
-        fill:full?1:o.qty/Math.max(...rules[a.article].filter(x=>x.box===o.box).map(x=>x.qty)),count:0});
-      g.count+=n;
-    });
+    // Отправка фасуется, только если её количество ровно совпадает с одной строкой вместимости
+    // (одна коробка). Иначе — не расфасована: «пока непонятно, в какую коробку». Удалённые коробки не используем.
+    const o=(rules[a.article]||[]).find(x=>TBOX[x.box]&&x.qty===a.qty);
+    if(!o){ t.unmatched+=a.qty; return; }
+    const key=o.box+'|'+o.qty, full=packOptionFull(rules,a.article,o);
+    const g=t.groups[key]||(t.groups[key]={box:o.box,qty:o.qty,label:packOptionLabel(rules,a.article,o),full,
+      fill:full?1:o.qty/Math.max(...rules[a.article].filter(x=>x.box===o.box).map(x=>x.qty)),count:0});
+    g.count+=1;
   });
   const order=getPackOrder();
   const items=Object.values(byArt).sort((x,y)=>{
@@ -598,8 +574,7 @@ function packTaskText(task){
       const b=TBOX[g.box];
       lines.push(`— ${b.name} коробка, ${g.qty} шт (${g.label}) × ${g.count}`);
     });
-    if(it.rest) lines.push(`⚠ ${it.rest} ${pkPlural(it.rest,'штука не влезает','штуки не влезают','штук не влезают')} ни в одну укладку`);
-    if(it.noRules) lines.push(`⚠ пока непонятно, в какие коробки это класть`);
+    if(it.unmatched) lines.push(`⚠ ${it.unmatched} шт — пока непонятно, в какую коробку`);
     lines.push('');
   });
   return lines.join('\n').trim();
@@ -725,8 +700,7 @@ function buildPackPages(task){
   const rowUnit=(it,r)=>({h:ROW,draw:(ctx,y)=>drawItemGroups(ctx,it,P,y,r)});
   const warnUnit=it=>{
     const w=[];
-    if(it.rest) w.push(`⚠ ${it.rest} ${pkPlural(it.rest,'штука не влезает','штуки не влезают','штук не влезают')} ни в одну укладку`);
-    if(it.noRules) w.push('⚠ пока непонятно, в какие коробки это класть');
+    if(it.unmatched) w.push(`⚠ ${it.unmatched} шт — пока непонятно, в какую коробку`);
     return {h:w.length*32,draw:(ctx,y)=>w.forEach((s,i)=>txt(ctx,s,P,y+22+i*32,`600 19px ${F}`,'#d93025'))};
   };
   const join=(...us)=>({h:us.reduce((s,u)=>s+u.h,0),draw:(ctx,y)=>{ let yy=y; us.forEach(u=>{ u.draw(ctx,yy); yy+=u.h; }); }});
@@ -1078,8 +1052,7 @@ function packTaskHtml(){
         <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(artName(it.article))}</span><span class="pk-qty">${it.total} шт</span><span class="pk-grip">⠿</span></div>
         <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
-        ${it.rest?`<div class="pk-warn">⚠ ${it.rest} ${pkPlural(it.rest,'штука не влезает','штуки не влезают','штук не влезают')} ни в одну укладку</div>`:''}
-        ${it.noRules?`<div class="pk-warn">⚠ пока непонятно, в какие коробки это класть — добавь в ⚙ вместимость коробок</div>`:''}
+        ${it.unmatched?`<div class="pk-warn">⚠ ${it.unmatched} шт — пока непонятно, в какую коробку <span style="font-weight:400;color:#8a8fa8">(такого количества нет в ⚙ вместимости коробок)</span></div>`:''}
       </div>`).join('');
     const tot=packTotalsLine(task);
     const pageCount=buildPackPages(task).length;
