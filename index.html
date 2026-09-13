@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.36 · 13.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.37 · 14.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -2411,10 +2411,11 @@ function render(data){
 
   if (!hasAny) html += `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Дефицита нет</td></tr>`;
   // Группа «Остатки» — всегда видна, по строке на каждый товар в расчёте. Кнопка добавляет коробочки «на полку».
-  FOCUS.forEach((art,idx)=>{
+  // Остатки — всегда все товары, независимо от галочек «Товары в расчёте».
+  ALL_ARTICLES.forEach((art,idx)=>{
     const planned=plannedLeftover(art);
     const groupCell = idx===0
-      ? `<td rowspan="${FOCUS.length}" style="font-family:var(--mono);font-size:11px;color:var(--muted);vertical-align:top;padding:12px 16px;white-space:nowrap;border-right:1px solid var(--border);border-top:2px solid var(--border);min-width:110px">
+      ? `<td rowspan="${ALL_ARTICLES.length}" style="font-family:var(--mono);font-size:11px;color:var(--muted);vertical-align:top;padding:12px 16px;white-space:nowrap;border-right:1px solid var(--border);border-top:2px solid var(--border);min-width:110px">
           <div style="margin-bottom:6px">Остатки</div>
           <div style="font-size:11px;line-height:1.4">без большой<br>коробки</div>
         </td>` : '';
@@ -2467,7 +2468,7 @@ function render(data){
     });
   }
   // Остатки — всегда видны и на телефоне
-  FOCUS.forEach(art=>{
+  ALL_ARTICLES.forEach(art=>{
     const planned=plannedLeftover(art), fid=`${art.replace(/\W/g,'_')}_ostatki`;
     html+=`<div class="mpl-item" data-adj="${art}|${LEFTOVER_CLUSTER}">
       <div class="mpl-dot" style="background:var(--muted)"></div>
