@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.39 · 14.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.40 · 14.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -515,13 +515,13 @@ function buildPackTask(){
   const byArt={};
   getPackAdjs().forEach(a=>{
     if(a.sent===true)return;
-    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,loose:0});
+    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,unknown:{},loose:0});
     t.total+=a.qty;
     if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; return; }
     // Отправка фасуется, только если её количество ровно совпадает с одной строкой вместимости
     // (одна коробка). Иначе — не расфасована: «пока непонятно, в какую коробку». Удалённые коробки не используем.
     const o=(rules[a.article]||[]).find(x=>TBOX[x.box]&&x.qty===a.qty);
-    if(!o){ t.unmatched+=a.qty; return; }
+    if(!o){ t.unmatched+=a.qty; t.unknown[a.qty]=(t.unknown[a.qty]||0)+1; return; }
     const key=o.box+'|'+o.qty, full=packOptionFull(rules,a.article,o);
     const g=t.groups[key]||(t.groups[key]={box:o.box,qty:o.qty,label:packOptionLabel(rules,a.article,o),full,
       fill:full?1:o.qty/Math.max(...rules[a.article].filter(x=>x.box===o.box).map(x=>x.qty)),count:0});
@@ -538,7 +538,9 @@ function buildPackTask(){
     it.groupList=Object.values(it.groups).sort((a,b)=>
       TRANSPORT_BOXES.findIndex(x=>x.id===a.box)-TRANSPORT_BOXES.findIndex(x=>x.id===b.box)||b.qty-a.qty);
     it.groupList.forEach(g=>{ boxTotals[g.box]=(boxTotals[g.box]||0)+g.count; });
-    if(it.loose) it.groupList.push({loose:true,qty:it.loose}); // остатки — последней ячейкой, в итог коробок не входят
+    // непонятные количества — пунктирными квадратами после коробок; остатки — последней ячейкой. В итог коробок не входят.
+    Object.entries(it.unknown).sort((a,b)=>b[0]-a[0]).forEach(([q,c])=>it.groupList.push({unknown:true,qty:+q,count:c}));
+    if(it.loose) it.groupList.push({loose:true,qty:it.loose});
   });
   const sortedTotals={};
   TRANSPORT_BOXES.forEach(b=>{ if(boxTotals[b.id]) sortedTotals[b.id]=boxTotals[b.id]; });
@@ -571,10 +573,10 @@ function packTaskText(task){
     if(notes[it.article]) lines.push(`✎ ${notes[it.article]}`);
     it.groupList.forEach(g=>{
       if(g.loose){ lines.push(`— остатки: ${g.qty} шт без большой коробки`); return; }
+      if(g.unknown){ lines.push(`— ⚠ ${g.qty} шт${g.count>1?` × ${g.count}`:''} — пока непонятно, в какую коробку`); return; }
       const b=TBOX[g.box];
       lines.push(`— ${b.name} коробка, ${g.qty} шт (${g.label}) × ${g.count}`);
     });
-    if(it.unmatched) lines.push(`⚠ ${it.unmatched} шт — пока непонятно, в какую коробку`);
     lines.push('');
   });
   return lines.join('\n').trim();
@@ -639,6 +641,23 @@ function drawLooseCell(ctx,mid,top,qty){
   ctx.font=`500 19px ${F}`; ctx.fillStyle='#6b6e80'; ctx.fillText('без коробки',mid,top+214);
   ctx.textAlign='left';
 }
+// Количество, которого нет во вместимости: пунктирный квадрат с числом, «× N» и пометкой «пока непонятно».
+function drawUnknownCell(ctx,mid,top,qty,count){
+  const {F}=PK_IMG, s=112, x=mid-s/2, y=top+6, cy=y+s/2;
+  ctx.save();
+  ctx.fillStyle='#fdf1f0'; ctx.beginPath(); ctx.roundRect(x,y,s,s,6); ctx.fill();
+  ctx.setLineDash([7,5]); ctx.lineWidth=3; ctx.strokeStyle='#d93025'; ctx.stroke();
+  ctx.restore();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  let fs=40; do{ ctx.font=`800 ${fs}px ${F}`; fs--; }while(fs>16&&ctx.measureText(String(qty)).width>s-18);
+  ctx.fillStyle='#1a1d27'; ctx.fillText(String(qty),mid,cy-9);
+  ctx.font=`600 20px ${F}`; ctx.fillStyle='#6b6e80'; ctx.fillText('шт',mid,cy+25);
+  ctx.textBaseline='alphabetic';
+  if(count>1){ ctx.font=`800 36px ${F}`; ctx.fillStyle='#1a1d27'; ctx.fillText(`× ${count}`,mid,top+160); }
+  ctx.font=`600 20px ${F}`; ctx.fillStyle='#d93025'; ctx.fillText('Пока непонятно',mid,top+188);
+  ctx.font=`500 19px ${F}`; ctx.fillText('в какую коробку',mid,top+214);
+  ctx.textAlign='left';
+}
 function drawItemGroups(ctx,it,x0,y0,onlyRow){ // onlyRow — нарисовать один ряд в y0
   const {CELL,ROW,S,F}=PK_IMG, cols=pkCols();
   it.groupList.forEach((g,gi)=>{
@@ -646,6 +665,7 @@ function drawItemGroups(ctx,it,x0,y0,onlyRow){ // onlyRow — нарисоват
     if(onlyRow!=null&&row!==onlyRow)return;
     const cx=x0+(gi%cols)*CELL, top=y0+(onlyRow!=null?0:row*ROW), mid=cx+(CELL-20)/2;
     if(g.loose){ drawLooseCell(ctx,mid,top,g.qty); return; }
+    if(g.unknown){ drawUnknownCell(ctx,mid,top,g.qty,g.count); return; }
     const b=TBOX[g.box];
     const sc=Math.min(S,(CELL-24)/(b.w+b.d*0.45),108/(b.h+b.d*0.45)); // крупные коробки уменьшаем под ячейку
     drawBoxIcon(ctx,cx+(CELL-20-(b.w*sc+b.d*sc*0.45))/2,top+118,b,sc,g.fill,null,String(g.qty));
@@ -700,7 +720,6 @@ function buildPackPages(task){
   const rowUnit=(it,r)=>({h:ROW,draw:(ctx,y)=>drawItemGroups(ctx,it,P,y,r)});
   const warnUnit=it=>{
     const w=[];
-    if(it.unmatched) w.push(`⚠ ${it.unmatched} шт — пока непонятно, в какую коробку`);
     return {h:w.length*32,draw:(ctx,y)=>w.forEach((s,i)=>txt(ctx,s,P,y+22+i*32,`600 19px ${F}`,'#d93025'))};
   };
   const join=(...us)=>({h:us.reduce((s,u)=>s+u.h,0),draw:(ctx,y)=>{ let yy=y; us.forEach(u=>{ u.draw(ctx,yy); yy+=u.h; }); }});
@@ -1052,7 +1071,7 @@ function packTaskHtml(){
         <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(artName(it.article))}</span><span class="pk-qty">${it.total} шт</span><span class="pk-grip">⠿</span></div>
         <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
-        ${it.unmatched?`<div class="pk-warn">⚠ ${it.unmatched} шт — пока непонятно, в какую коробку <span style="font-weight:400;color:#8a8fa8">(такого количества нет в ⚙ вместимости коробок)</span></div>`:''}
+        ${it.unmatched?`<div style="font-size:14px;color:#8a8fa8;margin:2px 0 4px">такого количества нет в ⚙ вместимости коробок — на картинке оно в пунктирном квадрате</div>`:''}
       </div>`).join('');
     const tot=packTotalsLine(task);
     const pageCount=buildPackPages(task).length;
