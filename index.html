@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.40 · 14.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.41 · 14.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -323,6 +323,9 @@ function toggleHiddenArticle(art){
 }
 let FOCUS=[];
 function artName(art){ return NAMES[art]||art; }
+// Названия для упаковщиков (картинка, текст, превью). В остальном дашборде и в ключах продаж — прежние имена.
+const PACK_NAMES={'PF-СК-D55-WH-PG':'Круглая 5.5 см','PF-СК-D60-WH-PG':'Круглая 6 см'};
+function packName(art){ return PACK_NAMES[art]||artName(art); }
 function refreshFocus(){
   const hidden=getHiddenArticles();
   FOCUS=ALL_ARTICLES.filter(a=>!hidden.has(a));
@@ -569,7 +572,7 @@ function packTaskText(task){
   if(tot) lines.push(tot);
   lines.push('');
   task.items.forEach((it,n)=>{
-    lines.push(`${n+1}) ${artName(it.article)} — ${it.total} шт`);
+    lines.push(`${n+1}) ${packName(it.article)} — ${it.total} шт`);
     if(notes[it.article]) lines.push(`✎ ${notes[it.article]}`);
     it.groupList.forEach(g=>{
       if(g.loose){ lines.push(`— остатки: ${g.qty} шт без большой коробки`); return; }
@@ -697,7 +700,7 @@ function buildPackPages(task){
   // Кусочки страницы: {h, draw(ctx,y)}
   const headUnit=(it,n,cont)=>{
     if(cont) return {h:56,draw:(ctx,y)=>{
-      txt(ctx,`${n+1}. ${artName(it.article)} — продолжение`,P,y+36,`700 22px ${F}`,'#6b6e80');
+      txt(ctx,`${n+1}. ${packName(it.article)} — продолжение`,P,y+36,`700 22px ${F}`,'#6b6e80');
     }};
     const noteFont=`500 20px ${F}`, noteLines=notes[it.article]?wrap(notes[it.article],noteFont,W-2*P-34):[];
     const nh=noteLines.length?noteLines.length*28+20:0;
@@ -706,8 +709,8 @@ function buildPackPages(task){
       const hy=y+36;
       ctx.fillStyle=packColor(); ctx.beginPath(); ctx.arc(P+19,hy+14,19,0,Math.PI*2); ctx.fill();
       ctx.font=`800 22px ${F}`; ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.fillText(String(n+1),P+19,hy+22); ctx.textAlign='left';
-      txt(ctx,artName(it.article),P+50,hy+24,`800 28px ${F}`,'#1a1d27');
-      const nw=ctx.measureText(artName(it.article)).width;
+      txt(ctx,packName(it.article),P+50,hy+24,`800 28px ${F}`,'#1a1d27');
+      const nw=ctx.measureText(packName(it.article)).width;
       txt(ctx,`${it.total} шт`,P+50+nw+12,hy+24,`500 22px ${F}`,'#6b6e80');
       if(nh){
         const ny=y+86;
@@ -1068,7 +1071,7 @@ function packTaskHtml(){
     const alreadySpent=spent&&spent.sig===packSignature(task);
     // Превью — живые блоки (перетаскиваются, комментарий правится прямо в блоке); PNG рисуется из тех же данных.
     const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
-        <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(artName(it.article))}</span><span class="pk-qty">${it.total} шт</span><span class="pk-grip">⠿</span></div>
+        <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(packName(it.article))}</span><span class="pk-qty">${it.total} шт</span><span class="pk-grip">⠿</span></div>
         <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
         ${it.unmatched?`<div style="font-size:14px;color:#8a8fa8;margin:2px 0 4px">такого количества нет в ⚙ вместимости коробок — на картинке оно в пунктирном квадрате</div>`:''}
