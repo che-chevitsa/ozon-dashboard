@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.50 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.51 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -663,7 +663,8 @@ function setOzonDropoff(id){
 }
 // Точки отгрузки для кросс-докинга ищутся по названию: Ozon требует минимум 4 символа
 // (для ПВЗ — полное название, например ТАГАНРОГ_213).
-let ozonDropoffQuery='';
+let ozonDropoffQuery='', ozonDropoffEdit=false;
+function toggleDropoffEdit(){ ozonDropoffEdit=!ozonDropoffEdit; redraw(); }
 async function ozonSearchDropoffs(){
   const inp=document.getElementById('ozon-dropoff-search');
   const q=((inp&&inp.value)||'').trim();
@@ -676,6 +677,7 @@ async function ozonSearchDropoffs(){
       type:String(w.warehouse_type||'').replace(/^WAREHOUSE_TYPE_/,'')}));
     saveOzonCache(cache);
     if(!cache.dropoffs.length) alert('По запросу «'+q+'» пунктов не нашлось. Для ПВЗ нужно полное название, например ТАГАНРОГ_213.');
+    else if(cache.dropoffs.length===1){ localStorage.setItem(LS_OZON_DROPOFF,JSON.stringify(cache.dropoffs[0])); ozonDropoffEdit=false; }
   }catch(e){ alert('Поиск пунктов не удался: '+e.message); }
   redraw();
 }
@@ -750,6 +752,11 @@ async function ozonStartDraft(cluster){
         state:(w.availability_status||{}).state,reason:(w.availability_status||{}).invalid_reason,rank:w.total_rank,score:w.total_score}))
       .filter(w=>w.id)
       .sort((a,b)=>(a.state==='FULL_AVAILABLE'?0:1)-(b.state==='FULL_AVAILABLE'?0:1)||(a.rank||99)-(b.rank||99));
+    // Склад хранения нужен только прямой поставке. Для кросс-докинга Ozon распределяет сам,
+    // поэтому сразу идём к таймслотам; для DIRECT берём лучший доступный склад без вопросов.
+    if(ozonDraft.supplyType==='CROSSDOCK'){ ozonDraft.busy=false; await ozonPickWarehouse(null); return; }
+    const best=(ozonDraft.warehouses||[]).find(w=>w.state==='FULL_AVAILABLE')||(ozonDraft.warehouses||[])[0];
+    if(best){ ozonDraft.busy=false; await ozonPickWarehouse(best.id); return; }
     ozonDraft.stage='warehouse';
   }catch(e){ ozonDraft.errors.push(e.message); ozonDraft.stage='error'; }
   ozonDraft.busy=false;
@@ -766,7 +773,8 @@ async function ozonPickWarehouse(id){
     const res=await ozonApi('/v2/draft/timeslot/info',{
       draft_id:ozonDraft.draftId, supply_type:ozonDraft.supplyType||'DIRECT',
       date_from:day(new Date()), date_to:day(new Date(Date.now()+6*86400000)),
-      selected_cluster_warehouses:[{macrolocal_cluster_id:ozonDraft.clusterId,storage_warehouse_id:id}],
+      selected_cluster_warehouses:[id?{macrolocal_cluster_id:ozonDraft.clusterId,storage_warehouse_id:id}
+                                     :{macrolocal_cluster_id:ozonDraft.clusterId}],
     });
     if(res.error_reason&&res.error_reason!=='UNSPECIFIED') throw new Error(res.error_reason);
     const days=(((res.result||{}).drop_off_warehouse_timeslots)||{}).days||[];
@@ -791,13 +799,15 @@ async function ozonCreateSupply(){
   const d=ozonDraft;
   const wh=(d.warehouses||[]).find(w=>w.id===d.warehouseId)||{};
   const list=d.items.map(i=>artName(i.article)+' — '+i.quantity+' шт').join('\n');
-  if(!confirm(`Создать заявку на поставку в Ozon?\n\nКластер: ${d.cluster}\nСклад: ${wh.name||d.warehouseId}\nСлот: ${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}\n\n${list}\n\nЗаявка появится в личном кабинете Ozon.`))return;
+  const where=d.supplyType==='CROSSDOCK'?`Кросс-докинг через: ${(d.dropoff||{}).name||''}`:`Склад: ${wh.name||d.warehouseId}`;
+  if(!confirm(`Создать заявку на поставку в Ozon?\n\nКластер: ${d.cluster}\n${where}\nСлот: ${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}\n\n${list}\n\nЗаявка появится в личном кабинете Ozon.`))return;
   d.busy=true; d.stage='creating'; d.errors=[];
   redraw();
   try{
     const res=await ozonApi('/v2/draft/supply/create',{
       draft_id:d.draftId, supply_type:d.supplyType||'DIRECT',
-      selected_cluster_warehouses:[{macrolocal_cluster_id:d.clusterId,storage_warehouse_id:d.warehouseId}],
+      selected_cluster_warehouses:[d.warehouseId?{macrolocal_cluster_id:d.clusterId,storage_warehouse_id:d.warehouseId}
+                                     :{macrolocal_cluster_id:d.clusterId}],
       timeslot:{from_in_timezone:d.slot.from,to_in_timezone:d.slot.to},
     });
     const reasons=(res.error_reasons||[]).filter(r=>r&&r!=='UNSPECIFIED');
@@ -840,7 +850,7 @@ function ozonSupplyHtml(){
     if(d.busy){
       inner=`<div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${d.stage==='draft'?'создаю черновик и жду расчёт Ozon…':d.stage==='slots'?'загружаю таймслоты…':'создаю заявку…'}</div>`;
     }else if(d.stage==='warehouse'){
-      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 1 из 3 · выбери склад. Черновик живёт 30 минут.</div>
+      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Выбери склад хранения. Черновик живёт 30 минут.</div>
         ${(d.warehouses||[]).map(w=>{
           const ok=w.state==='FULL_AVAILABLE';
           return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border)">
@@ -849,13 +859,13 @@ function ozonSupplyHtml(){
             <button style="${btn};color:var(--accent)" onclick="ozonPickWarehouse(${w.id})">выбрать</button>
           </div>`;}).join('')||'<span style="font-size:12px;color:var(--muted)">складов нет</span>'}`;
     }else if(d.stage==='slots'){
-      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 2 из 3 · склад: <b>${escHtml((wh||{}).name||'')}</b> · выбери таймслот${d.tz?' (время склада, '+escHtml(d.tz)+')':''}</div>
+      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 1 из 2 · выбери таймслот${d.tz?' · время '+escHtml(d.tz):''}${wh?' · склад: <b>'+escHtml(wh.name)+'</b>':''}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">${(d.slots||[]).slice(0,60).map((s,i)=>`<button style="${btn}" onclick="ozonPickSlot(${i})">${ozonWhen(s.from)}–${String(new Date(s.to).getHours()).padStart(2,'0')}:${String(new Date(s.to).getMinutes()).padStart(2,'0')}</button>`).join('')}</div>
-        <button style="${btn};color:var(--muted);margin-top:8px" onclick="ozonDraft.stage='warehouse';redraw()">← другой склад</button>`;
+        ${(d.warehouses||[]).length>1?`<button style="${btn};color:var(--muted);margin-top:8px" onclick="ozonDraft.stage='warehouse';redraw()">← другой склад</button>`:''}`;
     }else if(d.stage==='confirm'){
-      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 3 из 3 · проверь и подтверди</div>
+      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 2 из 2 · проверь и подтверди</div>
         <div style="font-family:var(--mono);font-size:12px;line-height:1.7">
-          склад: <b>${escHtml((wh||{}).name||'')}</b><br>
+          ${d.supplyType==='CROSSDOCK'?`пункт отгрузки: <b>${escHtml((d.dropoff||{}).name||'')}</b>`:`склад: <b>${escHtml((wh||{}).name||'')}</b>`}<br>
           слот: <b>${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}</b><br>
           состав: ${d.items.map(i=>escHtml(artName(i.article))+' '+i.quantity+' шт').join(' · ')}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -889,11 +899,13 @@ function ozonSupplyHtml(){
       <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">тип поставки:</span>
       ${tbtn('CROSSDOCK','кросс-докинг')}${tbtn('DIRECT','напрямую на склад')}
       ${type==='CROSSDOCK'?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-left:6px">пункт отгрузки:</span>
-        ${dropoff?`<span style="font-family:var(--mono);font-size:12px;color:var(--green)">${escHtml(dropoff.name)}${dropoff.address?' · '+escHtml(dropoff.address):''}</span>`:''}
-        <input id="ozon-dropoff-search" value="${escHtml(ozonDropoffQuery)}" placeholder="${dropoff?'сменить пункт':'название пункта, напр. ТАГАНРОГ_213'}" onkeydown="if(event.key==='Enter')ozonSearchDropoffs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:220px">
-        <button style="${btn};color:var(--accent)" onclick="ozonSearchDropoffs()">найти</button>`:''}
+        ${dropoff&&!ozonDropoffEdit
+          ?`<span style="font-family:var(--mono);font-size:12px;color:var(--green)">${escHtml(dropoff.name)}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleDropoffEdit()">сменить</span>`
+          :`<input id="ozon-dropoff-search" value="${escHtml(ozonDropoffQuery)}" placeholder="название пункта, напр. ТАГАНРОГ_213" onkeydown="if(event.key==='Enter')ozonSearchDropoffs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:220px">
+            <button style="${btn};color:var(--accent)" onclick="ozonSearchDropoffs()">найти</button>`}`:''}
     </div>
-    ${type==='CROSSDOCK'&&points.length?`<div style="margin:-4px 0 10px">
+    ${type==='CROSSDOCK'&&ozonDropoffEdit&&points.length?`<div style="margin:-4px 0 10px">
       ${points.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid var(--border)">
         <span style="font-family:var(--mono);font-size:12px">${escHtml(p.name)} <span style="color:var(--muted)">${escHtml(p.address||'')}</span></span>
         <button style="${btn};color:${dropoff&&String(dropoff.id)===String(p.id)?'var(--green)':'var(--accent)'}" onclick="setOzonDropoff(${p.id})">${dropoff&&String(dropoff.id)===String(p.id)?'выбран':'выбрать'}</button>
