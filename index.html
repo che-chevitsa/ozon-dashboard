@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.49 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.50 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -661,16 +661,22 @@ function setOzonDropoff(id){
   if(p) localStorage.setItem(LS_OZON_DROPOFF,JSON.stringify(p));
   redraw();
 }
-// Точки отгрузки для кросс-докинга: список подтягивается один раз и лежит в кэше.
-async function ozonLoadDropoffs(){
+// Точки отгрузки для кросс-докинга ищутся по названию: Ozon требует минимум 4 символа
+// (для ПВЗ — полное название, например ТАГАНРОГ_213).
+let ozonDropoffQuery='';
+async function ozonSearchDropoffs(){
+  const inp=document.getElementById('ozon-dropoff-search');
+  const q=((inp&&inp.value)||'').trim();
+  if(q.length<4){ alert('Введи минимум 4 символа названия пункта, например ТАГАНРОГ'); return; }
+  ozonDropoffQuery=q;
   const cache=getOzonCache();
   try{
-    ozonSetStatus('Загружаю пункты отгрузки…');
-    const res=await ozonApi('/v1/warehouse/fbo/list',{filter_by_supply_type:['CREATE_TYPE_CROSSDOCK'],search:''});
+    const res=await ozonApi('/v1/warehouse/fbo/list',{filter_by_supply_type:['CREATE_TYPE_CROSSDOCK'],search:q});
     cache.dropoffs=(res.search||[]).map(w=>({id:w.warehouse_id,name:w.name,address:w.address,
       type:String(w.warehouse_type||'').replace(/^WAREHOUSE_TYPE_/,'')}));
     saveOzonCache(cache);
-  }catch(e){ alert('Пункты отгрузки не загрузились: '+e.message); }
+    if(!cache.dropoffs.length) alert('По запросу «'+q+'» пунктов не нашлось. Для ПВЗ нужно полное название, например ТАГАНРОГ_213.');
+  }catch(e){ alert('Поиск пунктов не удался: '+e.message); }
   redraw();
 }
 
@@ -883,14 +889,15 @@ function ozonSupplyHtml(){
       <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">тип поставки:</span>
       ${tbtn('CROSSDOCK','кросс-докинг')}${tbtn('DIRECT','напрямую на склад')}
       ${type==='CROSSDOCK'?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-left:6px">пункт отгрузки:</span>
-        ${points.length
-          ?`<select style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;max-width:340px" onchange="setOzonDropoff(this.value)">
-              <option value="">— выбери —</option>
-              ${points.map(p=>`<option value="${p.id}" ${dropoff&&String(dropoff.id)===String(p.id)?'selected':''}>${escHtml(p.name)}${p.address?' · '+escHtml(p.address):''}</option>`).join('')}
-             </select>`
-          :`<button style="${btn};color:var(--accent)" onclick="ozonLoadDropoffs()">загрузить пункты</button>`}
-        ${dropoff?`<span style="font-family:var(--mono);font-size:12px;color:var(--green)">${escHtml(dropoff.name)}</span>`:''}`:''}
-    </div>`;
+        ${dropoff?`<span style="font-family:var(--mono);font-size:12px;color:var(--green)">${escHtml(dropoff.name)}${dropoff.address?' · '+escHtml(dropoff.address):''}</span>`:''}
+        <input id="ozon-dropoff-search" value="${escHtml(ozonDropoffQuery)}" placeholder="${dropoff?'сменить пункт':'название пункта, напр. ТАГАНРОГ_213'}" onkeydown="if(event.key==='Enter')ozonSearchDropoffs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:220px">
+        <button style="${btn};color:var(--accent)" onclick="ozonSearchDropoffs()">найти</button>`:''}
+    </div>
+    ${type==='CROSSDOCK'&&points.length?`<div style="margin:-4px 0 10px">
+      ${points.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="font-family:var(--mono);font-size:12px">${escHtml(p.name)} <span style="color:var(--muted)">${escHtml(p.address||'')}</span></span>
+        <button style="${btn};color:${dropoff&&String(dropoff.id)===String(p.id)?'var(--green)':'var(--accent)'}" onclick="setOzonDropoff(${p.id})">${dropoff&&String(dropoff.id)===String(p.id)?'выбран':'выбрать'}</button>
+      </div>`).join('')}</div>`:''}`;
   return `<div style="font-size:12px;color:var(--muted);margin:14px 0 4px">Готово к отгрузке · упаковано и ждёт заявки</div>
     ${typeRow}
     ${wizard}
