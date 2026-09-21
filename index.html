@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.42 · 21.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.43 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -422,6 +422,178 @@ function submitNewBoxType(){
   addBoxType(name,arts);
 }
 loadBoxTypes();
+// ===== OZON SELLER API (только чтение) =====
+// Ключи и кэш живут ТОЛЬКО в этом браузере: в облако (JSONBin) они не уходят — ключ даёт
+// полный доступ к кабинету. Дашборд пока ничего не создаёт и не меняет в Ozon.
+const OZON_API='https://api-seller.ozon.ru';
+const LS_OZON_KEYS='ozon_api_keys', LS_OZON_CACHE='ozon_api_cache', LS_OZON_OPEN='ozon_api_open';
+function getOzonKeys(){ const k=lsGet(LS_OZON_KEYS,null); return k&&k.clientId&&k.apiKey?k:null; }
+function getOzonCache(){ return lsGet(LS_OZON_CACHE,{}); }
+function saveOzonCache(c){ try{ localStorage.setItem(LS_OZON_CACHE,JSON.stringify(c)); }catch{} }
+let ozonBusy=false;
+
+function ozonSetStatus(msg,color){
+  const el=document.getElementById('ozon-status');
+  if(el){ el.textContent=msg; el.style.color=color||'var(--muted)'; }
+}
+async function ozonApi(path,body){
+  const k=getOzonKeys();
+  if(!k) throw new Error('не введены Client-Id и Api-Key');
+  const r=await fetch(OZON_API+path,{method:'POST',
+    headers:{'Content-Type':'application/json','Client-Id':k.clientId,'Api-Key':k.apiKey},
+    body:JSON.stringify(body||{})});
+  const text=await r.text();
+  let data=null; try{ data=JSON.parse(text); }catch{}
+  if(!r.ok){
+    const hint=r.status===401||r.status===403?' — ключ не подошёл'
+      :r.status===429?' — превышен лимит запросов, подожди минуту':'';
+    throw new Error('HTTP '+r.status+hint+': '+((data&&(data.message||data.error))||text.slice(0,160)));
+  }
+  return data||{};
+}
+function saveOzonKeys(){
+  const id=(document.getElementById('ozon-client-id').value||'').trim();
+  const key=(document.getElementById('ozon-api-key').value||'').trim();
+  if(!/^\d+$/.test(id)){ ozonSetStatus('Client-Id — это число из личного кабинета','var(--red)'); return; }
+  if(key.length<10){ ozonSetStatus('Api-Key выглядит слишком коротким','var(--red)'); return; }
+  localStorage.setItem(LS_OZON_KEYS,JSON.stringify({clientId:id,apiKey:key}));
+  ozonRefresh();
+}
+function forgetOzonKeys(){
+  if(!confirm('Убрать ключи Ozon из этого браузера? Загруженные данные тоже удалятся.'))return;
+  localStorage.removeItem(LS_OZON_KEYS); localStorage.removeItem(LS_OZON_CACHE);
+  redraw();
+}
+function toggleOzonPanel(){
+  const open=lsGet(LS_OZON_OPEN,false)!==true;
+  localStorage.setItem(LS_OZON_OPEN,JSON.stringify(open));
+  redraw();
+}
+
+// Одно обновление: кластеры → SKU товаров → заявки на поставку. Шаги независимы:
+// если один метод ответит ошибкой, остальные данные всё равно обновятся.
+async function ozonRefresh(){
+  if(ozonBusy)return;
+  ozonBusy=true;
+  const cache=getOzonCache(), errors=[];
+  try{
+    ozonSetStatus('Загружаю кластеры…');
+    try{
+      let res;
+      try{ res=await ozonApi('/v2/cluster/list',{}); }
+      catch(e){ res=await ozonApi('/v2/cluster/list',{cluster_type:'CLUSTER_TYPE_OZON'}); }
+      cache.clusters=(res.result||[]).map(c=>({
+        id:c.macrolocal_cluster_id,
+        name:((c.data||{}).macrolocal_cluster||{}).name||'',
+        warehouses:(((c.data||{}).fulfillments)||[]).map(f=>({id:f.warehouse_id,name:f.name})),
+      })).filter(c=>c.name);
+    }catch(e){ errors.push('кластеры: '+e.message); }
+
+    ozonSetStatus('Загружаю товары…');
+    try{
+      const res=await ozonApi('/v3/product/info/list',{offer_id:ALL_ARTICLES});
+      const map={};
+      (res.items||[]).forEach(it=>{ map[it.offer_id]={sku:it.sku,name:it.name,barcode:(it.barcodes||[])[0]||''}; });
+      cache.skus=map;
+    }catch(e){ errors.push('товары: '+e.message); }
+
+    ozonSetStatus('Загружаю заявки на поставку…');
+    try{
+      const list=await ozonApi('/v3/supply-order/list',{limit:50,filter:{}});
+      const ids=(list.order_ids||[]).slice(0,50);
+      cache.orders=[];
+      if(ids.length){
+        const got=await ozonApi('/v3/supply-order/get',{order_ids:ids});
+        cache.orders=(got.orders||[]).map(o=>({
+          id:o.order_id, number:o.order_number, state:o.state,
+          created:o.created_date, deadline:o.data_filling_deadline_utc,
+          warehouse:(o.dropoff_warehouse||{}).name||'',
+          timeslot:((o.timeslot||{}).timeslot)||null,
+          supplies:(o.supplies||[]).map(s=>({id:s.supply_id,state:s.state,bundleId:s.bundle_id,clusterId:s.macrolocal_cluster_id})),
+        }));
+      }
+    }catch(e){ errors.push('заявки: '+e.message); }
+
+    cache.updatedAt=new Date().toISOString();
+    cache.errors=errors;
+    saveOzonCache(cache);
+  }finally{ ozonBusy=false; }
+  redraw();
+}
+
+function ozonWhen(iso){
+  if(!iso)return '—';
+  const d=new Date(iso);
+  if(isNaN(d))return '—';
+  return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+// Статусы приходят строками вида ORDER_STATE_IN_TRANSIT — показываем по-русски.
+const OZON_STATES={
+  ORDER_STATE_DRAFT:'черновик', ORDER_STATE_IN_TRANSIT:'в пути', ORDER_STATE_ACCEPTANCE_AT_STORAGE_WAREHOUSE:'приёмка на складе',
+  ORDER_STATE_COMPLETED:'завершена', ORDER_STATE_CANCELLED:'отменена', ORDER_STATE_REPORTS_CONFIRMATION_AWAITING:'ждёт подтверждения',
+  ORDER_STATE_DATA_FILLING:'заполнение данных', ORDER_STATE_READY_TO_SUPPLY:'готова к отгрузке', ORDER_STATE_OVERDUE:'просрочена',
+};
+const ozonState=s=>OZON_STATES[s]||String(s||'').replace(/^ORDER_STATE_/,'').replace(/_/g,' ').toLowerCase();
+const ozonNorm=s=>String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-zа-я0-9]/g,'');
+
+function ozonPanelHtml(){
+  const open=lsGet(LS_OZON_OPEN,false)===true;
+  const keys=getOzonKeys(), cache=getOzonCache();
+  const head=`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <span style="cursor:pointer" onclick="toggleOzonPanel()">${open?'▾':'▸'} Ozon API · только чтение</span>
+    <span style="font-size:11px;font-family:var(--mono);text-transform:none;letter-spacing:0;color:${keys?'var(--green)':'var(--muted)'}">${keys?'подключено · Client-Id '+escHtml(keys.clientId):'не подключено'}${cache.updatedAt?' · обновлено '+ozonWhen(cache.updatedAt):''}</span></div>`;
+  if(!open) return head;
+  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 8px';
+  let body;
+  if(!keys){
+    body=`<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px">
+        Ключи берутся в личном кабинете Ozon: Настройки → Seller API. Они сохраняются только в этом браузере
+        и не уходят в облачную синхронизацию — ключ даёт полный доступ к кабинету. На другом устройстве введи их заново.
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="ozon-client-id" placeholder="Client-Id" style="${inp};width:140px">
+        <input id="ozon-api-key" type="password" placeholder="Api-Key" style="${inp};width:320px">
+        <button style="${btn};color:var(--green)" onclick="saveOzonKeys()">подключить</button>
+      </div>
+      <div id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px"></div>`;
+  }else{
+    const clusters=cache.clusters||[], skus=cache.skus||{}, orders=cache.orders||[];
+    const dashClusters=rawData?[...new Set(rawData.map(r=>r.cluster))].sort():[];
+    const clusterRows=dashClusters.map(c=>{
+      const m=clusters.find(x=>ozonNorm(x.name)===ozonNorm(c));
+      return `<div style="font-family:var(--mono);font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
+        ${escHtml(c)} <span style="color:${m?'var(--green)':'var(--amber)'}">${m?'→ id '+m.id+' · складов: '+m.warehouses.length:'→ не найден у Ozon'}</span></div>`;
+    }).join('');
+    const skuRows=ALL_ARTICLES.map(a=>{
+      const s=skus[a];
+      return `<div style="font-family:var(--mono);font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
+        ${escHtml(artName(a))} <span style="color:var(--muted)">${escHtml(a)}</span>
+        <span style="color:${s?'var(--green)':'var(--amber)'}">${s?'→ SKU '+s.sku+(s.barcode?' · ШК '+escHtml(s.barcode):''):'→ не найден'}</span></div>`;
+    }).join('');
+    const orderRows=orders.length?orders.map(o=>`<tr>
+        <td class="mono">${escHtml(o.number||o.id)}</td>
+        <td>${escHtml(ozonState(o.state))}</td>
+        <td class="mono">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>
+        <td>${escHtml(o.warehouse||'—')}</td>
+        <td class="mono" style="color:var(--muted)">${o.supplies.length} пост.</td>
+      </tr>`).join(''):`<tr><td colspan="5" style="color:var(--muted);padding:10px">заявок нет</td></tr>`;
+    const errs=(cache.errors||[]).length
+      ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.5">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
+    body=`${errs}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <button style="${btn};color:var(--accent)" onclick="ozonRefresh()">⟳ обновить данные</button>
+        <button style="${btn};color:var(--muted)" onclick="forgetOzonKeys()">отключить</button>
+        <span id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)">${cache.updatedAt?'обновлено '+ozonWhen(cache.updatedAt):'данные ещё не загружены'}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Заявки на поставку в Ozon${orders.length?' · последние '+orders.length:''}</div>
+      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Заявка</th><th>Статус</th><th>Слот</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
+      <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
+      <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Товары ↔ SKU Ozon (найдено ${Object.keys(skus).length} из ${ALL_ARTICLES.length})</summary><div style="margin-top:6px">${skuRows}</div></details>`;
+  }
+  return head+`<div class="block" style="padding:0.75rem 1.25rem;margin-top:0">${body}</div>`;
+}
+
 // ===== ЗАДАНИЕ УПАКОВЩИКУ + ТРАНСПОРТНЫЕ КОРОБКИ =====
 // Транспортные коробки — данные, редактируются в конструкторе. Размеры в см: w — ширина фасада,
 // d — глубина, h — высота (нужны для пропорций иконок). color — ключ палитры BOX_PALETTE.
@@ -516,12 +688,12 @@ function toggleLeftovers(){ leftoversCollapsed=!leftoversCollapsed; localStorage
 // Краткая сводка для свёрнутого блока: «Форма 7 см 30 · Лилии 20».
 function leftoversSummary(){ return ALL_ARTICLES.map(a=>[a,plannedLeftover(a)]).filter(([,q])=>q>0).map(([a,q])=>`${artName(a)} ${q} шт`).join(' · '); }
 // Сколько остатков по товару уже запланировано (неотправленные).
-function plannedLeftover(art){ return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&a.sent!==true).reduce((s,a)=>s+a.qty,0); }
+function plannedLeftover(art){ return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&a.sent!==true&&a.packed!==true).reduce((s,a)=>s+a.qty,0); }
 function buildPackTask(){
   const rules=getPackRules();
   const byArt={};
   getPackAdjs().forEach(a=>{
-    if(a.sent===true)return;
+    if(a.sent===true||a.packed===true)return; // упакованное уже не пакуем
     const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,unknown:{},loose:0});
     t.total+=a.qty;
     if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; return; }
@@ -1500,41 +1672,53 @@ function removeAdjustment(idx){
   redraw();
 }
 
-function confirmAdjustment(idx){
+// Состояния отправки: «план» (ещё пакуют) → «упаковано» (лежит на складе, можно оформлять
+// заявку в Ozon) → «отгружено». Задание упаковщику строится только по плану.
+function adjStage(a){ return a.sent===true?'sent':a.packed===true?'packed':'plan'; }
+function setAdjStage(idx,stage){
   const adjs=getAdjs();
   if(!adjs[idx])return;
-  adjs[idx].sent=true;
+  adjs[idx].packed=stage==='packed'||stage==='sent';
+  adjs[idx].sent=stage==='sent';
   saveAdjs(adjs);
   renderAdjList();
   redraw();
 }
-
-function unconfirmAdjustment(idx){
-  const adjs=getAdjs();
-  if(!adjs[idx])return;
-  adjs[idx].sent=false;
-  saveAdjs(adjs);
-  renderAdjList();
-  redraw();
+function confirmAdjustment(idx){ setAdjStage(idx,'sent'); }
+function unconfirmAdjustment(idx){ setAdjStage(idx,'packed'); }
+function packedAdjustment(idx){ setAdjStage(idx,'packed'); }
+function unpackAdjustment(idx){ setAdjStage(idx,'plan'); }
+// Сколько уже упаковано и ждёт оформления заявки.
+function packedUnits(){
+  const byArticle={}; let total=0;
+  getAdjs().forEach(a=>{ if(adjStage(a)!=='packed')return; total+=a.qty; byArticle[a.article]=(byArticle[a.article]||0)+a.qty; });
+  return {total,byArticle};
 }
 
 // Общая генерация строк списка отправок — используется и в renderAdjList (#adj-list), и в render() (#adj-list-inline).
 function adjRowsHtml(){
   const adjs=getAdjs();
   if(!adjs.length)return '';
-  const sorted=[...adjs.map((a,i)=>({...a,origIdx:i}))].sort((a,b)=>(b.sent?1:0)-(a.sent?1:0));
+  const rank={plan:0,packed:1,sent:2};
+  const sorted=[...adjs.map((a,i)=>({...a,origIdx:i}))].sort((a,b)=>rank[adjStage(a)]-rank[adjStage(b)]);
+  const del=i=>`<button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
   return sorted.map(a=>{
-    const i=a.origIdx;
-    const sent=!!a.sent;
-    const textStyle=sent?'text-decoration:line-through;opacity:0.45':'';
-    const qtyStyle=sent?'text-decoration:line-through;opacity:0.45':'color:var(--green)';
-    const btns=sent
-      ?`<button class="adj-del" style="color:var(--muted);font-size:12px" title="отменить" onclick="unconfirmAdjustment(${i})">↩</button><button class="adj-del" onclick="removeAdjustment(${i})">×</button>`
-      :`<button class="adj-del" style="color:var(--green);opacity:0.7;font-size:13px" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
+    const i=a.origIdx, stage=adjStage(a);
+    const textStyle=stage==='sent'?'text-decoration:line-through;opacity:0.45':'';
+    const qtyStyle=stage==='sent'?'text-decoration:line-through;opacity:0.45':'color:var(--green)';
+    const badge=stage==='packed'
+      ?`<span style="font-size:10px;font-family:var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
+      :stage==='sent'?`<span style="font-size:10px;font-family:var(--mono);color:var(--muted)">отгружено</span>`:'';
+    const btns=stage==='plan'
+      ?`<button class="adj-del" style="color:var(--accent);opacity:0.8;font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
+      :stage==='packed'
+      ?`<button class="adj-del" style="color:var(--green);opacity:0.7;font-size:13px" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
+      :`<button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в «упаковано»" onclick="unconfirmAdjustment(${i})">↩</button>${del(i)}`;
     return `<div class="adj-item">
       <span style="${textStyle}">${NAMES[a.article]||a.article}</span>
       <span style="color:var(--text);${textStyle}">→ ${a.cluster}</span>
       <span style="font-family:var(--mono);font-size:12px;${qtyStyle}">+${a.qty} шт</span>
+      ${badge}
       ${btns}
     </div>`;
   }).join('');
@@ -1553,7 +1737,7 @@ function plannedUnits(){
   const byArticle={};
   let total=0;
   adjs.forEach(a=>{
-    if(a.sent===true)return; // отправленные (зачёркнутые) не считаем
+    if(a.sent===true||a.packed===true)return; // упакованное и отгруженное не пакуем
     total+=a.qty;
     byArticle[a.article]=(byArticle[a.article]||0)+a.qty;
   });
@@ -2281,9 +2465,8 @@ function render(data){
   if(adjRows){
     const pl=plannedUnits();
     const breakdown=Object.entries(pl.byArticle).map(([art,q])=>`${NAMES[art]||art}: ${q}`).join(' · ');
-    const counter=pl.total>0
-      ?`<span style="font-family:var(--mono);font-size:12px;color:var(--green);font-weight:500;text-transform:none;letter-spacing:0">${pl.total} шт к упаковке</span>${breakdown?`<span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:8px">${breakdown}</span>`:''}`
-      :'';
+    const pk=packedUnits();
+    const counter=`${pl.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--green);font-weight:500;text-transform:none;letter-spacing:0">${pl.total} шт к упаковке</span>${breakdown?`<span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:8px">${breakdown}</span>`:''}`:''}${pk.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0;margin-left:12px">${pk.total} шт упаковано, ждёт заявки</span>`:''}`;
     adjLogHtml=`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span>${counter}</span></div>
     <div class="block" style="padding:0.75rem 1.25rem">
       <div class="adj-list" style="margin-top:0" id="adj-list-inline">${adjRows}</div></div>`;
@@ -2565,6 +2748,7 @@ function render(data){
   <div id="box-type-form" style="display:none"></div>
   <div class="boxes-grid">${boxCardsHtml}</div>`;
   html+=transportBoxesHtml();
+  html+=ozonPanelHtml();
 
   // Heatmap
   html+='<div class="section-label" style="margin-top:2rem">Тепловая карта · дней запаса</div>';
