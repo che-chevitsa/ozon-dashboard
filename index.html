@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.46 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.47 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -546,11 +546,219 @@ const OZON_STATES={
 const ozonState=s=>OZON_STATES[String(s||'').replace(/^ORDER_STATE_/,'')]||String(s||'').replace(/^ORDER_STATE_/,'').replace(/_/g,' ').toLowerCase();
 const ozonNorm=s=>String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-zа-я0-9]/g,'');
 
+// ===== СОЗДАНИЕ ЗАЯВКИ НА ПОСТАВКУ (шаг за шагом) =====
+// Черновик живёт 30 минут, поэтому мастер идёт подряд: черновик → склад → таймслот → заявка.
+// Запись в Ozon происходит ТОЛЬКО по кнопке «создать заявку» с подтверждением.
+let ozonDraft=null; // {cluster, clusterId, items, draftId, warehouses, warehouseId, slots, slot, stage, busy, errors, rejected, orderId}
+
+function ozonSleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function ozonErrText(e){
+  if(!e)return '';
+  if(typeof e==='string')return e;
+  const parts=[e.message, (e.error_message&&e.error_message!=='UNSPECIFIED')?e.error_message:'', (e.error_reasons||[]).join(', ')];
+  return parts.filter(Boolean).join(' · ');
+}
+// Упакованные отправки, сгруппированные по кластеру: это и есть кандидаты на заявку.
+function packedByCluster(){
+  const g={};
+  getAdjs().forEach((a,i)=>{
+    if(adjStage(a)!=='packed'||a.cluster===LEFTOVER_CLUSTER)return;
+    (g[a.cluster]=g[a.cluster]||{cluster:a.cluster,total:0,byArticle:{},idx:[]});
+    g[a.cluster].total+=a.qty;
+    g[a.cluster].byArticle[a.article]=(g[a.cluster].byArticle[a.article]||0)+a.qty;
+    g[a.cluster].idx.push(i);
+  });
+  return Object.values(g).sort((x,y)=>y.total-x.total);
+}
+function ozonClusterId(name){
+  const c=(getOzonCache().clusters||[]).find(x=>ozonNorm(x.name)===ozonNorm(name));
+  return c?c.id:null;
+}
+
+async function ozonStartDraft(cluster){
+  const grp=packedByCluster().find(g=>g.cluster===cluster);
+  if(!grp)return;
+  const clusterId=ozonClusterId(cluster);
+  if(!clusterId){ alert('Кластер «'+cluster+'» не найден у Ozon. Нажми «обновить данные» и проверь сопоставление кластеров.'); return; }
+  const skus=getOzonCache().skus||{};
+  const items=[], missing=[];
+  Object.entries(grp.byArticle).forEach(([art,qty])=>{
+    const s=skus[art];
+    if(!s||!s.sku) missing.push(artName(art)); else items.push({sku:s.sku,quantity:qty,article:art});
+  });
+  if(missing.length){ alert('Нет SKU для: '+missing.join(', ')+'. Нажми «обновить данные».'); return; }
+  ozonDraft={cluster,clusterId,items,idx:grp.idx,stage:'draft',busy:true,errors:[],rejected:[]};
+  redraw();
+  try{
+    const res=await ozonApi('/v1/draft/direct/create',{
+      cluster_info:{macrolocal_cluster_id:clusterId,items:items.map(i=>({sku:i.sku,quantity:i.quantity}))},
+      deletion_sku_mode:'PARTIAL',
+    });
+    if(!res.draft_id) throw new Error('Ozon не вернул черновик: '+(res.errors||[]).map(ozonErrText).join('; '));
+    ozonDraft.draftId=res.draft_id;
+    ozonDraft.createdAt=Date.now();
+    // черновик считается на стороне Ozon — ждём статус SUCCESS
+    let info=null;
+    for(let i=0;i<20;i++){
+      info=await ozonApi('/v2/draft/create/info',{draft_id:res.draft_id});
+      if(info.status==='SUCCESS'||info.status==='FAILED')break;
+      await ozonSleep(2000);
+    }
+    if(!info||info.status!=='SUCCESS') throw new Error('черновик не рассчитан: '+((info&&info.status)||'нет ответа')+' '+((info&&info.errors)||[]).map(ozonErrText).join('; '));
+    (info.errors||[]).forEach(e=>{
+      (e.items_validation||[]).forEach(v=>(v.rejected_items||[]).forEach(r=>{
+        const it=items.find(x=>x.sku===r.sku);
+        ozonDraft.rejected.push({name:it?artName(it.article):('SKU '+r.sku),reasons:(r.reasons||[]).join(', ')});
+      }));
+      if(e.message||e.error_message) ozonDraft.errors.push(ozonErrText(e));
+    });
+    const cl=(info.clusters||[]).find(c=>c.macrolocal_cluster_id===clusterId)||(info.clusters||[])[0];
+    ozonDraft.warehouses=((cl||{}).warehouses||[])
+      .map(w=>({id:(w.storage_warehouse||{}).warehouse_id,name:(w.storage_warehouse||{}).name||'',address:(w.storage_warehouse||{}).address||'',
+        state:(w.availability_status||{}).state,reason:(w.availability_status||{}).invalid_reason,rank:w.total_rank,score:w.total_score}))
+      .filter(w=>w.id)
+      .sort((a,b)=>(a.state==='FULL_AVAILABLE'?0:1)-(b.state==='FULL_AVAILABLE'?0:1)||(a.rank||99)-(b.rank||99));
+    ozonDraft.stage='warehouse';
+  }catch(e){ ozonDraft.errors.push(e.message); ozonDraft.stage='error'; }
+  ozonDraft.busy=false;
+  redraw();
+}
+
+async function ozonPickWarehouse(id){
+  if(!ozonDraft)return;
+  ozonDraft.warehouseId=id; ozonDraft.busy=true; ozonDraft.stage='slots'; ozonDraft.errors=[];
+  redraw();
+  try{
+    const from=new Date(), to=new Date(Date.now()+6*86400000);
+    const res=await ozonApi('/v2/draft/timeslot/info',{
+      draft_id:ozonDraft.draftId, supply_type:'DIRECT',
+      date_from:from.toISOString(), date_to:to.toISOString(),
+      selected_cluster_warehouses:[{macrolocal_cluster_id:ozonDraft.clusterId,storage_warehouse_id:id}],
+    });
+    if(res.error_reason&&res.error_reason!=='UNSPECIFIED') throw new Error(res.error_reason);
+    const days=(((res.result||{}).drop_off_warehouse_timeslots)||{}).days||[];
+    ozonDraft.slots=[];
+    days.forEach(d=>(d.timeslots||[]).forEach(t=>ozonDraft.slots.push({from:t.from_in_timezone,to:t.to_in_timezone})));
+    ozonDraft.tz=(((res.result||{}).drop_off_warehouse_timeslots)||{}).warehouse_timezone||'';
+    if(!ozonDraft.slots.length) ozonDraft.errors.push('на ближайшую неделю свободных таймслотов нет');
+  }catch(e){ ozonDraft.errors.push('таймслоты: '+e.message); }
+  ozonDraft.busy=false;
+  redraw();
+}
+function ozonPickSlot(i){
+  if(!ozonDraft||!ozonDraft.slots[i])return;
+  ozonDraft.slot=ozonDraft.slots[i]; ozonDraft.stage='confirm';
+  redraw();
+}
+function ozonCancelDraft(){ ozonDraft=null; redraw(); }
+
+// Единственное место, где дашборд что-то создаёт в Ozon.
+async function ozonCreateSupply(){
+  if(!ozonDraft||!ozonDraft.slot)return;
+  const d=ozonDraft;
+  const wh=(d.warehouses||[]).find(w=>w.id===d.warehouseId)||{};
+  const list=d.items.map(i=>artName(i.article)+' — '+i.quantity+' шт').join('\n');
+  if(!confirm(`Создать заявку на поставку в Ozon?\n\nКластер: ${d.cluster}\nСклад: ${wh.name||d.warehouseId}\nСлот: ${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}\n\n${list}\n\nЗаявка появится в личном кабинете Ozon.`))return;
+  d.busy=true; d.stage='creating'; d.errors=[];
+  redraw();
+  try{
+    const res=await ozonApi('/v2/draft/supply/create',{
+      draft_id:d.draftId, supply_type:'DIRECT',
+      selected_cluster_warehouses:[{macrolocal_cluster_id:d.clusterId,storage_warehouse_id:d.warehouseId}],
+      timeslot:{from_in_timezone:d.slot.from,to_in_timezone:d.slot.to},
+    });
+    const reasons=(res.error_reasons||[]).filter(r=>r&&r!=='UNSPECIFIED');
+    if(reasons.length) throw new Error(reasons.join(', '));
+    let st=null;
+    for(let i=0;i<20;i++){
+      st=await ozonApi('/v2/draft/supply/create/status',{draft_id:d.draftId});
+      if(st.status==='SUCCESS'||st.status==='FAILED')break;
+      await ozonSleep(2000);
+    }
+    if(!st||st.status!=='SUCCESS') throw new Error('заявка не создана: '+((st&&st.status)||'нет ответа')+' '+(((st&&st.error_reasons)||[]).filter(r=>r!=='UNSPECIFIED').join(', ')));
+    d.orderId=st.order_id; d.stage='done';
+    // отмечаем отправки отгруженными и запоминаем номер заявки
+    const adjs=getAdjs();
+    d.idx.forEach(i=>{ if(adjs[i]){ adjs[i].packed=true; adjs[i].sent=true; adjs[i].ozonOrderId=st.order_id; } });
+    saveAdjs(adjs);
+    ozonRefresh(); // подтянем свежий список заявок
+  }catch(e){ d.errors.push(e.message); d.stage='confirm'; }
+  d.busy=false;
+  redraw();
+}
+
+function ozonSupplyHtml(){
+  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const groups=packedByCluster();
+  const d=ozonDraft;
+  const errs=d&&d.errors.length
+    ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">${d.errors.map(escHtml).join('<br>')}</div>`:'';
+  const rejected=d&&d.rejected&&d.rejected.length
+    ?`<div style="background:var(--amber-bg);color:var(--amber);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">Ozon не принимает в этот кластер:<br>${d.rejected.map(r=>escHtml(r.name)+' — '+escHtml(r.reasons)).join('<br>')}<br>Эти товары в заявку не попадут.</div>`:'';
+
+  let wizard='';
+  if(d){
+    const wh=(d.warehouses||[]).find(w=>w.id===d.warehouseId);
+    const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+        <b style="font-size:13px">Заявка: ${escHtml(d.cluster)} · ${d.items.reduce((s,i)=>s+i.quantity,0)} шт</b>
+        <button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button></div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin:4px 0 8px">${d.items.map(i=>escHtml(artName(i.article))+' '+i.quantity).join(' · ')}</div>`;
+    let inner='';
+    if(d.busy){
+      inner=`<div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${d.stage==='draft'?'создаю черновик и жду расчёт Ozon…':d.stage==='slots'?'загружаю таймслоты…':'создаю заявку…'}</div>`;
+    }else if(d.stage==='warehouse'){
+      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 1 из 3 · выбери склад. Черновик живёт 30 минут.</div>
+        ${(d.warehouses||[]).map(w=>{
+          const ok=w.state==='FULL_AVAILABLE';
+          return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border)">
+            <span style="font-family:var(--mono);font-size:12px">${escHtml(w.name)} <span style="color:var(--muted)">${escHtml(w.address||'')}</span>
+              <span style="color:${ok?'var(--green)':'var(--amber)'}">${ok?'доступен':escHtml(w.reason||w.state||'')}</span></span>
+            <button style="${btn};color:var(--accent)" onclick="ozonPickWarehouse(${w.id})">выбрать</button>
+          </div>`;}).join('')||'<span style="font-size:12px;color:var(--muted)">складов нет</span>'}`;
+    }else if(d.stage==='slots'){
+      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 2 из 3 · склад: <b>${escHtml((wh||{}).name||'')}</b> · выбери таймслот${d.tz?' (время склада, '+escHtml(d.tz)+')':''}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${(d.slots||[]).slice(0,60).map((s,i)=>`<button style="${btn}" onclick="ozonPickSlot(${i})">${ozonWhen(s.from)}–${String(new Date(s.to).getHours()).padStart(2,'0')}:${String(new Date(s.to).getMinutes()).padStart(2,'0')}</button>`).join('')}</div>
+        <button style="${btn};color:var(--muted);margin-top:8px" onclick="ozonDraft.stage='warehouse';redraw()">← другой склад</button>`;
+    }else if(d.stage==='confirm'){
+      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">Шаг 3 из 3 · проверь и подтверди</div>
+        <div style="font-family:var(--mono);font-size:12px;line-height:1.7">
+          склад: <b>${escHtml((wh||{}).name||'')}</b><br>
+          слот: <b>${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}</b><br>
+          состав: ${d.items.map(i=>escHtml(artName(i.article))+' '+i.quantity+' шт').join(' · ')}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4)" onclick="ozonCreateSupply()">создать заявку в Ozon</button>
+          <button style="${btn};color:var(--muted)" onclick="ozonDraft.stage='slots';redraw()">← другой слот</button></div>`;
+    }else if(d.stage==='done'){
+      inner=`<div style="font-family:var(--mono);font-size:13px;color:var(--green);line-height:1.6">✓ заявка создана в Ozon${d.orderId?', номер '+escHtml(d.orderId):''}.<br>
+        <span style="color:var(--muted)">Отправки помечены отгруженными. Грузоместа и этикетки — следующий шаг.</span></div>
+        <button style="${btn};margin-top:8px" onclick="ozonCancelDraft()">готово</button>`;
+    }else{
+      inner=`<button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button>`;
+    }
+    wizard=`<div class="block" style="padding:0.75rem 1rem;margin:0 0 12px;border-color:var(--accent)">${head}${rejected}${errs}${inner}</div>`;
+  }
+
+  const rows=groups.map(g=>{
+    const cid=ozonClusterId(g.cluster);
+    const items=Object.entries(g.byArticle).map(([a,q])=>escHtml(artName(a))+' '+q).join(' · ');
+    const active=d&&d.cluster===g.cluster;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-family:var(--mono);font-size:12px"><b>${escHtml(g.cluster)}</b> <span style="color:var(--green)">${g.total} шт</span>
+        <span style="color:var(--muted)">${items}</span>${cid?'':' <span style="color:var(--amber)">кластер не сопоставлен</span>'}</span>
+      <button style="${btn};color:${active?'var(--muted)':'var(--accent)'}" ${active?'disabled':''} onclick="ozonStartDraft('${g.cluster.replace(/'/g,"\\'")}')">${active?'в работе':'создать заявку'}</button>
+    </div>`;
+  }).join('');
+
+  return `<div style="font-size:12px;color:var(--muted);margin:14px 0 4px">Готово к отгрузке · упаковано и ждёт заявки</div>
+    ${wizard}
+    ${rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);padding:4px 0">нет упакованных отправок — отметь их значком 📦 в списке отправок</div>'}`;
+}
+
 function ozonPanelHtml(){
   const open=lsGet(LS_OZON_OPEN,false)===true;
   const keys=getOzonKeys(), cache=getOzonCache();
   const head=`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
-    <span style="cursor:pointer" onclick="toggleOzonPanel()">${open?'▾':'▸'} Ozon API · только чтение</span>
+    <span style="cursor:pointer" onclick="toggleOzonPanel()">${open?'▾':'▸'} Ozon API · заявки на поставку</span>
     <span style="font-size:11px;font-family:var(--mono);text-transform:none;letter-spacing:0;color:${keys?'var(--green)':'var(--muted)'}">${keys?'подключено · Client-Id '+escHtml(keys.clientId):'не подключено'}${cache.updatedAt?' · обновлено '+ozonWhen(cache.updatedAt):''}</span></div>`;
   if(!open) return head;
   const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
@@ -603,7 +811,8 @@ function ozonPanelHtml(){
         return `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">
           роли ключа: ${roles.length?roles.map(r=>escHtml(r.name)+' ('+r.methods+' методов)').join(', '):'—'}
           ${cache.keyExpiresAt?`<br><span style="color:${col}">ключ действует до ${ozonWhen(cache.keyExpiresAt)}${left!==null?` · осталось ${left} дн`:''}</span>`:''}</div>`; })()}
-      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Заявки на поставку в Ozon${orders.length?' · последние '+orders.length:''}</div>
+      ${ozonSupplyHtml()}
+      <div style="font-size:12px;color:var(--muted);margin:16px 0 4px">Заявки на поставку в Ozon${orders.length?' · последние '+orders.length:''}</div>
       <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Заявка</th><th>Статус</th><th>Слот</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
       <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Товары ↔ SKU Ozon (найдено ${Object.keys(skus).length} из ${ALL_ARTICLES.length})</summary><div style="margin-top:6px">${skuRows}</div></details>`;
