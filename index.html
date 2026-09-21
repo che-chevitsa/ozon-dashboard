@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.45 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.46 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -506,7 +506,8 @@ async function ozonRefresh(){
 
     ozonSetStatus('Загружаю заявки на поставку…');
     try{
-      const list=await ozonApi('/v3/supply-order/list',{limit:50,filter:{},sort_by:'ORDER_CREATION',sort_dir:'DESC'});
+      // states — обязательный фильтр, пустым быть не может: просим все статусы сразу
+      const list=await ozonApi('/v3/supply-order/list',{limit:50,filter:{states:OZON_ALL_STATES},sort_by:'ORDER_CREATION',sort_dir:'DESC'});
       const ids=(list.order_ids||[]).slice(0,50);
       cache.orders=[];
       if(ids.length){
@@ -535,6 +536,7 @@ function ozonWhen(iso){
   return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
 // Статусы приходят строками вида ORDER_STATE_IN_TRANSIT — показываем по-русски.
+const OZON_ALL_STATES=['DATA_FILLING','READY_TO_SUPPLY','ACCEPTED_AT_SUPPLY_WAREHOUSE','IN_TRANSIT','ACCEPTANCE_AT_STORAGE_WAREHOUSE','REPORTS_CONFIRMATION_AWAITING','REPORT_REJECTED','COMPLETED','REJECTED_AT_SUPPLY_WAREHOUSE','CANCELLED','OVERDUE'];
 const OZON_STATES={
   DATA_FILLING:'заполнение данных', READY_TO_SUPPLY:'готова к отгрузке', ACCEPTED_AT_SUPPLY_WAREHOUSE:'принята на точке отгрузки',
   IN_TRANSIT:'в пути', ACCEPTANCE_AT_STORAGE_WAREHOUSE:'приёмка на складе', REPORTS_CONFIRMATION_AWAITING:'согласование актов',
