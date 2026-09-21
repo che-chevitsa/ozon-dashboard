@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.51 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.52 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -572,13 +572,20 @@ async function ozonSupplyIdOf(orderId){
   return {supplyId:sup.supply_id,count:(ord.supplies||[]).length};
 }
 // Передача грузомест в заявку. Пишет в Ozon только после подтверждения.
-async function ozonSendCargoes(orderId){
+async function ozonSendCargoes(orderId,auto){
   const plan=ozonCargoPlan(orderId);
-  if(!plan.boxes.length){ alert('Не из чего собрать грузоместа.\n'+plan.problems.join('\n')); return; }
-  const list=plan.boxes.map((b,i)=>(i+1)+') '+b.boxName+' — '+artName(b.article)+' '+b.qty+' шт').join('\n');
-  const warn=plan.problems.length?'\n\nНе попадут в грузоместа:\n'+plan.problems.join('\n'):'';
-  if(!confirm('Передать состав грузомест в заявку '+orderId+'?\n\n'+plan.boxes.length+' коробок:\n'+list+warn+'\n\nПрежний состав грузомест в заявке будет заменён.'))return;
-  ozonCargoState={orderId,busy:true,msg:'передаю грузоместа…',error:'',cargoIds:[]};
+  if(!plan.boxes.length){
+    const msg='Не из чего собрать грузоместа.\n'+plan.problems.join('\n');
+    if(auto){ ozonCargoState={orderId,busy:false,msg:'',error:plan.problems.join(' · ')||'нет коробок',cargoIds:[]}; redraw(); }
+    else alert(msg);
+    return;
+  }
+  if(!auto){ // ручной повтор — спрашиваем, автоматическая передача идёт сразу после создания заявки
+    const list=plan.boxes.map((b,i)=>(i+1)+') '+b.boxName+' — '+artName(b.article)+' '+b.qty+' шт').join('\n');
+    const warn=plan.problems.length?'\n\nНе попадут в грузоместа:\n'+plan.problems.join('\n'):'';
+    if(!confirm('Передать состав грузомест в заявку '+orderId+'?\n\n'+plan.boxes.length+' коробок:\n'+list+warn+'\n\nПрежний состав грузомест в заявке будет заменён.'))return;
+  }
+  ozonCargoState={orderId,busy:true,msg:'передаю грузоместа…',error:'',cargoIds:[],problems:plan.problems};
   redraw();
   try{
     const {supplyId,count}=await ozonSupplyIdOf(orderId);
@@ -642,9 +649,10 @@ function ozonCargoHtml(orderId){
   if(st&&st.busy)return `<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(st.msg||'…')}</span>`;
   if(st&&st.cargoIds.length)
     return `<span style="font-family:var(--mono);font-size:11px;color:var(--green)">${escHtml(st.msg)}</span>
+      ${(st.problems||[]).length?`<div style="font-family:var(--mono);font-size:11px;color:var(--amber);margin-top:4px">не вошло: ${st.problems.map(escHtml).join(' · ')}</div>`:''}
       <button style="${btn};color:var(--accent);margin-left:6px" onclick="ozonCargoLabels()">этикетки PDF</button>`;
   const err=st&&st.error?`<div style="font-family:var(--mono);font-size:11px;color:var(--red);margin-top:4px">${escHtml(st.error)}</div>`:'';
-  return `<button style="${btn};color:var(--accent)" onclick="ozonSendCargoes('${String(orderId).replace(/'/g,"")}')">грузоместа</button>${err}`;
+  return `<button style="${btn};color:${st&&st.error?'var(--red)':'var(--accent)'}" onclick="ozonSendCargoes('${String(orderId).replace(/'/g,"")}')">${st&&st.error?'передать грузоместа ещё раз':'грузоместа'}</button>${err}`;
 }
 
 // ===== СОЗДАНИЕ ЗАЯВКИ НА ПОСТАВКУ (шаг за шагом) =====
@@ -799,8 +807,9 @@ async function ozonCreateSupply(){
   const d=ozonDraft;
   const wh=(d.warehouses||[]).find(w=>w.id===d.warehouseId)||{};
   const list=d.items.map(i=>artName(i.article)+' — '+i.quantity+' шт').join('\n');
+  const boxes=d.idx.length;
   const where=d.supplyType==='CROSSDOCK'?`Кросс-докинг через: ${(d.dropoff||{}).name||''}`:`Склад: ${wh.name||d.warehouseId}`;
-  if(!confirm(`Создать заявку на поставку в Ozon?\n\nКластер: ${d.cluster}\n${where}\nСлот: ${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}\n\n${list}\n\nЗаявка появится в личном кабинете Ozon.`))return;
+  if(!confirm(`Создать заявку на поставку в Ozon?\n\nКластер: ${d.cluster}\n${where}\nСлот: ${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}\n\n${list}\n\nСостав грузомест (${boxes} ${pkPlural(boxes,'коробка','коробки','коробок')}) будет передан сразу после создания.\nЗаявка появится в личном кабинете Ozon.`))return;
   d.busy=true; d.stage='creating'; d.errors=[];
   redraw();
   try{
@@ -824,6 +833,8 @@ async function ozonCreateSupply(){
     const adjs=getAdjs();
     d.idx.forEach(i=>{ if(adjs[i]){ adjs[i].packed=true; adjs[i].sent=true; adjs[i].ozonOrderId=st.order_id; } });
     saveAdjs(adjs);
+    // состав коробок известен из плана упаковки — передаём сразу, до обновления кэша
+    await ozonSendCargoes(st.order_id,true);
     ozonRefresh(); // подтянем свежий список заявок
   }catch(e){ d.errors.push(e.message); d.stage='confirm'; }
   d.busy=false;
@@ -873,7 +884,7 @@ function ozonSupplyHtml(){
           <button style="${btn};color:var(--muted)" onclick="ozonDraft.stage='slots';redraw()">← другой слот</button></div>`;
     }else if(d.stage==='done'){
       inner=`<div style="font-family:var(--mono);font-size:13px;color:var(--green);line-height:1.6">✓ заявка создана в Ozon${d.orderId?', номер '+escHtml(d.orderId):''}.<br>
-        <span style="color:var(--muted)">Отправки помечены отгруженными. Осталось передать состав грузомест.</span></div>
+        <span style="color:var(--muted)">Отправки помечены отгруженными, состав грузомест передан.</span></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">${ozonCargoHtml(d.orderId)}
         <button style="${btn}" onclick="ozonCancelDraft()">готово</button></div>`;
     }else{
