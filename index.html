@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.43 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.44 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -477,6 +477,13 @@ async function ozonRefresh(){
   ozonBusy=true;
   const cache=getOzonCache(), errors=[];
   try{
+    ozonSetStatus('Проверяю ключ…');
+    try{ // /v1/roles — что именно разрешено этому ключу и до какой даты он живёт
+      const res=await ozonApi('/v1/roles',{});
+      cache.roles=(res.roles||[]).map(r=>({name:r.name,methods:(r.methods||[]).length}));
+      cache.keyExpiresAt=res.expires_at||'';
+    }catch(e){ errors.push('права ключа: '+e.message); }
+
     ozonSetStatus('Загружаю кластеры…');
     try{
       let res;
@@ -548,8 +555,9 @@ function ozonPanelHtml(){
   let body;
   if(!keys){
     body=`<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px">
-        Ключи берутся в личном кабинете Ozon: Настройки → Seller API. Они сохраняются только в этом браузере
-        и не уходят в облачную синхронизацию — ключ даёт полный доступ к кабинету. На другом устройстве введи их заново.
+        Ключи берутся в личном кабинете Ozon: Настройки → Seller API → Сгенерировать ключ. Роль ключа определяет,
+        какие методы ему доступны; срок действия — 3 месяца, потом ключ нужно перевыпустить.
+        Ключ сохраняется только в этом браузере и не уходит в облачную синхронизацию. На другом устройстве введи его заново.
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input id="ozon-client-id" placeholder="Client-Id" style="${inp};width:140px">
@@ -586,6 +594,12 @@ function ozonPanelHtml(){
         <button style="${btn};color:var(--muted)" onclick="forgetOzonKeys()">отключить</button>
         <span id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)">${cache.updatedAt?'обновлено '+ozonWhen(cache.updatedAt):'данные ещё не загружены'}</span>
       </div>
+      ${(()=>{ const roles=cache.roles||[]; if(!roles.length&&!cache.keyExpiresAt) return '';
+        const left=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
+        const col=left===null?'var(--muted)':left<14?'var(--red)':left<30?'var(--amber)':'var(--muted)';
+        return `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+          роли ключа: ${roles.length?roles.map(r=>escHtml(r.name)+' ('+r.methods+' методов)').join(', '):'—'}
+          ${cache.keyExpiresAt?`<br><span style="color:${col}">ключ действует до ${ozonWhen(cache.keyExpiresAt)}${left!==null?` · осталось ${left} дн`:''}</span>`:''}</div>`; })()}
       <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Заявки на поставку в Ozon${orders.length?' · последние '+orders.length:''}</div>
       <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Заявка</th><th>Статус</th><th>Слот</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
