@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.47 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.48 · 22.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -629,10 +629,11 @@ async function ozonPickWarehouse(id){
   ozonDraft.warehouseId=id; ozonDraft.busy=true; ozonDraft.stage='slots'; ozonDraft.errors=[];
   redraw();
   try{
-    const from=new Date(), to=new Date(Date.now()+6*86400000);
+    // Ozon ждёт даты в формате ГГГГ-ММ-ДД, без времени
+    const day=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     const res=await ozonApi('/v2/draft/timeslot/info',{
       draft_id:ozonDraft.draftId, supply_type:'DIRECT',
-      date_from:from.toISOString(), date_to:to.toISOString(),
+      date_from:day(new Date()), date_to:day(new Date(Date.now()+6*86400000)),
       selected_cluster_warehouses:[{macrolocal_cluster_id:ozonDraft.clusterId,storage_warehouse_id:id}],
     });
     if(res.error_reason&&res.error_reason!=='UNSPECIFIED') throw new Error(res.error_reason);
