@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.60 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.61 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -499,6 +499,10 @@ function forgetOzonKeys(){
   localStorage.removeItem(LS_OZON_KEYS); localStorage.removeItem(LS_OZON_CACHE);
   redraw();
 }
+function toggleAllOrders(){
+  localStorage.setItem('ozon_orders_all',JSON.stringify(lsGet('ozon_orders_all',false)!==true));
+  redraw();
+}
 function toggleOzonPanel(){
   const open=lsGet(LS_OZON_OPEN,false)!==true;
   localStorage.setItem(LS_OZON_OPEN,JSON.stringify(open));
@@ -721,6 +725,7 @@ function sheetBtnHtml(orderId){
 // Каждая отправка = одна коробка (количество совпадает со строкой вместимости),
 // поэтому состав грузомест собирается из тех же отправок, что ушли в заявку.
 let ozonCargoState=null; // {orderId, busy, msg, error, cargoIds, problems}
+let ozonSessionOrders=[]; // заявки, созданные в этом сеансе — для кнопки «этикетки»
 let ozonLabelState=null; // {orderId, busy, msg, error}
 
 function ozonCargoPlan(orderId){
@@ -1042,6 +1047,7 @@ async function ozonCreateSupply(){
       }
       if(!st||st.status!=='SUCCESS') throw new Error('заявка не создана: '+((st&&st.status)||'нет ответа')+' '+(((st&&st.error_reasons)||[]).filter(x=>x!=='UNSPECIFIED').join(', ')));
       r.orderId=st.order_id;
+      if(!ozonSessionOrders.includes(st.order_id)) ozonSessionOrders.push(st.order_id);
       const adjs=getAdjs();
       draft.idx.forEach(i=>{ if(adjs[i]){ adjs[i].packed=true; adjs[i].sent=true; adjs[i].ozonOrderId=st.order_id; } });
       saveAdjs(adjs);
@@ -1088,10 +1094,9 @@ function ozonSupplyHtml(){
 
   let wizard='';
   if(d){
-    const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
-        <b style="font-size:13px">${d.clusters.length>1?'Заявки: '+d.clusters.length+' кластера':'Заявка: '+escHtml(d.clusters[0])}</b>
-        <button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button></div>
-      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin:4px 0 8px">${d.clusters.map(escHtml).join(' · ')}</div>`;
+    const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <b style="font-size:13px">${d.clusters.length>1?'Заявки · '+d.clusters.map(escHtml).join(' · '):'Заявка · '+escHtml(d.clusters[0])}</b>
+        <button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button></div>`;
     let inner='';
     if(d.stage==='draft'&&d.busy){
       inner=`<div style="font-family:var(--mono);font-size:12px;color:var(--accent)">создаю черновик и жду расчёт Ozon…</div>`;
@@ -1124,7 +1129,7 @@ function ozonSupplyHtml(){
           ${(r.rejected||[]).length?`<span style="color:var(--amber)"> · не вошло: ${r.rejected.map(escHtml).join('; ')}</span>`:''}
           ${r.orderId?` <button style="${btn};font-size:11px;padding:3px 8px;color:var(--accent)" onclick="ozonLabels('${r.orderId}')">этикетки PDF</button>`:''}
         </div>`).join('')}</div>
-        ${d.stage==='done'?`<button style="${btn};margin-top:8px" onclick="ozonCancelDraft()">готово</button>`:''}`;
+`;
     }else{
       inner=`<button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button>`;
     }
@@ -1136,7 +1141,7 @@ function ozonSupplyHtml(){
     const items=Object.entries(g.byArticle).map(([a,q])=>escHtml(artName(a))+' '+q).join(' · ');
     return `<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer">
       <span style="font-family:var(--mono);font-size:12px;display:flex;align-items:center;gap:8px">
-        <input type="checkbox" ${on?'checked':''} onchange="ozonToggleCluster('${g.cluster.replace(/'/g,"\\'")}')" style="accent-color:var(--accent);cursor:pointer">
+        <input type="checkbox" ${on?'checked':''} onchange="ozonToggleCluster(&quot;${escHtml(g.cluster)}&quot;)" style="accent-color:var(--accent);cursor:pointer">
         <b>${escHtml(g.cluster)}</b> <span style="color:var(--green)">${g.total} шт</span>
         <span style="color:var(--muted)">${items}</span>${cid?'':'<span style="color:var(--amber)">кластер не сопоставлен</span>'}</span>
     </label>`;
@@ -1185,36 +1190,42 @@ function ozonPanelHtml(){
         ${escHtml(artName(a))} <span style="color:var(--muted)">${escHtml(a)}</span>
         <span style="color:${s?'var(--green)':'var(--amber)'}">${s?'→ SKU '+s.sku+(s.barcode?' · ШК '+escHtml(s.barcode):''):'→ не найден'}</span></div>`;
     }).join('');
-    const orderRows=orders.length?orders.map(o=>`<tr>
+    // по умолчанию показываем только заявки в работе: остальные — шум
+    const ordersAll=lsGet('ozon_orders_all',false)===true;
+    const ACTIVE=['DATA_FILLING','READY_TO_SUPPLY','ACCEPTED_AT_SUPPLY_WAREHOUSE','IN_TRANSIT'];
+    const shownOrders=ordersAll?orders:orders.filter(o=>ACTIVE.includes(String(o.state||'').replace(/^ORDER_STATE_/,'')));
+    const orderRows=shownOrders.length?shownOrders.map(o=>`<tr>
         <td class="mono">${escHtml(o.number||o.id)}</td>
         <td>${escHtml(ozonState(o.state))}</td>
         <td class="mono">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>
         <td>${escHtml(o.warehouse||'—')}</td>
         <td class="mono" style="color:var(--muted)">${ozonOrderActions(o.id)}</td>
-      </tr>`).join(''):`<tr><td colspan="5" style="color:var(--muted);padding:10px">заявок нет</td></tr>`;
+      </tr>`).join(''):`<tr><td colspan="5" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'заявок в работе нет'}</td></tr>`;
+    // срок ключа показываем, только когда он скоро кончится
+    const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
+    const keyWarn=keyLeft!==null&&keyLeft<30
+      ?`<div style="font-family:var(--mono);font-size:12px;color:${keyLeft<14?'var(--red)':'var(--amber)'};margin-bottom:10px">ключ Ozon действует ещё ${keyLeft} дн — пора перевыпустить в кабинете</div>`:'';
+    const sessionOrders=ozonSessionOrders.filter(id=>orders.some(o=>String(o.id)===String(id)));
     const errs=(cache.errors||[]).length
       ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.5">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
-    body=`${errs}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-        <button style="${btn};color:var(--accent)" onclick="ozonRefresh()">⟳ обновить данные</button>
-        <button style="${btn};color:var(--muted)" onclick="forgetOzonKeys()">отключить</button>
-        <span id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)">${cache.updatedAt?'обновлено '+ozonWhen(cache.updatedAt):'данные ещё не загружены'}</span>
-      </div>
-      ${(()=>{ const roles=cache.roles||[]; if(!roles.length&&!cache.keyExpiresAt) return '';
-        const left=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
-        const col=left===null?'var(--muted)':left<14?'var(--red)':left<30?'var(--amber)':'var(--muted)';
-        return `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">
-          роли ключа: ${roles.length?roles.map(r=>escHtml(r.name)+' ('+r.methods+' методов)').join(', '):'—'}
-          ${cache.keyExpiresAt?`<br><span style="color:${col}">ключ действует до ${ozonWhen(cache.keyExpiresAt)}${left!==null?` · осталось ${left} дн`:''}</span>`:''}</div>`; })()}
+    body=`${errs}${keyWarn}
       ${ozonSupplyHtml()}
-      ${(()=>{ const mine=[...new Set(getAdjs().map(a=>a.ozonOrderId).filter(Boolean))]
-          .filter(id=>(cache.orders||[]).some(o=>String(o.id)===String(id)));
-        return mine.length>1?`<div style="margin:14px 0 0"><button style="${btn};color:var(--accent)" onclick="ozonLabelsAll(${JSON.stringify(mine.map(String))})">⬇ этикетки всех наших заявок (${mine.length})</button></div>`:''; })()}
-      <div style="font-size:12px;color:var(--muted);margin:16px 0 4px">Заявки на поставку в Ozon${orders.length?' · последние '+orders.length:''}</div>
+      ${sessionOrders.length>1?`<div style="margin:14px 0 0"><button style="${btn};color:var(--accent)" onclick="ozonLabelsAll(${JSON.stringify(sessionOrders.map(String))})">⬇ этикетки всех заявок этого сеанса (${sessionOrders.length})</button></div>`:''}
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:16px 0 4px">
+        <span style="font-size:12px;color:var(--muted)">${ordersAll?'Все заявки в Ozon · '+orders.length:'Заявки в работе · '+shownOrders.length}</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleAllOrders()">${ordersAll?'только в работе':'показать все ('+orders.length+')'}</span></div>
       <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Заявка</th><th>Статус</th><th>Слот</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       ${sheetCfgHtml()}
-      <details style="margin-bottom:8px;margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
-      <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Товары ↔ SKU Ozon (найдено ${Object.keys(skus).length} из ${ALL_ARTICLES.length})</summary><div style="margin-top:6px">${skuRows}</div></details>`;
+      <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Подключение и справочники</summary>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
+          <button style="${btn};color:var(--accent)" onclick="ozonRefresh()">⟳ обновить данные</button>
+          <button style="${btn};color:var(--muted)" onclick="forgetOzonKeys()">отключить ключ</button>
+          <span id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)">${cache.updatedAt?'обновлено '+ozonWhen(cache.updatedAt):'данные ещё не загружены'}</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:8px">роли ключа: ${(cache.roles||[]).length?(cache.roles||[]).map(r=>escHtml(r.name)).join(', '):'—'}${cache.keyExpiresAt?' · действует до '+ozonWhen(cache.keyExpiresAt):''}</div>
+        <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
+        <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Товары ↔ SKU Ozon (найдено ${Object.keys(skus).length} из ${ALL_ARTICLES.length})</summary><div style="margin-top:6px">${skuRows}</div></details>
+      </details>`;
   }
   return head+`<div class="block" style="padding:0.75rem 1.25rem;margin-top:0">${body}</div>`;
 }
@@ -4130,7 +4141,7 @@ function renderSalesToggles(){
   document.getElementById('sales-toggles').innerHTML=getSalesNames().map(name=>{
     const color=salesColor(name);
     const on=!salesHidden.has(name);
-    return `<button class="sales-toggle ${on?'on':''}" onclick="toggleSalesSeries('${name.replace(/'/g,"\\'")}')"><span class="dot" style="background:${on?color:'transparent'};border:1px solid ${color}"></span>${name}</button>`;
+    return `<button class="sales-toggle ${on?'on':''}" onclick="toggleSalesSeries(&quot;${escHtml(name)}&quot;)"><span class="dot" style="background:${on?color:'transparent'};border:1px solid ${color}"></span>${name}</button>`;
   }).join('');
 }
 function toggleSalesSeries(name){
