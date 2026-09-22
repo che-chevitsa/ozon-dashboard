@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.56 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.57 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -623,10 +623,26 @@ function saveSheetCfg(){
 }
 function forgetSheetCfg(){ if(confirm('Убрать настройки таблицы из этого браузера?')){ localStorage.removeItem(LS_SHEET); redraw(); } }
 
+async function ozonOrderInfo(orderId){
+  const c=getOzonCache();
+  const known=(c.orders||[]).find(x=>String(x.id)===String(orderId));
+  if(known&&known.number) return known;
+  const got=await ozonApi('/v3/supply-order/get',{order_ids:[String(orderId)]});
+  const ord=(got.orders||[])[0];
+  if(!ord) return known||{id:orderId};
+  const rec={id:ord.order_id,number:ord.order_number,state:ord.state,
+    created:ord.created_date,deadline:ord.data_filling_deadline_utc,
+    warehouse:(ord.dropoff_warehouse||{}).name||'',
+    timeslot:((ord.timeslot||{}).timeslot)||null,
+    supplies:(ord.supplies||[]).map(s=>({id:s.supply_id,state:s.state,bundleId:s.bundle_id,clusterId:s.macrolocal_cluster_id}))};
+  c.orders=[rec,...(c.orders||[]).filter(x=>String(x.id)!==String(orderId))];
+  saveOzonCache(c);
+  return rec;
+}
 // Строки по заявке: одна строка на товар, как в таблице учёта.
-function sheetRows(orderId){
+async function sheetRows(orderId){
   const cfg=getSheetCfg()||{};
-  const order=(getOzonCache().orders||[]).find(o=>String(o.id)===String(orderId))||{};
+  const order=await ozonOrderInfo(orderId)||{};
   const ship=order.timeslot&&order.timeslot.from?new Date(order.timeslot.from):null;
   const fmt=d=>d?String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear():'';
   const by={};
@@ -654,7 +670,7 @@ function sheetRows(orderId){
 async function sheetSend(orderId,auto){
   const cfg=getSheetCfg();
   if(!cfg){ if(!auto) alert('Сначала настрой Google Таблицу в разделе ниже.'); return; }
-  const rows=sheetRows(orderId);
+  const rows=await sheetRows(orderId);
   if(!rows.length){ if(!auto) alert('Нет строк для этой заявки.'); return; }
   sheetState={orderId,busy:true,msg:'отправляю в таблицу…',error:''};
   redraw();
