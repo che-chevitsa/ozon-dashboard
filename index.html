@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.59 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.60 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -316,7 +316,7 @@ function getHiddenArticles(){
   }catch{ return new Set(); }
 }
 function saveHiddenArticles(set){ localStorage.setItem(LS_HIDDEN_ARTICLES,JSON.stringify([...set])); refreshFocus(); scheduleSave(); }
-function toggleHiddenArticle(art){
+function toggleHiddenArticle(art){ // держим фильтр приоритетов в согласии с галочками
   const s=getHiddenArticles();
   if(s.has(art)) s.delete(art);
   else { if(FOCUS.length<=1) return; s.add(art); } // хотя бы один товар должен остаться
@@ -2627,6 +2627,11 @@ function confirmHeatmapSend(article,cluster,inputId,safeId){
 // Фильтры и сортировка приоритетов
 let priorityFilters = { articles: new Set(FOCUS), sortBy: 'score' };
 
+// Товары включаются только галочками «Товары в расчёте» — отдельного фильтра больше нет.
+function toggleArtsPanel(){
+  localStorage.setItem('ozon_arts_open',JSON.stringify(lsGet('ozon_arts_open',true)===false));
+  redraw();
+}
 function toggleArticleFilter(art){
   if(priorityFilters.articles.has(art)){
     if(priorityFilters.articles.size>1) priorityFilters.articles.delete(art);
@@ -3155,20 +3160,23 @@ function render(data){
   // Данные по скрытым товарам остаются в rawData — прячется только отображение.
   const hiddenArts=getHiddenArticles();
   const artsWithData=new Set(data.filter(r=>r.sales>0||r.fbo>0||r.transit>0).map(r=>r.article));
+  const artsOpen=lsGet('ozon_arts_open',true)!==false;
+  const chk=art=>{
+    const on=!hiddenArts.has(art), noData=!artsWithData.has(art);
+    return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:${on?'var(--text)':'var(--muted)'};opacity:${noData?0.55:1}" title="${noData?'нет данных в текущем файле':art}">
+      <input type="checkbox" ${on?'checked':''} onchange="toggleHiddenArticle('${art}')" style="cursor:pointer;accent-color:var(--accent)">
+      ${artName(art)}</label>`;
+  };
+  const withData=ALL_ARTICLES.filter(a=>artsWithData.has(a));
+  const noData=ALL_ARTICLES.filter(a=>!artsWithData.has(a));
   html+=`<div class="section-label" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
-    <span>Товары в расчёте</span><span style="font-size:11px;color:var(--muted);font-family:var(--mono)">${FOCUS.length} из ${ALL_ARTICLES.length}</span></div>
-  <div class="block" style="padding:0.75rem 1.25rem;margin-bottom:1rem">
-    <div style="display:flex;gap:14px;flex-wrap:wrap">
-      ${ALL_ARTICLES.map(art=>{
-        const on=!hiddenArts.has(art);
-        const noData=!artsWithData.has(art);
-        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:${on?'var(--text)':'var(--muted)'};opacity:${noData?0.5:1}" title="${noData?'нет данных в текущем файле':art}">
-          <input type="checkbox" ${on?'checked':''} onchange="toggleHiddenArticle('${art}')" style="cursor:pointer;accent-color:var(--accent)">
-          ${artName(art)}${noData?' <span style="font-size:10px">∅</span>':''}
-        </label>`;
-      }).join('')}
-    </div>
-  </div>`;
+    <span style="cursor:pointer" onclick="toggleArtsPanel()">${artsOpen?'▾':'▸'} Товары в расчёте</span>
+    <span style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:none;letter-spacing:0">выбрано ${FOCUS.length} · с данными в файле ${withData.length}${artsOpen?'':' · '+FOCUS.map(a=>artName(a)).join(', ')}</span></div>
+  ${artsOpen?`<div class="block" style="padding:0.75rem 1.25rem;margin-bottom:1rem">
+    <div style="display:flex;gap:14px;flex-wrap:wrap">${withData.map(chk).join('')}</div>
+    ${noData.length?`<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);font-family:var(--mono)">ещё ${noData.length} без данных в файле</summary>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">${noData.map(chk).join('')}</div></details>`:''}
+  </div>`:''}`;
 
   // Cards
   html+=`<div class="section-label">Покрытие потребности · ${period} дней</div><div class="cards">`;
@@ -3199,19 +3207,14 @@ function render(data){
   ];
 
   const filterBar = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">товар:</span>
-    ${FOCUS.map(art=>{
-      const active=priorityFilters.articles.has(art);
-      return `<button onclick="toggleArticleFilter('${art}')" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(91,127,255,0.15)':'none'};color:${active?'var(--accent)':'var(--muted)'}">${artName(art)}</button>`;
-    }).join('')}
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:8px">сортировка:</span>
+    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">сортировка:</span>
     ${sortOptions.map(o=>{
       const active=priorityFilters.sortBy===o.key;
       return `<button onclick="setSortBy('${o.key}')" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(91,127,255,0.15)':'none'};color:${active?'var(--accent)':'var(--muted)'}">${o.label}</button>`;
     }).join('')}
   </div>
-  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">группы:</span>
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">кластеры:</span>
     ${CLUSTER_GROUPS.map(g=>{
       const off=hiddenGroups.has(g.name);
       const style=off
@@ -3221,7 +3224,7 @@ function render(data){
     }).join('')}
   </div>
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">кластеры:</span>
+    <span style="font-size:11px;color:var(--muted);font-family:var(--mono);opacity:0">кластеры:</span>
     ${[...hiddenClusters].sort().map(c=>`<button onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт" style="font-family:var(--mono);font-size:11px;padding:3px 8px 3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);opacity:0.6;text-decoration:line-through">${c} ×</button>`).join('')}
     <select onchange="hideCluster(this.value); this.value='';" style="font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer">
       <option value="">+ скрыть кластер</option>
