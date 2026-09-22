@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.53 · 22.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.54 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -436,20 +436,52 @@ function ozonSetStatus(msg,color){
   const el=document.getElementById('ozon-status');
   if(el){ el.textContent=msg; el.style.color=color||'var(--muted)'; }
 }
+// Заметка о вынужденной паузе — видна в панели и в прогрессе пакета заявок.
+function ozonNote(msg){
+  ['ozon-status','ozon-wait'].forEach(id=>{ const el=document.getElementById(id); if(el) el.textContent=msg; });
+}
+function ozonPause(ms){ return new Promise(r=>setTimeout(r,ms)); }
+// Лимиты Ozon: несколько запросов в секунду на всё и 2 в минуту на создание черновика/заявки.
+// Поэтому запросы идут строго по очереди, с нужными паузами и повтором при 429.
+const OZON_SLOW=/^\/v[12]\/draft\/(direct|crossdock|multi-cluster)\/create$|^\/v2\/draft\/supply\/create$/;
+let _ozonGate=Promise.resolve(), _ozonLast=0, _ozonLastSlow=0;
 async function ozonApi(path,body){
+  const run=()=>ozonApiRaw(path,body);
+  const p=_ozonGate.then(run,run);
+  _ozonGate=p.then(()=>{},()=>{});
+  return p;
+}
+async function ozonApiRaw(path,body){
   const k=getOzonKeys();
   if(!k) throw new Error('не введены Client-Id и Api-Key');
-  const r=await fetch(OZON_API+path,{method:'POST',
-    headers:{'Content-Type':'application/json','Client-Id':k.clientId,'Api-Key':k.apiKey},
-    body:JSON.stringify(body||{})});
-  const text=await r.text();
-  let data=null; try{ data=JSON.parse(text); }catch{}
-  if(!r.ok){
-    const hint=r.status===401||r.status===403?' — ключ не подошёл'
-      :r.status===429?' — превышен лимит запросов, подожди минуту':'';
-    throw new Error('HTTP '+r.status+hint+': '+((data&&(data.message||data.error))||text.slice(0,160)));
+  const slow=OZON_SLOW.test(path);
+  for(let attempt=0;attempt<6;attempt++){
+    // пауза перед запросом: 0.4 с на обычные, 31 с между созданиями черновиков и заявок
+    let wait=Math.max(0,_ozonLast+400-Date.now());
+    if(slow) wait=Math.max(wait,_ozonLastSlow+31000-Date.now());
+    if(wait>1500) ozonNote('жду лимит Ozon: '+Math.ceil(wait/1000)+' с…');
+    if(wait>0) await ozonPause(wait);
+    _ozonLast=Date.now();
+    if(slow) _ozonLastSlow=Date.now();
+    const r=await fetch(OZON_API+path,{method:'POST',
+      headers:{'Content-Type':'application/json','Client-Id':k.clientId,'Api-Key':k.apiKey},
+      body:JSON.stringify(body||{})});
+    const text=await r.text();
+    let data=null; try{ data=JSON.parse(text); }catch{}
+    if(r.status===429){ // подождать и повторить — лимит скользящий
+      const retry=Number(r.headers.get('Retry-After'))||Math.min(60,2*Math.pow(2,attempt));
+      ozonNote('Ozon просит подождать '+retry+' с (лимит запросов)…');
+      await ozonPause(retry*1000);
+      continue;
+    }
+    ozonNote('');
+    if(!r.ok){
+      const hint=r.status===401||r.status===403?' — ключ не подошёл':'';
+      throw new Error('HTTP '+r.status+hint+': '+((data&&(data.message||data.error))||text.slice(0,160)));
+    }
+    return data||{};
   }
-  return data||{};
+  throw new Error('лимит запросов Ozon не отпускает — попробуй через минуту');
 }
 function saveOzonKeys(){
   const id=(document.getElementById('ozon-client-id').value||'').trim();
@@ -842,7 +874,8 @@ async function ozonCreateSupply(){
   if(!confirm('Создать '+d.clusters.length+' '+pkPlural(d.clusters.length,'заявку','заявки','заявок')+' на поставку в Ozon?\n\n'
     +(d.supplyType==='CROSSDOCK'?'Кросс-докинг через '+((getOzonDropoff()||{}).name||''):'Прямая поставка')
     +'\nСлот: '+ozonWhen(d.slot.from)+' – '+ozonWhen(d.slot.to)+'\n\n'+plan
-    +'\n\nСостав грузомест будет передан сразу после создания.'))return;
+    +'\n\nСостав грузомест будет передан сразу после создания.'
+    +(d.clusters.length>1?'\n\nOzon разрешает создавать не больше 2 заявок в минуту, поэтому '+d.clusters.length+' заявок займут примерно '+Math.ceil(d.clusters.length*70/60)+' мин. Не закрывай вкладку.':'')))return;
   d.stage='running'; d.busy=true; d.results=[];
   redraw();
   for(const cluster of d.clusters){
@@ -938,7 +971,8 @@ function ozonSupplyHtml(){
           <button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4)" onclick="ozonCreateSupply()">создать ${d.clusters.length>1?d.clusters.length+' заявки':'заявку'} в Ozon</button>
           <button style="${btn};color:var(--muted)" onclick="ozonDraft.stage='slots';redraw()">← другой слот</button></div>`;
     }else if(d.stage==='running'||d.stage==='done'){
-      inner=`<div style="font-family:var(--mono);font-size:12px;line-height:1.8">
+      inner=`<div id="ozon-wait" style="font-family:var(--mono);font-size:12px;color:var(--accent);min-height:16px"></div>
+      <div style="font-family:var(--mono);font-size:12px;line-height:1.8">
         ${(d.results||[]).map(r=>`<div>
           ${r.status==='ok'?'<span style="color:var(--green)">✓</span>':r.status==='err'?'<span style="color:var(--red)">✕</span>':'<span style="color:var(--accent)">…</span>'}
           <b>${escHtml(r.cluster)}</b>
