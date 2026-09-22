@@ -93,12 +93,14 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
 .legend-dot{width:8px;height:8px;border-radius:2px;}
 .block{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-top:2rem;}
-.boxes-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
-.box-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:1rem;}
+.boxes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+.box-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+.box-card>*{margin:0!important;}
+.box-card .box-actions{margin-left:auto;}
 .box-card.warn{border-color:rgba(255,170,59,0.4);}
 .box-card.danger{border-color:rgba(255,90,90,0.4);}
-.box-name{font-size:12px;color:var(--muted);margin-bottom:6px;}
-.box-count{font-family:var(--mono);font-size:24px;font-weight:600;}
+.box-name{font-size:12px;color:var(--text);}
+.box-count{font-family:var(--mono);font-size:16px;font-weight:600;}
 .box-count.green{color:var(--green);}.box-count.amber{color:var(--amber);}.box-count.red{color:var(--red);}
 .box-meta{font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--mono);}
 .box-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
@@ -196,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.57 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.58 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -205,11 +207,9 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
         <button class="period-tab" onclick="setPeriod(14)">14 дн</button>
         <button class="period-tab active" onclick="setPeriod(28)">28 дн</button>
       </div>
-      <button onclick="getAiRecommendations()" style="font-family:var(--mono);font-size:12px;background:linear-gradient(135deg,#5b4fff,#a855f7);border:none;color:#fff;border-radius:6px;padding:6px 14px;cursor:pointer;letter-spacing:0.02em;position:relative;overflow:hidden" id="ai-btn">✦ рекомендации ИИ</button>
-      <button class="reset-btn" onclick="exportForClaude()">↗ экспорт для Claude</button>
-      <button class="reset-btn" onclick="document.getElementById('profileInput').click()" id="profile-btn" title="Загрузить исторический профиль спроса">📊 профиль спроса</button>
+      <span id="file-date" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
       <input type="file" id="profileInput" accept=".xlsx,.xls" style="display:none">
-      <button class="reset-btn" onclick="resetDashboard()">← другой файл</button>
+      <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку с покрытием кластеров">↑ загрузить свежий файл</button>
     </div>
   </header>
 
@@ -2227,15 +2227,19 @@ async function loadFromCloud(){
 
 // Показывает диагностику облака под шапкой (временно, для отладки)
 function cloudDiag(msg){
+  // Обычные сообщения — только в консоль; на странице показываем лишь проблемы.
+  if(!/ОШИБК|ошибк|⚠/i.test(msg)){ console.log(msg); const q=document.getElementById('cloud-diag'); if(q) q.remove(); return; }
   let el=document.getElementById('cloud-diag');
   if(!el){
     el=document.createElement('div');
     el.id='cloud-diag';
-    el.style.cssText='font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 12px;margin:8px 0;background:var(--bg3);border:1px solid var(--border);border-radius:6px';
+    el.style.cssText='font-family:var(--mono);font-size:11px;color:var(--red);padding:6px 12px;margin:8px 0;background:var(--red-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer';
+    el.title='нажми, чтобы скрыть';
+    el.onclick=()=>el.remove();
     const tabs=document.getElementById('main-tabs');
     if(tabs&&tabs.parentNode) tabs.parentNode.insertBefore(el,tabs);
   }
-  el.textContent='🔍 '+msg;
+  el.textContent='⚠ '+msg;
 }
 
 // Debounce 1.5 сек: группирует частые клики (✓/×/добавления) в один PUT, защищает от гонок при быстрых действиях.
@@ -2582,6 +2586,10 @@ function confirmAccForm(article,cluster,inputId,formId){
   if(el)el.style.display='none';
 }
 
+function toggleHeatmap(){
+  localStorage.setItem('ozon_heatmap_open',JSON.stringify(lsGet('ozon_heatmap_open',false)!==true));
+  redraw();
+}
 function toggleAccordion(id){
   const el=document.getElementById(id);
   if(!el)return;
@@ -3068,6 +3076,15 @@ function setPeriod(days){
   redraw();
 }
 
+// Когда загружен файл — показываем его дату рядом с кнопкой загрузки.
+function renderFileDate(){
+  const el=document.getElementById('file-date');
+  if(!el)return;
+  const log=getLog?getLog():[];
+  const last=log&&log.length?log[0]:null;
+  const ts=last&&last.ts?new Date(last.ts):null;
+  el.textContent=ts?'файл от '+String(ts.getDate()).padStart(2,'0')+'.'+String(ts.getMonth()+1).padStart(2,'0'):'';
+}
 function render(data){
   document.getElementById('upload-section').style.display='none';
   document.getElementById('reset-wrap').style.display='flex';
@@ -3408,7 +3425,9 @@ function render(data){
   html+=ozonPanelHtml();
 
   // Heatmap
-  html+='<div class="section-label" style="margin-top:2rem">Тепловая карта · дней запаса</div>';
+  const hmOpen=lsGet('ozon_heatmap_open',false)===true;
+  html+=`<div class="section-label" style="margin-top:2rem;cursor:pointer" onclick="toggleHeatmap()">${hmOpen?'▾':'▸'} Тепловая карта · дней запаса</div>`;
+  html+=`<div id="heatmap-wrap" style="display:${hmOpen?'block':'none'}">`;
   html+='<div class="legend"><div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>0–7 дней</div><div class="legend-item"><div class="legend-dot" style="background:var(--amber)"></div>7–14 дней</div><div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>14+ дней</div></div>';
 
   // Desktop heatmap
@@ -3490,8 +3509,10 @@ function render(data){
     html+='</div></div>';
   });
   html+='</div>';
+  html+='</div>'; // конец свёртки тепловой карты
   document.getElementById('dashboard').innerHTML=html;
   renderBoxes();
+  renderFileDate();
   paintPackCanvases();
 }
 
