@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.63 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.64 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -2040,16 +2040,39 @@ function loadLocal(){
 // Если подключена Google Таблица, состояние дашборда лежит в файле на твоём Диске
 // (без лимита в 100 КБ). Иначе — старое облако JSONBin.
 function cloudMode(){ return getSheetCfg&&getSheetCfg()?'drive':'jsonbin'; }
-async function driveState(op,data){
+const DRIVE_CHUNK=48000; // Apps Script не принимает большие тела запроса — шлём частями
+async function driveCall(payload){
   const cfg=getSheetCfg();
   if(!cfg) throw new Error('Google Таблица не подключена');
-  const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({action:'state',op,secret:cfg.secret||'',data})});
+  let r;
+  try{
+    r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({secret:cfg.secret||'',...payload})});
+  }catch(e){ throw new Error('нет связи со скриптом (проверь ссылку и доступ «все, у кого есть ссылка»)'); }
   const t=await r.text();
   if(!r.ok) throw new Error('HTTP '+r.status+': '+t.slice(0,140));
   let j=null; try{ j=JSON.parse(t); }catch{ throw new Error('непонятный ответ скрипта: '+t.slice(0,140)); }
   if(j.error) throw new Error(j.error);
   return j;
+}
+// Состояние дашборда: чтение целиком, запись частями по ~48 КБ.
+async function driveState(op,data){
+  if(op==='get'){
+    const first=await driveCall({action:'state',op:'get'});
+    let text=first.text||'';
+    for(let i=1;i<(first.parts||1);i++){
+      const next=await driveCall({action:'state',op:'get',part:i});
+      text+=next.text||'';
+    }
+    if(first.data!==undefined&&!text) return first; // старый скрипт отдаёт объект целиком
+    return {data:text?JSON.parse(text):null};
+  }
+  const body=JSON.stringify(data||{});
+  const parts=Math.max(1,Math.ceil(body.length/DRIVE_CHUNK));
+  for(let i=0;i<parts;i++){
+    await driveCall({action:'state',op:'put',part:i,parts,text:body.slice(i*DRIVE_CHUNK,(i+1)*DRIVE_CHUNK)});
+  }
+  return {ok:true,parts};
 }
 // ===== JSONBIN =====
 const JSONBIN_BIN='69f3c4ae856a68218990cb6c';
