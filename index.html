@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.67 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.68 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -325,8 +325,7 @@ function getHiddenArticles(){
 function saveHiddenArticles(set){ localStorage.setItem(LS_HIDDEN_ARTICLES,JSON.stringify([...set])); refreshFocus(); scheduleSave(); }
 function toggleHiddenArticle(art){ // держим фильтр приоритетов в согласии с галочками
   const s=getHiddenArticles();
-  if(s.has(art)) s.delete(art);
-  else { if(FOCUS.length<=1) return; s.add(art); } // хотя бы один товар должен остаться
+  if(s.has(art)) s.delete(art); else s.add(art);
   saveHiddenArticles(s);
   priorityFilters.articles=new Set(FOCUS); // фильтр приоритетов синхронизируем с видимыми
   redraw();
@@ -341,9 +340,9 @@ const PACK_NAMES={'PF-СК-D55-WH-PG':'Круглая 5.5 см','PF-СК-D60-WH-
 function getPackLabels(){ try{ const v=JSON.parse(localStorage.getItem(LS_PACK_LABELS)||'null'); return v&&typeof v==='object'?v:{}; }catch{ return {}; } }
 function packName(art){ return getPackLabels()[art]||PACK_NAMES[art]||artName(art); }
 function refreshFocus(){
+  // Снять можно все галочки: списки просто окажутся пустыми, дашборд сам ничего не включает.
   const hidden=getHiddenArticles();
   FOCUS=ALL_ARTICLES.filter(a=>!hidden.has(a));
-  if(!FOCUS.length) FOCUS=ALL_ARTICLES.slice(0,1);
 }
 refreshFocus();
 // ===== ТИПЫ КОРОБОК (данные, не хардкод) =====
@@ -1232,8 +1231,11 @@ function ozonPanelHtml(){
     }).join('');
     // по умолчанию показываем только заявки в работе: остальные — шум
     const ordersAll=lsGet('ozon_orders_all',false)===true;
-    const ACTIVE=['DATA_FILLING','READY_TO_SUPPLY','ACCEPTED_AT_SUPPLY_WAREHOUSE','IN_TRANSIT'];
-    const shownOrders=ordersAll?orders:orders.filter(o=>ACTIVE.includes(String(o.state||'').replace(/^ORDER_STATE_/,'')));
+    // В работе — пока заявка не уехала с пункта отгрузки: дальше она уже не нужна в дашборде.
+    const ACTIVE=['DATA_FILLING','READY_TO_SUPPLY'];
+    const when=o=>new Date((o.timeslot&&o.timeslot.from)||o.created||0).getTime()||0;
+    const sorted=[...orders].sort((a,b)=>when(b)-when(a)); // свежие сверху
+    const shownOrders=ordersAll?sorted:sorted.filter(o=>ACTIVE.includes(String(o.state||'').replace(/^ORDER_STATE_/,'')));
     const orderRows=shownOrders.length?shownOrders.map(o=>`<tr>
         <td class="mono">${escHtml(o.number||o.id)}</td>
         <td>${escHtml(ozonState(o.state))}</td>
@@ -3300,7 +3302,9 @@ function render(data){
   </div>`:''}`;
 
   // Cards
-  html+=`<div class="section-label">Покрытие потребности · ${period} дней</div><div class="cards">`;
+  html+=`<div class="section-label">Покрытие потребности · ${period} дней</div>`;
+  if(!FOCUS.length) html+=`<div class="block" style="padding:0.75rem 1.25rem;font-size:12px;color:var(--muted);font-family:var(--mono)">не выбран ни один товар — отметь галочками выше</div>`;
+  html+=`<div class="cards">`;
   FOCUS.forEach(art=>{
     const pct=coverage[art],cls=pctClass(pct);
     const rows=data.filter(r=>r.article===art&&r.sales>0&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters));
@@ -4020,7 +4024,7 @@ function renderDashStatus(){
   const el=document.getElementById('dash-status');
   if(!el)return;
   const pl=plannedUnits(), pk=packedUnits();
-  const active=((getOzonCache().orders)||[]).filter(o=>['DATA_FILLING','READY_TO_SUPPLY','ACCEPTED_AT_SUPPLY_WAREHOUSE','IN_TRANSIT'].includes(String(o.state||'').replace(/^ORDER_STATE_/,''))).length;
+  const active=((getOzonCache().orders)||[]).filter(o=>['DATA_FILLING','READY_TO_SUPPLY'].includes(String(o.state||'').replace(/^ORDER_STATE_/,''))).length;
   const item=(label,val,color,view)=>`<span style="cursor:pointer" onclick="switchView('${view}')">${label}: <b style="color:${color}">${val}</b></span>`;
   el.innerHTML=[
     item('к упаковке',pl.total+' шт',pl.total?'var(--green)':'var(--muted)','pack'),
