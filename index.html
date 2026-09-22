@@ -196,7 +196,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.54 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.56 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -578,6 +578,126 @@ const OZON_STATES={
 const ozonState=s=>OZON_STATES[String(s||'').replace(/^ORDER_STATE_/,'')]||String(s||'').replace(/^ORDER_STATE_/,'').replace(/_/g,' ').toLowerCase();
 const ozonNorm=s=>String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-zа-я0-9]/g,'');
 
+// ===== УПАКОВЩИКИ И КОДЫ ДЛЯ ТАБЛИЦЫ =====
+// Исполнитель назначается на товар прямо в задании; при отметке «упаковано» имя и дата
+// фиксируются в отправке — из них потом строится учёт в Google Таблице.
+const LS_PACKERS='ozon_packers', LS_PACK_ASSIGN='ozon_pack_assign', LS_SHEET_CODES='ozon_sheet_codes';
+const DEFAULT_SHEET_CODES={'PF-OV-100x60-WH-PG':'Овал','PF-СК-D55-WH-PG':'5','PF-СК-D60-WH-PG':'6','PF-СК-D70-WH-PG':'7'};
+function getPackers(){ const v=lsGet(LS_PACKERS,null); return Array.isArray(v)&&v.length?v:['Аня','Даша']; }
+function savePackers(list){ localStorage.setItem(LS_PACKERS,JSON.stringify(list)); scheduleSave(); }
+function getAssign(){ return lsGet(LS_PACK_ASSIGN,{})||{}; }
+function assigneeOf(art){ return getAssign()[art]||''; }
+function setAssignee(art,name){
+  const a=getAssign();
+  if(name) a[art]=name; else delete a[art];
+  localStorage.setItem(LS_PACK_ASSIGN,JSON.stringify(a));
+  scheduleSave();
+  paintPackCanvases();
+  const el=document.querySelector(`.pk-sec[data-art="${CSS.escape(art)}"] .pk-who`);
+  if(el) el.value=name; // перерисовывать весь дашборд ради выбора имени не нужно
+}
+function addPacker(){
+  const name=(prompt('Имя упаковщика:')||'').trim();
+  if(!name)return;
+  const list=getPackers();
+  if(!list.includes(name)) list.push(name);
+  savePackers(list);
+  redraw();
+}
+function getSheetCodes(){ return lsGet(LS_SHEET_CODES,{})||{}; }
+function sheetCode(art){ return getSheetCodes()[art]||DEFAULT_SHEET_CODES[art]||packName(art); }
+
+// ===== ВЫГРУЗКА В GOOGLE ТАБЛИЦУ =====
+// Дашборд отправляет строки в веб-приложение Apps Script, привязанное к таблице.
+// Адрес и секрет живут только в этом браузере, как и ключи Ozon.
+const LS_SHEET='ozon_sheet_cfg';
+let sheetState=null; // {orderId, busy, msg, error}
+function getSheetCfg(){ return lsGet(LS_SHEET,null); }
+function saveSheetCfg(){
+  const url=(document.getElementById('sheet-url').value||'').trim();
+  const secret=(document.getElementById('sheet-secret').value||'').trim();
+  const link=(document.getElementById('sheet-link').value||'').trim()||'https://seller.ozon.ru/app/supply/orders/{id}';
+  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)){ alert('Нужна ссылка вида https://script.google.com/macros/s/.../exec'); return; }
+  localStorage.setItem(LS_SHEET,JSON.stringify({url,secret,link}));
+  redraw();
+}
+function forgetSheetCfg(){ if(confirm('Убрать настройки таблицы из этого браузера?')){ localStorage.removeItem(LS_SHEET); redraw(); } }
+
+// Строки по заявке: одна строка на товар, как в таблице учёта.
+function sheetRows(orderId){
+  const cfg=getSheetCfg()||{};
+  const order=(getOzonCache().orders||[]).find(o=>String(o.id)===String(orderId))||{};
+  const ship=order.timeslot&&order.timeslot.from?new Date(order.timeslot.from):null;
+  const fmt=d=>d?String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear():'';
+  const by={};
+  getAdjs().forEach(a=>{
+    if(String(a.ozonOrderId||'')!==String(orderId))return;
+    const k=a.article+'|'+a.qty;
+    const g=by[k]||(by[k]={article:a.article,qty:a.qty,boxes:0,total:0,packedAt:a.packedAt||'',packedBy:a.packedBy||''});
+    g.boxes+=1; g.total+=a.qty;
+    if(a.packedAt&&(!g.packedAt||a.packedAt<g.packedAt)) g.packedAt=a.packedAt;
+    if(a.packedBy&&!g.packedBy) g.packedBy=a.packedBy;
+  });
+  return Object.values(by).map(g=>({
+    shipDate:fmt(ship),
+    orderNumber:order.number||String(orderId),
+    orderUrl:(cfg.link||'https://seller.ozon.ru/app/supply/orders/{id}').replace('{id}',String(orderId)),
+    what:sheetCode(g.article),
+    perBox:g.qty,
+    boxes:g.boxes>1?g.boxes:'',
+    total:g.total,
+    packDate:g.packedAt?fmt(new Date(g.packedAt)):'',
+    packedBy:g.packedBy||'', // пусто — значит имя намеренно убрали в списке отправок
+    cluster:order.warehouse||'',
+  }));
+}
+async function sheetSend(orderId,auto){
+  const cfg=getSheetCfg();
+  if(!cfg){ if(!auto) alert('Сначала настрой Google Таблицу в разделе ниже.'); return; }
+  const rows=sheetRows(orderId);
+  if(!rows.length){ if(!auto) alert('Нет строк для этой заявки.'); return; }
+  sheetState={orderId,busy:true,msg:'отправляю в таблицу…',error:''};
+  redraw();
+  try{
+    // text/plain — чтобы браузер не слал preflight, который Apps Script не обрабатывает
+    const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({secret:cfg.secret||'',rows})});
+    const text=await r.text();
+    if(!r.ok) throw new Error('HTTP '+r.status+': '+text.slice(0,140));
+    let res=null; try{ res=JSON.parse(text); }catch{}
+    if(res&&res.error) throw new Error(res.error);
+    sheetState.msg='✓ в таблице: '+rows.length+' '+pkPlural(rows.length,'строка','строки','строк');
+  }catch(e){ sheetState.error=e.message; sheetState.msg=''; }
+  sheetState.busy=false;
+  redraw();
+}
+function sheetCfgHtml(){
+  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 8px';
+  const cfg=getSheetCfg();
+  if(cfg) return `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span>Google Таблица: <span style="color:var(--green)">подключена</span></span>
+      <button style="${btn};color:var(--muted)" onclick="forgetSheetCfg()">отключить</button></div>`;
+  return `<details style="margin-top:14px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Google Таблица · учёт отгрузок (не настроена)</summary>
+    <div style="font-size:12px;color:var(--muted);line-height:1.6;margin:8px 0">В таблице: Расширения → Apps Script, вставь код (я дам), затем Развернуть → Веб-приложение,
+      доступ «Все, у кого есть ссылка». Полученную ссылку вида .../exec вставь сюда. Секрет — любое слово, оно же в коде скрипта.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="sheet-url" placeholder="https://script.google.com/macros/s/.../exec" style="${inp};width:340px">
+      <input id="sheet-secret" placeholder="секрет" style="${inp};width:140px">
+      <input id="sheet-link" placeholder="ссылка на заявку: .../{id}" value="https://seller.ozon.ru/app/supply/orders/{id}" style="${inp};width:280px">
+      <button style="${btn};color:var(--green)" onclick="saveSheetCfg()">подключить</button>
+    </div></details>`;
+}
+function sheetBtnHtml(orderId){
+  const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
+  if(!getSheetCfg())return '';
+  const mine=getAdjs().some(a=>String(a.ozonOrderId||'')===String(orderId));
+  if(!mine)return '';
+  const st=sheetState&&String(sheetState.orderId)===String(orderId)?sheetState:null;
+  if(st&&st.busy)return `<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(st.msg)}</span>`;
+  return `<button style="${btn};color:${st&&st.error?'var(--red)':'var(--muted)'}" title="записать строки в Google Таблицу" onclick="sheetSend('${String(orderId)}')">таблица</button>`;
+}
+
 // ===== ГРУЗОМЕСТА И ЭТИКЕТКИ =====
 // Каждая отправка = одна коробка (количество совпадает со строкой вместимости),
 // поэтому состав грузомест собирается из тех же отправок, что ушли в заявку.
@@ -710,6 +830,7 @@ function ozonOrderActions(orderId){
   const parts=[];
   if(cs&&cs.busy) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(cs.msg||'…')}</span>`);
   else if(mine) parts.push(`<button style="${btn};color:${cs&&cs.error?'var(--red)':'var(--muted)'}" title="передать состав коробок заново" onclick="ozonSendCargoes('${String(orderId)}')">${cs&&cs.error?'грузоместа ещё раз':'грузоместа'}</button>`);
+  parts.push(sheetBtnHtml(orderId));
   parts.push(ls&&ls.busy
     ?`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
     :`<button style="${btn};color:var(--accent)" onclick="ozonLabels('${String(orderId)}')">этикетки</button>`);
@@ -908,6 +1029,7 @@ async function ozonCreateSupply(){
       // грузоместа — сразу, состав известен из плана упаковки
       const cargo=await ozonSendCargoes(st.order_id,true);
       r.boxes=cargo&&cargo.count; r.cargoError=cargo&&cargo.error;
+      if(getSheetCfg()) await sheetSend(st.order_id,true); // строки учёта в Google Таблицу
       r.rejected=(draft.rejected||[]).map(x=>x.name+' — '+x.reasons);
       r.status='ok';
     }catch(e){ r.status='err'; r.error=e.message; }
@@ -1071,7 +1193,8 @@ function ozonPanelHtml(){
         return mine.length>1?`<div style="margin:14px 0 0"><button style="${btn};color:var(--accent)" onclick="ozonLabelsAll(${JSON.stringify(mine.map(String))})">⬇ этикетки всех наших заявок (${mine.length})</button></div>`:''; })()}
       <div style="font-size:12px;color:var(--muted);margin:16px 0 4px">Заявки на поставку в Ozon${orders.length?' · последние '+orders.length:''}</div>
       <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Заявка</th><th>Статус</th><th>Слот</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
-      <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
+      ${sheetCfgHtml()}
+      <details style="margin-bottom:8px;margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
       <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Товары ↔ SKU Ozon (найдено ${Object.keys(skus).length} из ${ALL_ARTICLES.length})</summary><div style="margin-top:6px">${skuRows}</div></details>`;
   }
   return head+`<div class="block" style="padding:0.75rem 1.25rem;margin-top:0">${body}</div>`;
@@ -1371,6 +1494,8 @@ function buildPackPages(task){
       txt(ctx,packName(it.article),P+50,hy+24,`800 28px ${F}`,'#1a1d27');
       const nw=ctx.measureText(packName(it.article)).width;
       txt(ctx,`${it.total} шт`,P+50+nw+12,hy+24,`500 22px ${F}`,'#6b6e80');
+      const who=assigneeOf(it.article);
+      if(who){ ctx.textAlign='right'; txt(ctx,who,W-P,hy+24,`600 20px ${F}`,'#444a5c'); ctx.textAlign='left'; }
       if(nh){
         const ny=y+86;
         ctx.fillStyle='#fff4c2'; ctx.beginPath(); ctx.roundRect(P,ny,W-2*P,nh,8); ctx.fill();
@@ -1590,7 +1715,7 @@ function makePackDraft(){
   Object.keys(r).forEach(art=>(r[art]||[]).forEach(o=>rules.push({article:art,box:o.box,label:o.label||'',qty:o.qty})));
   const labels=getPackLabels();
   return {boxes:TRANSPORT_BOXES.map(b=>({id:b.id,name:b.name,w:b.w,d:b.d,h:b.h,color:b.color||'kraft'})),rules,
-    labels:ALL_ARTICLES.map(a=>({article:a,name:labels[a]||''}))};
+    labels:ALL_ARTICLES.map(a=>({article:a,name:labels[a]||'',code:getSheetCodes()[a]||''}))};
 }
 function togglePackRules(){
   packRulesOpen=!packRulesOpen;
@@ -1643,6 +1768,9 @@ function pdSave(){
   const labels={};
   (d.labels||[]).forEach(l=>{ const n=String(l.name||'').trim(); if(n&&n!==(PACK_NAMES[l.article]||artName(l.article))) labels[l.article]=n; });
   localStorage.setItem(LS_PACK_LABELS,JSON.stringify(labels));
+  const codes={};
+  (d.labels||[]).forEach(l=>{ const c=String(l.code||'').trim(); if(c&&c!==(DEFAULT_SHEET_CODES[l.article]||'')) codes[l.article]=c; });
+  localStorage.setItem(LS_SHEET_CODES,JSON.stringify(codes));
   packDraft=makePackDraft(); packDraftMsg='✓ сохранено';
   redraw();
 }
@@ -1672,6 +1800,7 @@ function packRulesHtml(){
   const labelRows=(d.labels||[]).map((l,i)=>`<div class="pk-ctor-row pk-ctor-label">
       <span style="font-family:var(--mono);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis">${escHtml(artName(l.article))}</span>
       <input style="${inp}" value="${escHtml(l.name)}" placeholder="${escHtml(PACK_NAMES[l.article]||artName(l.article))}" oninput="pdSet('labels',${i},'name',this.value)">
+      <input style="${inp}" value="${escHtml(l.code||'')}" placeholder="${escHtml(DEFAULT_SHEET_CODES[l.article]||'')}" title="код для Google Таблицы" oninput="pdSet('labels',${i},'code',this.value)">
     </div>`).join('');
   const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 12px;cursor:pointer';
   const msgColor=packDraftMsg.startsWith('✓')?'var(--green)':'var(--red)';
@@ -1680,7 +1809,7 @@ function packRulesHtml(){
       .pk-ctor-row{display:grid;gap:6px;margin-top:6px;align-items:center}
       .pk-ctor-box{grid-template-columns:minmax(120px,2fr) 64px 64px 64px minmax(100px,1fr) 36px}
       .pk-ctor-rule{grid-template-columns:minmax(120px,2fr) minmax(100px,1.2fr) minmax(120px,2fr) 72px 36px}
-      .pk-ctor-label{grid-template-columns:minmax(120px,1fr) minmax(160px,2fr)}
+      .pk-ctor-label{grid-template-columns:minmax(120px,1fr) minmax(160px,2fr) 120px}
       @media(max-width:640px){.pk-ctor-box{grid-template-columns:1fr 1fr 1fr 36px}.pk-ctor-box>:first-child,.pk-ctor-box>select{grid-column:1/-1}
         .pk-ctor-rule{grid-template-columns:1fr 1fr 36px}.pk-ctor-rule>input:nth-of-type(1){grid-column:1/3}}
     </style>
@@ -1691,7 +1820,7 @@ function packRulesHtml(){
 
     <div style="font-size:13px;font-weight:500;margin:18px 0 4px">Названия для упаковщика</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Как товар называется в задании на упаковку: на картинке, в тексте и в превью. В остальном дашборде и в графиках продаж название останется прежним. Пустое поле — название по умолчанию (показано серым).</div>
-    <div class="pk-ctor-row pk-ctor-label" style="${head}"><span>товар в дашборде</span><span>название для упаковщика</span></div>
+    <div class="pk-ctor-row pk-ctor-label" style="${head}"><span>товар в дашборде</span><span>название для упаковщика</span><span>код в таблице</span></div>
     ${labelRows}
 
     <div style="font-size:13px;font-weight:500;margin:18px 0 4px">Варианты укладки</div>
@@ -1718,7 +1847,8 @@ const PACK_SHEET_CSS=`<style>
 .pk-num{width:38px;height:38px;border-radius:50%;background:#4b5563;color:#fff;font-weight:800;font-size:22px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .pk-name{font-size:28px;font-weight:800;line-height:1.15}
 .pk-qty{font-size:22px;color:#6b6e80;font-weight:500;white-space:nowrap}
-.pk-grip{margin-left:auto;color:#b8bcc8;font-size:20px;line-height:1;user-select:none}
+.pk-grip{margin-left:8px;color:#b8bcc8;font-size:20px;line-height:1;user-select:none}
+.pk-who{margin-left:auto;font:500 15px "Golos Text","Segoe UI",Arial,sans-serif;color:#444a5c;background:#f1f3f7;border:1px solid #dfe2e8;border-radius:8px;padding:4px 8px;cursor:pointer}
 .pk-sec:hover .pk-grip{color:#6b6e80}
 .pk-note{display:block;width:100%;min-height:1em;word-break:break-word;margin:10px 0 2px;border:0;border-left:4px solid #f2b705;border-radius:8px;background:#fff4c2;color:#2b2100;font:500 20px/1.4 "Golos Text","Segoe UI",Arial,sans-serif;padding:9px 14px;cursor:text}
 .pk-note:empty{background:transparent;border-left-color:transparent;padding:4px 14px;font-size:16px}
@@ -1745,7 +1875,13 @@ function packTaskHtml(){
     const alreadySpent=spent&&spent.sig===packSignature(task);
     // Превью — живые блоки (перетаскиваются, комментарий правится прямо в блоке); PNG рисуется из тех же данных.
     const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
-        <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(packName(it.article))}</span><span class="pk-qty">${it.total} шт</span><span class="pk-grip">⠿</span></div>
+        <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(packName(it.article))}</span><span class="pk-qty">${it.total} шт</span>
+          <select class="pk-who" onchange="if(this.value==='+'){this.value=assigneeOf('${it.article}');addPacker();}else setAssignee('${it.article}',this.value)" onpointerdown="event.stopPropagation()" title="кто пакует">
+            <option value="">кто пакует?</option>
+            ${getPackers().map(p=>`<option value="${escHtml(p)}" ${assigneeOf(it.article)===p?'selected':''}>${escHtml(p)}</option>`).join('')}
+            <option value="+">+ добавить…</option>
+          </select>
+          <span class="pk-grip">⠿</span></div>
         <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
         ${it.unmatched?`<div style="font-size:14px;color:#8a8fa8;margin:2px 0 4px">такого количества нет в ⚙ вместимости коробок — на картинке оно в пунктирном квадрате</div>`:''}
@@ -1930,7 +2066,7 @@ async function saveToCloud(){
     record.hiddenArticles=[...getHiddenArticles()];
     record.allArticles=ALL_ARTICLES;
     record.boxTypes=BOX_TYPES; // пользовательские типы коробок
-    record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
+    record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
 
     let body=JSON.stringify(record);
     // Защита от лимита JSONBin (100 КБ на free). Урезаем по нарастающей, пока не влезем:
@@ -2006,6 +2142,9 @@ async function loadFromCloud(){
       if(Array.isArray(rec.hiddenArticles)) localStorage.setItem(LS_HIDDEN_ARTICLES,JSON.stringify(rec.hiddenArticles));
       if(rec.packRules) localStorage.setItem(LS_PACK_RULES,JSON.stringify(rec.packRules));
       if(rec.packLabels) localStorage.setItem(LS_PACK_LABELS,JSON.stringify(rec.packLabels));
+      if(Array.isArray(rec.packers)&&rec.packers.length) localStorage.setItem(LS_PACKERS,JSON.stringify(rec.packers));
+      if(rec.packAssign) localStorage.setItem(LS_PACK_ASSIGN,JSON.stringify(rec.packAssign));
+      if(rec.sheetCodes) localStorage.setItem(LS_SHEET_CODES,JSON.stringify(rec.sheetCodes));
       if(Array.isArray(rec.transportTypes)&&rec.transportTypes.length){ localStorage.setItem(LS_TBOX_TYPES,JSON.stringify(rec.transportTypes)); loadTransportBoxes(); }
       if(Array.isArray(rec.packOrder)) localStorage.setItem(LS_PACK_ORDER,JSON.stringify(rec.packOrder));
       if(rec.packNotes) localStorage.setItem(LS_PACK_NOTES,JSON.stringify(rec.packNotes));
@@ -2161,11 +2300,25 @@ function adjStage(a){ return a.sent===true?'sent':a.packed===true?'packed':'plan
 function setAdjStage(idx,stage){
   const adjs=getAdjs();
   if(!adjs[idx])return;
+  const was=adjStage(adjs[idx]);
   adjs[idx].packed=stage==='packed'||stage==='sent';
   adjs[idx].sent=stage==='sent';
+  if(stage==='packed'&&was==='plan'){ // запоминаем, кто и когда упаковал — для учёта в таблице
+    adjs[idx].packedAt=new Date().toISOString();
+    adjs[idx].packedBy=assigneeOf(adjs[idx].article)||'';
+  }
+  if(stage==='plan'){ delete adjs[idx].packedAt; delete adjs[idx].packedBy; }
   saveAdjs(adjs);
   renderAdjList();
   redraw();
+}
+// Имя подставляется из задания, но его можно быстро сменить прямо в списке отправок.
+function setAdjPacker(idx,name){
+  const adjs=getAdjs();
+  if(!adjs[idx])return;
+  if(name) adjs[idx].packedBy=name; else delete adjs[idx].packedBy;
+  saveAdjs(adjs);
+  renderAdjList();
 }
 function confirmAdjustment(idx){ setAdjStage(idx,'sent'); }
 function unconfirmAdjustment(idx){ setAdjStage(idx,'packed'); }
@@ -2192,6 +2345,10 @@ function adjRowsHtml(){
     const badge=stage==='packed'
       ?`<span style="font-size:10px;font-family:var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
       :stage==='sent'?`<span style="font-size:10px;font-family:var(--mono);color:var(--muted)">отгружено</span>`:'';
+    const who=stage==='plan'?'':`<select title="кто паковал" onchange="setAdjPacker(${i},this.value)" style="font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:${a.packedBy?'var(--text)':'var(--muted)'};padding:1px 4px;cursor:pointer">
+        <option value="" ${!a.packedBy?'selected':''}>— кто паковал</option>
+        ${getPackers().map(p=>`<option value="${escHtml(p)}" ${a.packedBy===p?'selected':''}>${escHtml(p)}</option>`).join('')}
+      </select>`;
     const btns=stage==='plan'
       ?`<button class="adj-del" style="color:var(--accent);opacity:0.8;font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
       :stage==='packed'
@@ -2202,6 +2359,7 @@ function adjRowsHtml(){
       <span style="color:var(--text);${textStyle}">→ ${a.cluster}</span>
       <span style="font-family:var(--mono);font-size:12px;${qtyStyle}">+${a.qty} шт</span>
       ${badge}
+      ${who}
       ${btns}
     </div>`;
   }).join('');
