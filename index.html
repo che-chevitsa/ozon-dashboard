@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.68 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.69 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -3266,15 +3266,15 @@ function render(data){
 
   // Adj log HTML (использует общий adjRowsHtml)
   const adjRows=adjRowsHtml();
-  let adjLogHtml='';
+  let adjLogHtml=null;
   if(adjRows){
     const pl=plannedUnits();
     const breakdown=Object.entries(pl.byArticle).map(([art,q])=>`${NAMES[art]||art}: ${q}`).join(' · ');
     const pk=packedUnits();
     const counter=`${pl.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--green);font-weight:500;text-transform:none;letter-spacing:0">${pl.total} шт к упаковке</span>${breakdown?`<span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:8px">${breakdown}</span>`:''}`:''}${pk.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0;margin-left:12px">${pk.total} шт упаковано, ждёт заявки</span>`:''}`;
-    adjLogHtml=`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span>${counter}</span></div>
+    adjLogHtml=id=>`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span>${counter}</span></div>
     <div class="block" style="padding:0.75rem 1.25rem">
-      <div class="adj-list" style="margin-top:0" id="adj-list-inline">${adjRows}</div></div>`;
+      <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
   }
 
   let html='<div class="dash-view" data-view="plan">';
@@ -3518,8 +3518,9 @@ function render(data){
   html+='</div>';
 
   // Adj log inline
+  if(adjLogHtml) html+=adjLogHtml('adj-list-plan'); // планируешь — сразу видно и правишь отправки
   html+='</div><div class="dash-view" data-view="pack">';
-  html+=adjLogHtml;
+  if(adjLogHtml) html+=adjLogHtml('adj-list-inline');
 
   // Задание упаковщику — сразу под списком отправок
   html+=packTaskHtml();
