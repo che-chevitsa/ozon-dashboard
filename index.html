@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.61 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.62 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -213,6 +213,13 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     </div>
   </header>
 
+  <dialog id="pack-ctor-dlg" style="width:min(900px,94vw);max-height:90vh;border:1px solid var(--border);border-radius:14px;padding:0;background:var(--bg2);color:var(--text);overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">
+      <b style="font-size:15px">Вместимость коробок</b>
+      <button onclick="closePackCtor()" style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div id="pack-ctor-body" style="padding:14px 18px 18px;overflow:auto;max-height:calc(90vh - 56px)"></div>
+  </dialog>
   <div class="main-tabs" id="main-tabs" style="display:none">
     <button class="main-tab active" id="mtab-plan" onclick="switchView('plan')">Планирование</button>
     <button class="main-tab" id="mtab-pack" onclick="switchView('pack')">Упаковка</button>
@@ -1739,7 +1746,7 @@ function editTbox(box,kind){
 // ===== КОНСТРУКТОР: коробки и варианты укладки =====
 // Редактируем черновик (packDraft) без перерисовки дашборда на каждое нажатие клавиши;
 // в хранилище попадает только по «Сохранить».
-let packRulesOpen=false, packDraft=null, packDraftMsg='';
+let packDraft=null, packDraftMsg='';
 function makePackDraft(){
   const r=getPackRules(), rules=[];
   Object.keys(r).forEach(art=>(r[art]||[]).forEach(o=>rules.push({article:art,box:o.box,label:o.label||'',qty:o.qty})));
@@ -1747,12 +1754,21 @@ function makePackDraft(){
   return {boxes:TRANSPORT_BOXES.map(b=>({id:b.id,name:b.name,w:b.w,d:b.d,h:b.h,color:b.color||'kraft'})),rules,
     labels:ALL_ARTICLES.map(a=>({article:a,name:labels[a]||'',code:getSheetCodes()[a]||''}))};
 }
+// Конструктор живёт в отдельном окне: на странице он занимал половину экрана.
+let ctorTab='boxes';
 function togglePackRules(){
-  packRulesOpen=!packRulesOpen;
-  if(packRulesOpen){ packDraft=makePackDraft(); packDraftMsg=''; } else packDraft=null;
-  redraw();
+  packDraft=makePackDraft(); packDraftMsg=''; ctorTab='boxes';
+  rerenderPackCtor();
+  const dlg=document.getElementById('pack-ctor-dlg');
+  if(dlg&&!dlg.open) dlg.showModal();
 }
-function rerenderPackCtor(){ const el=document.getElementById('pack-ctor'); if(el) el.outerHTML=packRulesHtml(); }
+function closePackCtor(){
+  const dlg=document.getElementById('pack-ctor-dlg');
+  if(dlg&&dlg.open) dlg.close();
+  packDraft=null;
+}
+function setCtorTab(t){ ctorTab=t; rerenderPackCtor(); }
+function rerenderPackCtor(){ const el=document.getElementById('pack-ctor-body'); if(el) el.innerHTML=packRulesHtml(); }
 function pdSet(kind,i,field,val){ // правка поля без перерисовки
   const row=packDraft[kind][i]; if(!row)return;
   row[field]=['w','d','h','qty'].includes(field)?(val===''?'':Number(val)):val;
@@ -1802,6 +1818,7 @@ function pdSave(){
   (d.labels||[]).forEach(l=>{ const c=String(l.code||'').trim(); if(c&&c!==(DEFAULT_SHEET_CODES[l.article]||'')) codes[l.article]=c; });
   localStorage.setItem(LS_SHEET_CODES,JSON.stringify(codes));
   packDraft=makePackDraft(); packDraftMsg='✓ сохранено';
+  rerenderPackCtor();
   redraw();
 }
 
@@ -1834,7 +1851,8 @@ function packRulesHtml(){
     </div>`).join('');
   const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 12px;cursor:pointer';
   const msgColor=packDraftMsg.startsWith('✓')?'var(--green)':'var(--red)';
-  return `<div id="pack-ctor" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+  const tab=(id,label)=>`<button style="${btn};${ctorTab===id?'color:var(--accent);border-color:var(--accent)':'color:var(--muted)'}" onclick="setCtorTab('${id}')">${label}</button>`;
+  return `<div>
     <style>
       .pk-ctor-row{display:grid;gap:6px;margin-top:6px;align-items:center}
       .pk-ctor-box{grid-template-columns:minmax(120px,2fr) 64px 64px 64px minmax(100px,1fr) 36px}
@@ -1843,22 +1861,24 @@ function packRulesHtml(){
       @media(max-width:640px){.pk-ctor-box{grid-template-columns:1fr 1fr 1fr 36px}.pk-ctor-box>:first-child,.pk-ctor-box>select{grid-column:1/-1}
         .pk-ctor-rule{grid-template-columns:1fr 1fr 36px}.pk-ctor-rule>input:nth-of-type(1){grid-column:1/3}}
     </style>
-    <div style="font-size:13px;font-weight:500;margin-bottom:4px">Коробки</div>
-    <div class="pk-ctor-row pk-ctor-box" style="${head}"><span>название</span><span>длина</span><span>ширина</span><span>высота</span><span>цвет</span><span></span></div>
-    ${boxRows}
-    <button style="${btn};margin-top:8px" onclick="pdAddBox()">＋ коробка</button>
-
-    <div style="font-size:13px;font-weight:500;margin:18px 0 4px">Названия для упаковщика</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Как товар называется в задании на упаковку: на картинке, в тексте и в превью. В остальном дашборде и в графиках продаж название останется прежним. Пустое поле — название по умолчанию (показано серым).</div>
-    <div class="pk-ctor-row pk-ctor-label" style="${head}"><span>товар в дашборде</span><span>название для упаковщика</span><span>код в таблице</span></div>
-    ${labelRows}
-
-    <div style="font-size:13px;font-weight:500;margin:18px 0 4px">Варианты укладки</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Сколько штук товара кладём в коробку. Раскладка идёт только по этим вариантам, произвольного заполнения нет. Самый большой вариант для пары «товар + коробка» считается полной коробкой, остальные неполными. Название можно не писать или написать своё, например «2 слоя».</div>
-    <div class="pk-ctor-row pk-ctor-rule" style="${head}"><span>товар</span><span>коробка</span><span>название укладки</span><span>штук</span><span></span></div>
-    ${ruleRows||`<div style="font-size:12px;color:var(--muted);margin-top:6px">вариантов нет</div>`}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
-      <button style="${btn}" onclick="pdAddRule()">＋ вариант укладки</button>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      ${tab('boxes','Коробки')}${tab('rules','Варианты укладки')}${tab('names','Названия и коды')}
+    </div>
+    ${ctorTab==='boxes'?`
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Размеры нужны только для пропорций иконок в задании. Удалить коробку можно, если ею никто не пакует.</div>
+      <div class="pk-ctor-row pk-ctor-box" style="${head}"><span>название</span><span>длина</span><span>ширина</span><span>высота</span><span>цвет</span><span></span></div>
+      ${boxRows}
+      <button style="${btn};margin-top:8px" onclick="pdAddBox()">＋ коробка</button>`:''}
+    ${ctorTab==='names'?`
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Название для упаковщика видно в задании: на картинке, в тексте и в превью. Код уходит в Google Таблицу. Пустое поле — значение по умолчанию (показано серым).</div>
+      <div class="pk-ctor-row pk-ctor-label" style="${head}"><span>товар в дашборде</span><span>название для упаковщика</span><span>код в таблице</span></div>
+      ${labelRows}`:''}
+    ${ctorTab==='rules'?`
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Сколько штук товара кладём в коробку. Раскладка идёт только по этим вариантам: количество отправки должно точно совпасть со строкой. Самый большой вариант для пары «товар + коробка» считается полной коробкой.</div>
+      <div class="pk-ctor-row pk-ctor-rule" style="${head}"><span>товар</span><span>коробка</span><span>название укладки</span><span>штук</span><span></span></div>
+      ${ruleRows||`<div style="font-size:12px;color:var(--muted);margin-top:6px">вариантов нет</div>`}
+      <button style="${btn};margin-top:8px" onclick="pdAddRule()">＋ вариант укладки</button>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
       <button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4)" onclick="pdSave()">Сохранить</button>
       <button style="${btn};color:var(--muted)" onclick="pdCancel()">Отменить изменения</button>
       ${packDraftMsg?`<span style="font-size:12px;color:${msgColor};line-height:1.5">${escHtml(packDraftMsg)}</span>`:''}
@@ -1942,7 +1962,7 @@ function packTaskHtml(){
       <span style="display:flex;gap:16px;text-transform:none;letter-spacing:0;font-size:11px;font-family:var(--mono)">
         <span style="color:${packTestMode?'var(--amber)':'var(--accent)'};cursor:pointer" onclick="togglePackTest()">${packTestMode?'✕ выключить тест':'🧪 тест: все варианты'}</span>
         <span style="color:var(--accent);cursor:pointer" onclick="togglePackRules()">⚙ вместимость коробок</span></span></div>
-    <div class="block" style="padding:0.75rem 1.25rem;margin-top:0${packTestMode?';border-color:var(--amber)':''}">${packTestMode?`<div style="background:var(--amber-bg);color:var(--amber);font-size:12px;font-family:var(--mono);padding:8px 12px;border-radius:6px;margin:4px 0 8px;line-height:1.5">🧪 Тест: здесь показаны все варианты укладки, их сочетания и примеры ошибок. Настоящие отправки и остатки коробок не меняются. Тест остаётся включённым после перезагрузки, пока не нажмёшь «выключить тест».</div>`:''}${body}${packRulesOpen?packRulesHtml():''}</div>`;
+    <div class="block" style="padding:0.75rem 1.25rem;margin-top:0${packTestMode?';border-color:var(--amber)':''}">${packTestMode?`<div style="background:var(--amber-bg);color:var(--amber);font-size:12px;font-family:var(--mono);padding:8px 12px;border-radius:6px;margin:4px 0 8px;line-height:1.5">🧪 Тест: здесь показаны все варианты укладки, их сочетания и примеры ошибок. Настоящие отправки и остатки коробок не меняются. Тест остаётся включённым после перезагрузки, пока не нажмёшь «выключить тест».</div>`:''}${body}</div>`;
 }
 
 function transportBoxesHtml(){
