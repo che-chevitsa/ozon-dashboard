@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.65 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.66 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -714,11 +714,18 @@ async function checkDrive(){
   const el=document.getElementById('drive-check');
   const say=(t,c)=>{ if(el){ el.textContent=t; el.style.color=c||'var(--muted)'; } };
   try{
+    // Сначала понимаем, какая версия кода отвечает по ссылке: старая умеет только строки таблицы
+    say('проверяю скрипт…');
+    const probe=await driveCall({action:'state',op:'get'});
+    if(probe.text===undefined&&probe.data===undefined){
+      say('по ссылке отвечает старая версия скрипта: Развернуть → Новое развёртывание → Веб-приложение, и вставь новую ссылку сюда','var(--red)');
+      return;
+    }
     say('сохраняю…');
     await saveToCloud();
     say('читаю обратно…');
     const back=(await driveState('get')).data;
-    if(!back||!Object.keys(back).length){ say('на Диске пусто — скрипт не обновлён или не переразвёрнут','var(--red)'); return; }
+    if(!back||!Object.keys(back).length){ say('скрипт отвечает, но файл пуст — проверь, что в handleState записывается STATE_FILE','var(--red)'); return; }
     const size=JSON.stringify(back).length;
     const rows=back.rawDataC?back.rawDataC.length:0;
     const days=back.salesDailyC?Object.keys(back.salesDailyC).length:0;
