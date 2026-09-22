@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.66 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.67 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -632,6 +632,8 @@ function saveSheetCfg(){
   const secret=(document.getElementById('sheet-secret').value||'').trim();
   const link=(document.getElementById('sheet-link').value||'').trim()||'https://seller.ozon.ru/app/supply/orders/{id}';
   if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)){ alert('Нужна ссылка вида https://script.google.com/macros/s/.../exec'); return; }
+  if(/\/dev\s*$/.test(url)){ alert('Это ссылка /dev — она требует входа в Google и из браузера не работает. Возьми ссылку, которая заканчивается на /exec: Развернуть → Управление развёртываниями → Веб-приложение → URL.'); return; }
+  if(!/\/exec\s*$/.test(url)&&!confirm('Ссылка обычно заканчивается на /exec. Всё равно сохранить?'))return;
   localStorage.setItem(LS_SHEET,JSON.stringify({url,secret,link}));
   redraw();
 }
