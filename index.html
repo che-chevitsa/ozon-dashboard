@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.69 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.70 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -638,6 +638,12 @@ function saveSheetCfg(){
 }
 function forgetSheetCfg(){ if(confirm('Убрать настройки таблицы из этого браузера?')){ localStorage.removeItem(LS_SHEET); redraw(); } }
 
+// Что внутри заявки: только по своим отправкам — за составом чужих заявок в Ozon не ходим.
+function ozonOrderItems(orderId){
+  const by={};
+  getAdjs().forEach(a=>{ if(String(a.ozonOrderId||'')===String(orderId)) by[a.article]=(by[a.article]||0)+a.qty; });
+  return Object.entries(by).map(([art,q])=>({name:artName(art),qty:q}));
+}
 async function ozonOrderInfo(orderId){
   const c=getOzonCache();
   const known=(c.orders||[]).find(x=>String(x.id)===String(orderId));
@@ -1236,13 +1242,18 @@ function ozonPanelHtml(){
     const when=o=>new Date((o.timeslot&&o.timeslot.from)||o.created||0).getTime()||0;
     const sorted=[...orders].sort((a,b)=>when(b)-when(a)); // свежие сверху
     const shownOrders=ordersAll?sorted:sorted.filter(o=>ACTIVE.includes(String(o.state||'').replace(/^ORDER_STATE_/,'')));
+    const itemsCell=o=>{
+      const items=ozonOrderItems(o.id);
+      return items.length?items.map(i=>escHtml(i.name)+' '+i.qty+' шт').join('<br>'):'<span style="color:var(--muted)">—</span>';
+    };
     const orderRows=shownOrders.length?shownOrders.map(o=>`<tr>
         <td class="mono">${escHtml(o.number||o.id)}</td>
         <td>${escHtml(ozonState(o.state))}</td>
         <td class="mono">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>
+        <td class="mono" style="font-size:11px;line-height:1.5">${itemsCell(o)}</td>
         <td>${escHtml(o.warehouse||'—')}</td>
         <td class="mono" style="color:var(--muted)">${ozonOrderActions(o.id)}</td>
-      </tr>`).join(''):`<tr><td colspan="5" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'заявок в работе нет'}</td></tr>`;
+      </tr>`).join(''):`<tr><td colspan="6" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'заявок в работе нет'}</td></tr>`;
     // срок ключа показываем, только когда он скоро кончится
     const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
     const keyWarn=keyLeft!==null&&keyLeft<30
@@ -1256,7 +1267,7 @@ function ozonPanelHtml(){
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:16px 0 4px">
         <span style="font-size:12px;color:var(--muted)">${ordersAll?'Все заявки в Ozon · '+orders.length:'Заявки в работе · '+shownOrders.length}</span>
         <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleAllOrders()">${ordersAll?'только в работе':'показать все ('+orders.length+')'}</span></div>
-      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Заявка</th><th>Статус</th><th>Слот</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
+      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th>Заявка</th><th>Статус</th><th>Слот</th><th>Что внутри</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       ${sheetCfgHtml()}${cloudWhereHtml()}
       <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Подключение и справочники</summary>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
