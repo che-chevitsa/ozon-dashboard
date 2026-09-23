@@ -199,9 +199,9 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.85</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.86</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
-    <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
+    <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
@@ -228,7 +228,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     <button class="main-tab" id="mtab-ship" onclick="switchView('ship')">Отгрузка</button>
     <button class="main-tab" id="mtab-sales" onclick="switchMainTab('sales')">Продажи</button>
   </div>
-  <div id="dash-status" style="display:none;font-family:var(--mono);font-size:12px;color:var(--muted);margin:-4px 0 14px;gap:16px;flex-wrap:wrap"></div>
+
 
   <div id="upload-section">
     <div class="upload-zone" id="dropzone">
@@ -2181,14 +2181,17 @@ const DRIVE_CHUNK=48000; // Apps Script не принимает большие �
 async function driveCall(payload){
   const cfg=getSheetCfg();
   if(!cfg) throw new Error('Google Таблица не подключена');
-  let r;
-  try{
-    r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({secret:cfg.secret||'',...payload})});
-  }catch(e){ throw new Error('нет связи со скриптом (проверь ссылку и доступ «все, у кого есть ссылка»)'); }
-  const t=await r.text();
-  // 404 на POST при живом GET = развёртывание пускает только вошедших в Google
-  if(r.status===404) throw new Error('Google отвечает 404 на запись. В развёртывании должно быть «У кого есть доступ: Все» (не «Все, у кого есть аккаунт Google»). Поменяй и создай новую версию.');
+  let r,t;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({secret:cfg.secret||'',...payload})});
+    }catch(e){ throw new Error('нет связи со скриптом (проверь ссылку и доступ «все, у кого есть ссылка»)'); }
+    t=await r.text();
+    if(r.status!==404) break;              // 404 у Apps Script бывает разовым — пробуем ещё раз
+    await new Promise(x=>setTimeout(x,800*(attempt+1)));
+  }
+  if(r.status===404) throw new Error('Google трижды ответил 404. Если повторяется — проверь, что в развёртывании «У кого есть доступ: Все», и создай новую версию.');
   if(!r.ok) throw new Error('HTTP '+r.status+': '+t.slice(0,140));
   let j=null; try{ j=JSON.parse(t); }catch{
     if(/<!DOCTYPE|<html/i.test(t)) throw new Error('скрипт вернул страницу Google вместо ответа — проверь доступ «Все» и что ссылка от текущего развёртывания');
@@ -2250,6 +2253,23 @@ function expandSalesDaily(compact){
 }
 
 // Состояние хранится в файле на Google Диске через Apps Script — другого облака нет.
+// Клик по облаку: настроено — проверяем запись и чтение, нет — ведём в настройки.
+async function cloudStatusClick(){
+  const s=document.getElementById('cloud-status');
+  if(!getSheetCfg()){ switchView('ship'); return; }
+  const back=s?s.textContent:'';
+  try{
+    if(s){ s.textContent='☁ проверяю…'; s.style.color='var(--accent)'; }
+    await saveToCloud();
+    const read=await driveState('get');
+    const size=read.data?JSON.stringify(read.data).length:0;
+    if(s){ s.textContent='☁ Диск ✓ '+(size/1024).toFixed(0)+' КБ'; s.style.color='var(--green)'; }
+    setTimeout(()=>{ if(s){ s.textContent=back; s.style.color='var(--muted)'; } },4000);
+  }catch(e){
+    if(s){ s.textContent='☁ ошибка'; s.style.color='var(--red)'; }
+    alert('Синхронизация: '+e.message);
+  }
+}
 function cloudStatusText(){
   const s=document.getElementById('cloud-status');
   if(!s)return;
@@ -3910,6 +3930,11 @@ function switchView(v){
   localStorage.setItem('ozon_dash_view',JSON.stringify(v));
   switchMainTab('supply');
   applyView();
+  // Открыли отгрузку — подтянем статусы заявок, если они старше 10 минут
+  if(v==='ship'&&getOzonKeys()){
+    const at=getOzonCache().updatedAt;
+    if(!at||Date.now()-new Date(at).getTime()>10*60*1000) ozonRefresh();
+  }
 }
 function applyView(){
   ['plan','pack','ship'].forEach(v=>{
@@ -3921,18 +3946,17 @@ function applyView(){
   });
 }
 // Короткая сводка под вкладками: сколько упаковать, сколько готово, сколько заявок в работе.
+// Счётчики живут прямо в названиях вкладок — отдельная строка не нужна.
 function renderDashStatus(){
-  const el=document.getElementById('dash-status');
-  if(!el)return;
   const pl=plannedUnits(), pk=packedUnits();
   const active=((getOzonCache().orders)||[]).filter(o=>['DATA_FILLING','READY_TO_SUPPLY'].includes(String(o.state||'').replace(/^ORDER_STATE_/,''))).length;
-  const item=(label,val,color,view)=>`<span style="cursor:pointer" onclick="switchView('${view}')">${label}: <b style="color:${color}">${val}</b></span>`;
-  el.innerHTML=[
-    item('к упаковке',pl.total+' шт',pl.total?'var(--green)':'var(--muted)','pack'),
-    item('готово к отгрузке',pk.total+' шт',pk.total?'var(--accent)':'var(--muted)','ship'),
-    item('заявок в работе',active,active?'var(--text)':'var(--muted)','ship'),
-  ].join('');
-  el.style.display='flex';
+  const put=(id,label,count,color)=>{
+    const b=document.getElementById(id);
+    if(!b)return;
+    b.innerHTML=count?`${label} <span style="color:${color}">${count}</span>`:label;
+  };
+  put('mtab-pack','Упаковка',pl.total?pl.total+' шт':0,'var(--green)');
+  put('mtab-ship','Отгрузка',pk.total?pk.total+' шт':(active||0),pk.total?'var(--accent)':'var(--text)');
 }
 function switchMainTab(tab){
   document.getElementById('mtab-sales').classList.toggle('active',tab==='sales');
