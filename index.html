@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.70 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.71 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -2091,8 +2091,13 @@ async function driveCall(payload){
       body:JSON.stringify({secret:cfg.secret||'',...payload})});
   }catch(e){ throw new Error('нет связи со скриптом (проверь ссылку и доступ «все, у кого есть ссылка»)'); }
   const t=await r.text();
+  // 404 на POST при живом GET = развёртывание пускает только вошедших в Google
+  if(r.status===404) throw new Error('Google отвечает 404 на запись. В развёртывании должно быть «У кого есть доступ: Все» (не «Все, у кого есть аккаунт Google»). Поменяй и создай новую версию.');
   if(!r.ok) throw new Error('HTTP '+r.status+': '+t.slice(0,140));
-  let j=null; try{ j=JSON.parse(t); }catch{ throw new Error('непонятный ответ скрипта: '+t.slice(0,140)); }
+  let j=null; try{ j=JSON.parse(t); }catch{
+    if(/<!DOCTYPE|<html/i.test(t)) throw new Error('скрипт вернул страницу Google вместо ответа — проверь доступ «Все» и что ссылка от текущего развёртывания');
+    throw new Error('непонятный ответ скрипта: '+t.slice(0,140));
+  }
   if(j.error) throw new Error(j.error);
   return j;
 }
