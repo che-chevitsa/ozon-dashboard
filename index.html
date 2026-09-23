@@ -198,7 +198,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.71 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.72 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
     <div class="header-right" id="reset-wrap" style="display:none">
@@ -731,7 +731,9 @@ async function checkDrive(){
     say('сохраняю…');
     await saveToCloud();
     say('читаю обратно…');
-    const back=(await driveState('get')).data;
+    const read=await driveState('get');
+    const back=read.data;
+    if(read.broken){ say('файл на Диске был повреждён и только что перезаписан — нажми ещё раз для проверки','var(--amber)'); return; }
     if(!back||!Object.keys(back).length){ say('скрипт отвечает, но файл пуст — проверь, что в handleState записывается STATE_FILE','var(--red)'); return; }
     const size=JSON.stringify(back).length;
     const rows=back.rawDataC?back.rawDataC.length:0;
@@ -2111,7 +2113,12 @@ async function driveState(op,data){
       text+=next.text||'';
     }
     if(first.data!==undefined&&!text) return first; // старый скрипт отдаёт объект целиком
-    return {data:text?JSON.parse(text):null};
+    if(!text) return {data:null};
+    try{ return {data:JSON.parse(text)}; }
+    catch(e){ // файл недописан после прежних сбоев — считаем пустым, ближайшее сохранение перезапишет
+      console.log('файл состояния повреждён ('+text.length+' симв.) — будет перезаписан');
+      return {data:null,broken:true};
+    }
   }
   const body=JSON.stringify(data||{});
   const parts=Math.max(1,Math.ceil(body.length/DRIVE_CHUNK));
