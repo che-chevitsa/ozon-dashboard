@@ -197,7 +197,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.80 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.81 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -685,6 +685,9 @@ async function sheetSend(orderId,auto){
     let res=null; try{ res=JSON.parse(text); }catch{}
     if(res&&res.error) throw new Error(res.error);
     sheetState.msg='✓ в таблице: '+rows.length+' '+pkPlural(rows.length,'строка','строки','строк');
+    const adjs=getAdjs();
+    adjs.forEach(a=>{ if(String(a.ozonOrderId||'')===String(orderId)) a.sheetSentAt=new Date().toISOString(); });
+    saveAdjs(adjs);
   }catch(e){ sheetState.error=e.message; sheetState.msg=''; }
   sheetState.busy=false;
   redraw();
@@ -742,11 +745,14 @@ function sheetCfgHtml(){
 function sheetBtnHtml(orderId){
   const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   if(!getSheetCfg())return '';
-  const mine=getAdjs().some(a=>String(a.ozonOrderId||'')===String(orderId));
-  if(!mine)return '';
+  const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
+  if(!ours.length)return '';
   const st=sheetState&&String(sheetState.orderId)===String(orderId)?sheetState:null;
   if(st&&st.busy)return `<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(st.msg)}</span>`;
-  return `<button style="${btn};color:${st&&st.error?'var(--red)':'var(--muted)'}" title="записать строки в Google Таблицу" onclick="sheetSend('${String(orderId)}')">таблица</button>`;
+  const sent=ours.every(a=>a.sheetSentAt);
+  const color=st&&st.error?'var(--red)':sent?'var(--green)':'var(--muted)';
+  const label=st&&st.error?'таблица ещё раз':sent?'таблица ✓':'таблица';
+  return `<button style="${btn};color:${color}" title="записать строки в Google Таблицу" onclick="sheetSend('${String(orderId)}')">${label}</button>`;
 }
 
 // ===== ГРУЗОМЕСТА И ЭТИКЕТКИ =====
@@ -774,15 +780,18 @@ let ozonMergeState=null; // {busy, msg, error} — общий PDF по отме�
 
 function ozonCargoPlan(orderId){
   const rules=getPackRules(), skus=getOzonCache().skus||{};
-  const boxes=[], problems=[];
+  const boxes=[], problems=[], notes=[];
   getAdjs().forEach(a=>{
     if(String(a.ozonOrderId||'')!==String(orderId))return;
-    const s=skus[a.article], rule=(rules[a.article]||[]).find(o=>TBOX[o.box]&&o.qty===a.qty);
+    const s=skus[a.article];
     if(!s||!s.barcode){ problems.push(artName(a.article)+' — нет штрихкода'); return; }
-    if(!rule){ problems.push(artName(a.article)+' '+a.qty+' шт — нет такой укладки во вместимости'); return; }
-    boxes.push({article:a.article,qty:a.qty,barcode:s.barcode,boxName:TBOX[rule.box].name});
+    // Вместимость нужна только для картинки упаковщику: если количества там нет,
+    // всё равно передаём коробку, но предупреждаем.
+    const rule=(rules[a.article]||[]).find(o=>TBOX[o.box]&&o.qty===a.qty);
+    if(!rule) notes.push(artName(a.article)+' '+a.qty+' шт — нет во вместимости, передано как отдельная коробка');
+    boxes.push({article:a.article,qty:a.qty,barcode:s.barcode,boxName:rule?TBOX[rule.box].name:'коробка'});
   });
-  return {boxes,problems};
+  return {boxes,problems,notes};
 }
 async function ozonSupplyIdOf(orderId){
   const o=(getOzonCache().orders||[]).find(x=>String(x.id)===String(orderId));
@@ -806,7 +815,7 @@ async function ozonSendCargoes(orderId,auto){
     const warn=plan.problems.length?'\n\nНе попадут в грузоместа:\n'+plan.problems.join('\n'):'';
     if(!confirm('Передать состав грузомест в заявку '+orderId+'?\n\n'+plan.boxes.length+' коробок:\n'+list+warn+'\n\nПрежний состав грузомест в заявке будет заменён.'))return {count:0,error:''};
   }
-  ozonCargoState={orderId,busy:true,msg:'передаю грузоместа…',error:'',cargoIds:[],problems:plan.problems};
+  ozonCargoState={orderId,busy:true,msg:'передаю грузоместа…',error:'',cargoIds:[],problems:plan.problems,notes:plan.notes};
   redraw();
   try{
     const {supplyId}=await ozonSupplyIdOf(orderId);
@@ -829,6 +838,9 @@ async function ozonSendCargoes(orderId,auto){
     ozonCargoState.cargoIds=(((info.result||{}).cargoes)||[]).map(c=>(c.value||{}).cargo_id).filter(Boolean);
     const n=ozonCargoState.cargoIds.length;
     ozonCargoState.msg='✓ грузоместа переданы: '+n+' '+pkPlural(n,'коробка','коробки','коробок');
+    const adjs=getAdjs(); // помечаем отправки, чтобы не показывать кнопку повтора зря
+    adjs.forEach(a=>{ if(String(a.ozonOrderId||'')===String(orderId)) a.cargoSentAt=new Date().toISOString(); });
+    saveAdjs(adjs);
     ozonCargoState.busy=false;
     redraw();
     return {count:n,error:''};
@@ -940,12 +952,16 @@ async function ozonLabels(orderId){
 // Кнопки в таблице заявок: этикетки для любой заявки, повтор грузомест — для созданных из дашборда.
 function ozonOrderActions(orderId){
   const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
-  const mine=getAdjs().some(a=>String(a.ozonOrderId||'')===String(orderId));
+  const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
+  const mine=ours.length>0;
+  const cargoSent=mine&&ours.every(a=>a.cargoSentAt);
   const cs=ozonCargoState&&String(ozonCargoState.orderId)===String(orderId)?ozonCargoState:null;
   const ls=ozonLabelState&&String(ozonLabelState.orderId)===String(orderId)?ozonLabelState:null;
   const parts=[];
+  // Грузоместа уходят сами при создании заявки: кнопка нужна, только если не дошли.
   if(cs&&cs.busy) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(cs.msg||'…')}</span>`);
-  else if(mine) parts.push(`<button style="${btn};color:${cs&&cs.error?'var(--red)':'var(--muted)'}" title="передать состав коробок заново" onclick="ozonSendCargoes('${String(orderId)}')">${cs&&cs.error?'грузоместа ещё раз':'грузоместа'}</button>`);
+  else if(mine&&cargoSent) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--green)" title="состав коробок передан">грузоместа ✓</span>`);
+  else if(mine) parts.push(`<button style="${btn};color:var(--red)" title="состав коробок не передан" onclick="ozonSendCargoes('${String(orderId)}')">передать грузоместа</button>`);
   parts.push(sheetBtnHtml(orderId));
   parts.push(ls&&ls.busy
     ?`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
@@ -1145,7 +1161,7 @@ async function ozonCreateSupply(){
       saveAdjs(adjs);
       // грузоместа — сразу, состав известен из плана упаковки
       const cargo=await ozonSendCargoes(st.order_id,true);
-      r.boxes=cargo&&cargo.count; r.cargoError=cargo&&cargo.error;
+      r.boxes=cargo&&cargo.count; r.cargoError=cargo&&cargo.error; r.cargoNotes=(ozonCargoState&&ozonCargoState.notes)||[];
       if(getSheetCfg()) await sheetSend(st.order_id,true); // строки учёта в Google Таблицу
       r.rejected=(draft.rejected||[]).map(x=>x.name+' — '+x.reasons);
       r.status='ok';
@@ -1219,6 +1235,7 @@ function ozonSupplyHtml(){
           ${r.cargoError?`<span style="color:var(--amber)"> · грузоместа: ${escHtml(r.cargoError)}</span>`:''}
           ${r.error?`<span style="color:var(--red)"> · ${escHtml(r.error)}</span>`:''}
           ${(r.rejected||[]).length?`<span style="color:var(--amber)"> · не вошло: ${r.rejected.map(escHtml).join('; ')}</span>`:''}
+          ${(r.cargoNotes||[]).length?`<span style="color:var(--amber)"> · ${r.cargoNotes.map(escHtml).join('; ')}</span>`:''}
           ${r.orderId?` <button style="${btn};font-size:11px;padding:3px 8px;color:var(--accent)" onclick="ozonLabels('${r.orderId}')">этикетки PDF</button>`:''}
         </div>`).join('')}</div>
 `;
@@ -1806,8 +1823,8 @@ function makePackDraft(){
 }
 // Конструктор живёт в отдельном окне: на странице он занимал половину экрана.
 let ctorTab='boxes';
-function togglePackRules(){
-  packDraft=makePackDraft(); packDraftMsg=''; ctorTab='boxes';
+function togglePackRules(tab){
+  packDraft=makePackDraft(); packDraftMsg=''; ctorTab=tab||'boxes';
   rerenderPackCtor();
   const dlg=document.getElementById('pack-ctor-dlg');
   if(dlg&&!dlg.open) dlg.showModal();
@@ -1982,7 +1999,7 @@ function packTaskHtml(){
           <span class="pk-grip">⠿</span></div>
         <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
-        ${it.unmatched?`<div style="font-size:14px;color:#8a8fa8;margin:2px 0 4px">такого количества нет в ⚙ вместимости коробок — на картинке оно в пунктирном квадрате</div>`:''}
+        ${it.unmatched?`<div style="font-size:14px;color:#8a8fa8;margin:2px 0 4px">такого количества нет во вместимости — на картинке оно в пунктирном квадрате · <span style="color:#3a5ff0;cursor:pointer;text-decoration:underline" onclick="togglePackRules('rules')">добавить укладку</span></div>`:''}
       </div>`).join('');
     const tot=packTotalsLine(task);
     const pageCount=buildPackPages(task).length;
