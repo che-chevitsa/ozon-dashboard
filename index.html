@@ -197,7 +197,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.75 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.76 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1299,12 +1299,12 @@ function ozonPanelHtml(){
     const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
     const keyWarn=keyLeft!==null&&keyLeft<30
       ?`<div style="font-family:var(--mono);font-size:12px;color:${keyLeft<14?'var(--red)':'var(--amber)'};margin-bottom:10px">ключ Ozon действует ещё ${keyLeft} дн — пора перевыпустить в кабинете</div>`:'';
-    const sessionOrders=ozonSessionOrders.filter(id=>orders.some(o=>String(o.id)===String(id)));
+    const labelOrders=shownOrders.map(o=>String(o.id)); // этикетки по тем заявкам, что сейчас в списке
     const errs=(cache.errors||[]).length
       ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.5">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
     body=`${errs}${keyWarn}
       ${ozonSupplyHtml()}
-      ${sessionOrders.length>1?`<div style="margin:14px 0 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(sessionOrders.map(String)))})">⬇ все этикетки одним PDF (${sessionOrders.length} заявки)</button><span id="labels-all" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span></div>`:''}
+      ${labelOrders.length>1?`<div style="margin:14px 0 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(labelOrders))})">⬇ все этикетки одним PDF · ${labelOrders.length} ${pkPlural(labelOrders.length,'заявка','заявки','заявок')}</button><span id="labels-all" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span></div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:16px 0 4px">
         <span style="font-size:12px;color:var(--muted)">${ordersAll?'Все заявки в Ozon · '+orders.length:'Заявки в работе · '+shownOrders.length}</span>
         <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleAllOrders()">${ordersAll?'только в работе':'показать все ('+orders.length+')'}</span></div>
