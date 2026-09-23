@@ -197,7 +197,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.78 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.80 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -208,7 +208,6 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
         <button class="period-tab active" onclick="setPeriod(28)">28 дн</button>
       </div>
       <span id="file-date" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
-      <input type="file" id="profileInput" accept=".xlsx,.xls" style="display:none">
       <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку с покрытием кластеров">↑ загрузить свежий файл</button>
     </div>
   </header>
@@ -277,17 +276,6 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     </div>
   </div>
 
-  <div id="ai-section" style="display:none;margin-top:2rem">
-    <div class="block">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="section-label" style="margin-top:0">Рекомендации ИИ</div>
-        <button id="ai-refresh-btn" onclick="getAiRecommendations()" style="font-family:var(--mono);font-size:11px;background:linear-gradient(135deg,#5b4fff,#a855f7);border:none;color:#fff;border-radius:6px;padding:5px 12px;cursor:pointer">↻ обновить</button>
-      </div>
-      <div id="ai-content" style="font-size:13px;line-height:1.7;color:var(--text)">
-        <div style="color:var(--muted);font-family:var(--mono);font-size:12px">Нажми "обновить" чтобы получить рекомендации на основе текущих данных</div>
-      </div>
-    </div>
-  </div>
 
   <div id="log-section" style="display:none;margin-top:2rem">
     <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleLog()">
@@ -1313,9 +1301,8 @@ function ozonPanelHtml(){
         <td>${escHtml(ozonState(o.state))}</td>
         <td class="mono">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>
         <td class="mono" style="font-size:11px;line-height:1.5">${itemsCell(o)}</td>
-        <td>${escHtml(o.warehouse||'—')}</td>
         <td class="mono" style="color:var(--muted)">${ozonOrderActions(o.id)}</td>
-      </tr>`).join(''):`<tr><td colspan="7" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'заявок в работе нет'}</td></tr>`;
+      </tr>`).join(''):`<tr><td colspan="6" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'заявок в работе нет'}</td></tr>`;
     // срок ключа показываем, только когда он скоро кончится
     const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
     const keyWarn=keyLeft!==null&&keyLeft<30
@@ -1330,7 +1317,7 @@ function ozonPanelHtml(){
       ${pickedIds.length?`<div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(pickedIds))})">⬇ этикетки одним PDF · ${pickedIds.length} ${pkPlural(pickedIds.length,'заявка','заявки','заявок')}</button>
         <span id="labels-all" style="font-family:var(--mono);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
-      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedIds.length===shownIds.length&&shownIds.length?'checked':''} title="выбрать все" onchange="ozonToggleAllPicked(${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th>Что внутри</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
+      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedIds.length===shownIds.length&&shownIds.length?'checked':''} title="выбрать все" onchange="ozonToggleAllPicked(${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th>Что внутри</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       ${sheetCfgHtml()}${cloudWhereHtml()}
       <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Подключение и справочники</summary>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
@@ -1405,29 +1392,7 @@ function packOptionLabel(rules,art,opt){
 
 // Тестовый режим: задание строится из сгенерированных отправок (по одной на каждый вариант укладки
 // + комбинации и примеры ошибок). Реальные отправки, облако и списание коробок не затрагиваются.
-let packTestMode=lsGet('ozon_pack_test',false)===true;
-function togglePackTest(){ packTestMode=!packTestMode; localStorage.setItem('ozon_pack_test',JSON.stringify(packTestMode)); redraw(); }
-function packTestAdjs(){
-  const rules=getPackRules(), clusters=CLUSTER_GROUPS.flatMap(g=>g.clusters), out=[];
-  let c=0;
-  const add=(article,qty)=>out.push({article,cluster:clusters[c++%clusters.length],qty,test:true});
-  ALL_ARTICLES.forEach(art=>{
-    const opts=(rules[art]||[]).filter(o=>TBOX[o.box]);
-    opts.forEach(o=>add(art,o.qty));                        // каждый вариант укладки отдельной отправкой
-  });
-  const withRules=ALL_ARTICLES.find(a=>(rules[a]||[]).some(o=>TBOX[o.box]));
-  if(withRules){ // количество, которого нет во вместимости, — остаётся нерасфасованным
-    const qs=rules[withRules].map(o=>o.qty); let q=Math.max(...qs)+13; while(qs.includes(q)) q++;
-    add(withRules,q);
-  }
-  const noRules=ALL_ARTICLES.find(a=>!(rules[a]||[]).length);
-  if(noRules) add(noRules,30);                               // товар без заданной вместимости
-  if(withRules) out.push({article:withRules,cluster:LEFTOVER_CLUSTER,qty:14,test:true}); // остатки к коробкам
-  const onlyLoose=ALL_ARTICLES.find(a=>a!==withRules&&a!==noRules&&!(rules[a]||[]).length);
-  if(onlyLoose) out.push({article:onlyLoose,cluster:LEFTOVER_CLUSTER,qty:25,test:true}); // только остатки
-  return out;
-}
-function getPackAdjs(){ return packTestMode?packTestAdjs():getAdjs(); }
+function getPackAdjs(){ return getAdjs(); }
 
 // Собирает задание: по товару в целом, но каждую отправку (кластер) раскладываем отдельно —
 // у каждой поставки свои физические коробки.
@@ -1496,7 +1461,7 @@ function packTaskText(task){
   const notes=getPackNotes();
   const d=new Date();
   const tot=Object.entries(task.boxTotals).map(([b,c])=>`${TBOX[b].name} × ${c}`).join(', ');
-  const lines=[`${packTestMode?'ТЕСТ · ':''}Что пакуем · ${packSubtitle(task,d)}`];
+  const lines=[`Что пакуем · ${packSubtitle(task,d)}`];
   if(tot) lines.push(tot);
   lines.push('');
   task.items.forEach((it,n)=>{
@@ -1685,7 +1650,7 @@ function buildPackPages(task){
   const d=new Date(), total=pages.length;
   return pages.map((pg,pi)=>({draw:ctx=>{
     ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,PK_PAGE_H);
-    const title=packTestMode?'ТЕСТ · Что пакуем':'Что пакуем', tColor=packTestMode?'#c47f00':'#1a1d27';
+    const title='Что пакуем', tColor='#1a1d27';
     if(pi===0){
       txt(ctx,title,P,P+32,`800 32px ${F}`,tColor);
       txt(ctx,packSubtitle(task,d),P,P+62,`500 19px ${F}`,'#6b6e80');
@@ -2031,7 +1996,7 @@ function packTaskHtml(){
       </div>
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
       <div id="pack-sheet">
-        <div class="pk-h1" style="${packTestMode?'color:#c47f00':''}">${packTestMode?'ТЕСТ · ':''}Что пакуем</div>
+        <div class="pk-h1">Что пакуем</div>
         <div class="pk-sub">${packSubtitle(task,new Date())}</div>
         ${tot?`<div class="pk-total"><div class="pk-total-sub">${escHtml(tot)}</div></div>`:''}
         <div class="pk-secs">${secs}</div>
@@ -2040,9 +2005,8 @@ function packTaskHtml(){
   return `<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
       <span>📦 Упаковка</span>
       <span style="display:flex;gap:16px;text-transform:none;letter-spacing:0;font-size:11px;font-family:var(--mono)">
-        <span style="color:${packTestMode?'var(--amber)':'var(--accent)'};cursor:pointer" onclick="togglePackTest()">${packTestMode?'✕ выключить тест':'🧪 тест: все варианты'}</span>
         <span style="color:var(--accent);cursor:pointer" onclick="togglePackRules()">⚙ коробки и укладки</span></span></div>
-    <div class="block" style="padding:0.75rem 1.25rem;margin-top:0${packTestMode?';border-color:var(--amber)':''}">${packTestMode?`<div style="background:var(--amber-bg);color:var(--amber);font-size:12px;font-family:var(--mono);padding:8px 12px;border-radius:6px;margin:4px 0 8px;line-height:1.5">🧪 Тест: здесь показаны все варианты укладки, их сочетания и примеры ошибок. Настоящие отправки и остатки коробок не меняются. Тест остаётся включённым после перезагрузки, пока не нажмёшь «выключить тест».</div>`:''}${body}</div>`;
+    <div class="block" style="padding:0.75rem 1.25rem;margin-top:0">${body}</div>`;
 }
 
 function transportBoxesHtml(){
@@ -3121,31 +3085,6 @@ function getProfile(){
 }
 function saveProfile(p){localStorage.setItem(LS_PROFILE,JSON.stringify(p));}
 
-function loadProfileFile(file){
-  const reader=new FileReader();
-  reader.onload=e=>{
-    try{
-      const wb=XLSX.read(e.target.result,{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const rows=parseData(ws);
-      const data=processRows(rows,false); // без подстановки профиля
-      const profile={};
-      data.forEach(r=>{
-        if(r.sales>0){
-          const key=r.article+'|'+r.cluster;
-          profile[key]=r.sales;
-        }
-      });
-      saveProfile(profile);
-      const count=Object.keys(profile).length;
-      const btn=document.getElementById('profile-btn');
-      if(btn)btn.textContent=`📊 профиль (${count})`;
-      alert(`Профиль сохранён: ${count} кластеров с данными о продажах`);
-      redraw();
-    }catch(err){alert('Ошибка загрузки профиля: '+err.message);}
-  };
-  reader.readAsArrayBuffer(file);
-}
 
 function processRows(rows,useProfile=true){
   if(!rows.length)return null;
@@ -3664,7 +3603,7 @@ function render(data){
 }
 
 function resetDashboard(){
-  ['dashboard','boxes-section','log-section','ai-section'].forEach(id=>{
+  ['dashboard','boxes-section','log-section'].forEach(id=>{
     const el=document.getElementById(id);if(el){el.style.display='none';}
   });
   document.getElementById('dashboard').innerHTML='';
@@ -3705,7 +3644,6 @@ function handleFile(file){
 }
 
 document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
-document.getElementById('profileInput').addEventListener('change',e=>{if(e.target.files[0])loadProfileFile(e.target.files[0]);});
 
 
 
@@ -3738,80 +3676,6 @@ document.getElementById('profileInput').addEventListener('change',e=>{if(e.targe
 })();
 
 // EXPORT FOR CLAUDE
-function exportForClaude(){
-  const lines = [];
-  const now = new Date().toLocaleString('ru',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).replace(',','');
-  lines.push(`=== Снимок дашборда · ${now} ===\n`);
-
-  // Файл
-  const fi = document.getElementById('file-info');
-  if(fi && fi.textContent) lines.push(`Файл: ${fi.textContent.replace(/\s+/g,' ').trim()}\n`);
-
-  // Коробки
-  lines.push('--- Коробки ---');
-  ['a','b'].forEach(type=>{
-    const name = (BOX_META[type]&&BOX_META[type].name)||type;
-    const count = calcBoxCount(type);
-    const log = getBoxLog();
-    const inTransit = log.filter(e=>e.type===type&&e.kind==='order'&&(e.remaining||0)>0).reduce((s,e)=>s+(e.remaining||0),0);
-    lines.push(`${name}: ${count} в наличии${inTransit>0?' + '+inTransit+' заказано/в пути':''}`);
-  });
-
-  // Поправки (отправки не отображённые в файле)
-  const adjs = getAdjs();
-  if(adjs.length){
-    lines.push('\n--- Отправки (ещё не в файле) ---');
-    adjs.forEach(a=>{
-      lines.push(`${NAMES[a.article]||a.article} → ${a.cluster}: +${a.qty} шт`);
-    });
-  }
-
-  // Данные из файла по товарам
-  if(rawData){
-    lines.push('\n--- Остатки по товарам (из файла) ---');
-    ['PF-СК-D55-WH-PG','PF-OV-100x60-WH-PG','PF-СК-D70-WH-PG'].forEach(art=>{
-      const rows = rawData.filter(r=>r.article===art);
-      const fbo = Math.round(rows.reduce((s,r)=>s+r.fbo,0));
-      const transit = Math.round(rows.reduce((s,r)=>s+r.transit,0));
-      const sales = rows.reduce((s,r)=>s+r.sales,0).toFixed(1);
-      const zeroFbo = rows.filter(r=>r.fbo===0&&r.sales>0).length;
-      const total = rows.filter(r=>r.sales>0).length;
-      lines.push(`${artName(art)}: ${fbo} на складе + ${transit} в пути | ${sales} шт/день | нулей: ${zeroFbo}/${total} кластеров`);
-    });
-
-    // Топ дефицитов
-    lines.push('\n--- Топ дефицитов (14 дней) ---');
-    const period=14;
-    const top = rawData
-      .filter(r=>r.sales>0)
-      .map(r=>({...r,needed:Math.max(0,Math.round(r.sales*period-r.total)),score:Math.max(0,period-r.days)*r.sales}))
-      .filter(r=>r.needed>0)
-      .sort((a,b)=>b.score-a.score)
-      .slice(0,10);
-    top.forEach(r=>{
-      lines.push(`${NAMES[r.article]||r.article} → ${r.cluster}: нужно ${r.needed} шт | ${r.sales.toFixed(1)}/день | FBO ${Math.round(r.fbo)} + в пути ${Math.round(r.transit)}`);
-    });
-  }
-
-  const text = lines.join('\n');
-
-  // Копируем в буфер
-  navigator.clipboard.writeText(text).then(()=>{
-    alert('Скопировано в буфер обмена — вставь в чат с Claude');
-  }).catch(()=>{
-    // Fallback — показываем в textarea
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:80%;height:60%;z-index:9999;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:1rem;font-family:var(--mono);font-size:12px;';
-    document.body.appendChild(ta);
-    ta.select();
-    const close = document.createElement('button');
-    close.textContent='× закрыть';
-    close.style.cssText='position:fixed;top:calc(50% - 30%);right:calc(10% + 8px);z-index:9999;font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer;';
-    close.onclick=()=>{ta.remove();close.remove();};
-    document.body.appendChild(close);
-  });
-}
 
 // AI RECOMMENDATIONS
 function buildSnapshot(){
@@ -3861,78 +3725,6 @@ function buildSnapshot(){
   return lines.join('\n');
 }
 
-async function getAiRecommendations(){
-  const section=document.getElementById('ai-section');
-  const content=document.getElementById('ai-content');
-  if(!section||!content)return;
-  if(!rawData){alert('Сначала загрузи файл доступности');return;}
-
-  section.style.display='block';
-  content.innerHTML='<div style="color:var(--muted);font-family:var(--mono);font-size:12px">Анализирую данные...</div>';
-  section.scrollIntoView({behavior:'smooth',block:'start'});
-
-  const snapshot=buildSnapshot();
-  const prompt=`Ты помощник продавца на Озоне. Он производит пресс-формы для сырников и котлет на 3D-принтерах и отправляет их через FBO по всей России.
-
-Артикулы:
-- Сырники 5.5 (PF-СК-D55-WH-PG) — самый популярный товар
-- Овальные (PF-OV-100x60-WH-PG)
-- Форма 7 см (PF-СК-D70-WH-PG)
-
-ВАЖНО: В снимке есть раздел "Отправки (ещё не в файле)" — это реальные отправки которые уже сделаны но ещё не отобразились в данных Озона. При расчёте реального дефицита по каждому кластеру нужно вычитать эти отправки из дефицита. Если отправок в кластер больше или равно дефициту — кластер считается закрытым.
-
-Вот текущий снимок данных:
-${snapshot}
-
-Дай конкретные рекомендации:
-1. Что сейчас печатать в первую очередь (какой артикул) и сколько — с учётом уже отправленного
-2. Куда отправить следующие партии (топ-5 кластеров по каждому товару) — только те где реальный незакрытый дефицит
-3. Где самые большие потери продаж прямо сейчас
-
-Отвечай кратко и по делу, без лишних вступлений. Используй конкретные цифры.`;
-
-  try{
-    const response=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:2000,
-        messages:[{role:'user',content:prompt}]
-      })
-    });
-    const data=await response.json();
-    const text=data.content?data.content.map(b=>b.text||'').join(''):'Не удалось получить ответ';
-
-    // Простой markdown → html
-    const html=text
-      .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-      .replace(/^### (.*)/gm,'<div style="font-weight:600;margin-top:12px;color:var(--text)">$1</div>')
-      .replace(/^## (.*)/gm,'<div style="font-weight:600;font-size:14px;margin-top:16px;color:var(--text)">$1</div>')
-      .replace(/^# (.*)/gm,'<div style="font-weight:600;font-size:15px;margin-top:16px;color:var(--text)">$1</div>')
-      .replace(/^- (.*)/gm,'<div style="padding-left:12px;margin-top:4px">· $1</div>')
-      .replace(/^\d+\. (.*)/gm,'<div style="padding-left:12px;margin-top:6px;font-weight:500">$1</div>')
-      .split(/\n\n+/)
-      .map(block=>{
-        const lines=block.split('\n').filter(l=>l.trim());
-        if(lines.length>=2&&lines[0].includes('|')&&lines[1].match(/^\|[-| ]+\|/)){
-          const headers=lines[0].split('|').filter(s=>s.trim()).map(s=>`<th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);font-weight:500">${s.trim()}</th>`).join('');
-          const rows=lines.slice(2).filter(l=>l.includes('|')).map(l=>{
-            const cells=l.split('|').filter(s=>s.trim()).map(s=>`<td style="padding:6px 10px;font-size:12px;border-bottom:1px solid var(--border)">${s.trim()}</td>`).join('');
-            return `<tr>${cells}</tr>`;
-          }).join('');
-          return `<div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;background:var(--bg3);border-radius:6px;overflow:hidden"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table></div>`;
-        }
-        return block;
-      })
-      .join('<br>')
-      .replace(/\n/g,'<br>');
-
-    content.innerHTML=html;
-  }catch(err){
-    content.innerHTML=`<div style="color:var(--red);font-family:var(--mono);font-size:12px">Ошибка: ${err.message}</div>`;
-  }
-}
 
 // THEME
 const LS_THEME='ozon_theme';
@@ -4042,8 +3834,6 @@ function switchMainTab(tab){
     document.getElementById('upload-section').style.display='none';
     document.getElementById('dashboard').style.display='none';
     document.getElementById('reset-wrap').style.display='none';
-    const aiSec=document.getElementById('ai-section');
-    if(aiSec) aiSec.style.display='none';
     document.getElementById('sales-section').style.display='block';
     ['plan','pack','ship'].forEach(v=>{ const b=document.getElementById('mtab-'+v); if(b) b.classList.remove('active'); });
     const st=document.getElementById('dash-status'); if(st) st.style.display='none';
