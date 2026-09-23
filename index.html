@@ -199,7 +199,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.84</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.85</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -469,8 +469,17 @@ async function ozonApiRaw(path,body){
     }
     ozonNote('');
     if(!r.ok){
+      const msg=(data&&(data.message||data.error))||text.slice(0,160);
+      // 403 с упоминанием роли — не проблема ключа целиком, а нехватка прав на конкретный метод
+      if(r.status===403&&/role/i.test(msg)){
+        const where=path.startsWith('/v1/analytics')?'аналитике остатков (роль Report или Admin read only)'
+          :path.includes('draft')||path.includes('supply')||path.includes('cargo')?'поставкам FBO (роль Supply order)'
+          :path.includes('product')?'товарам (роль Product read-only)'
+          :path.includes('warehouse')||path.includes('cluster')?'складам (роль Warehouse)':'этому разделу';
+        throw new Error('ключу Ozon не хватает роли для метода '+path+' — нужен доступ к '+where+'. Перевыпусти ключ в кабинете: Настройки → Seller API');
+      }
       const hint=r.status===401||r.status===403?' — ключ не подошёл':'';
-      throw new Error('HTTP '+r.status+hint+': '+((data&&(data.message||data.error))||text.slice(0,160)));
+      throw new Error('HTTP '+r.status+hint+': '+msg);
     }
     return data||{};
   }
@@ -712,7 +721,8 @@ async function sheetRows(orderId){
   const cfg=getSheetCfg()||{};
   const order=await ozonOrderInfo(orderId)||{};
   const ship=order.timeslot&&order.timeslot.from?new Date(order.timeslot.from):null;
-  const fmt=d=>d?String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear():'';
+  const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  const fmt=d=>d?d.getDate()+' '+MONTHS[d.getMonth()]:''; // как в твоей таблице учёта
   const by={};
   getAdjs().forEach(a=>{
     if(String(a.ozonOrderId||'')!==String(orderId))return;
