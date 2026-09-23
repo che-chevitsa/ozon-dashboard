@@ -197,7 +197,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.77 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.78 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -781,7 +781,8 @@ function ozonToggleAllPicked(shown){
   ozonPickedOrders=now.length===all.length?new Set():new Set(all);
   redraw();
 }
-let ozonLabelState=null; // {orderId, busy, msg, error}
+let ozonLabelState=null; // {orderId, busy, msg, error} — этикетки одной заявки
+let ozonMergeState=null; // {busy, msg, error} — общий PDF по отмеченным заявкам
 
 function ozonCargoPlan(orderId){
   const rules=getPackRules(), skus=getOzonCache().skus||{};
@@ -906,13 +907,13 @@ function loadPdfLib(){
 }
 // Все этикетки сеанса одним файлом.
 async function ozonLabelsMerged(ids){
-  ozonLabelState={orderId:ids[0],busy:true,msg:'собираю этикетки…',error:''};
+  ozonMergeState={busy:true,msg:'собираю этикетки…',error:''};
+  const say=t=>{ ozonMergeState.msg=t; const el=document.getElementById('labels-all'); if(el){ el.textContent=t; el.style.color='var(--accent)'; } };
   redraw();
   const blobs=[]; let boxes=0;
   try{
     for(const id of ids){
-      ozonLabelState.msg='этикетки '+(blobs.length+1)+' из '+ids.length+'…';
-      const el=document.getElementById('labels-all'); if(el) el.textContent=ozonLabelState.msg;
+      say('этикетки '+(blobs.length+1)+' из '+ids.length+'…');
       const r=await ozonLabelBlob(id);
       blobs.push(r.blob); boxes+=r.count;
     }
@@ -926,13 +927,13 @@ async function ozonLabelsMerged(ids){
     const d=new Date();
     downloadBlob(new Blob([await out.save()],{type:'application/pdf'}),
       'этикетки_'+String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'.pdf');
-    ozonLabelState.msg='✓ один файл: '+ids.length+' '+pkPlural(ids.length,'заявка','заявки','заявок')+' · '+boxes+' '+pkPlural(boxes,'коробка','коробки','коробок');
+    ozonMergeState.msg='✓ один файл: '+ids.length+' '+pkPlural(ids.length,'заявка','заявки','заявок')+' · '+boxes+' '+pkPlural(boxes,'коробка','коробки','коробок');
   }catch(e){
     // склейка не вышла — отдаём файлы по одному, чтобы работа не встала
-    if(blobs.length){ blobs.forEach((b,i)=>downloadBlob(b,'этикетки_'+ids[i]+'.pdf')); ozonLabelState.msg='скачал по одному файлу: '+e.message; }
-    else ozonLabelState.error=e.message;
+    if(blobs.length){ blobs.forEach((b,i)=>downloadBlob(b,'этикетки_'+ids[i]+'.pdf')); ozonMergeState.msg='скачал по одному файлу: '+e.message; }
+    else { ozonMergeState.error=e.message; ozonMergeState.msg=''; }
   }
-  ozonLabelState.busy=false;
+  ozonMergeState.busy=false;
   redraw();
 }
 // Этикетки одной заявки: PDF скачивается файлом.
@@ -1328,7 +1329,7 @@ function ozonPanelHtml(){
         <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleAllOrders()">${ordersAll?'только в работе':'показать все ('+orders.length+')'}</span></div>
       ${pickedIds.length?`<div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(pickedIds))})">⬇ этикетки одним PDF · ${pickedIds.length} ${pkPlural(pickedIds.length,'заявка','заявки','заявок')}</button>
-        <span id="labels-all" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span></div>`:''}
+        <span id="labels-all" style="font-family:var(--mono);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
       <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedIds.length===shownIds.length&&shownIds.length?'checked':''} title="выбрать все" onchange="ozonToggleAllPicked(${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th>Что внутри</th><th>Точка отгрузки</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       ${sheetCfgHtml()}${cloudWhereHtml()}
       <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Подключение и справочники</summary>
@@ -2347,7 +2348,7 @@ async function loadFromCloud(){
 // Показывает диагностику облака под шапкой (временно, для отладки)
 function cloudDiag(msg){
   // Обычные сообщения — только в консоль; на странице показываем лишь проблемы.
-  if(!/ОШИБК|ошибк|⚠/i.test(msg)){ console.log(msg); const q=document.getElementById('cloud-diag'); if(q) q.remove(); return; }
+  if(!/ОШИБК|ошибк/i.test(msg)){ console.log(msg); const q=document.getElementById('cloud-diag'); if(q) q.remove(); return; }
   let el=document.getElementById('cloud-diag');
   if(!el){
     el=document.createElement('div');
