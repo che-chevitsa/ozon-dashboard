@@ -198,9 +198,10 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.72 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.73 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
+    <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -213,7 +214,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     </div>
   </header>
 
-  <dialog id="pack-ctor-dlg" style="width:min(900px,94vw);max-height:90vh;border:1px solid var(--border);border-radius:14px;padding:0;background:var(--bg2);color:var(--text);overflow:hidden">
+  <dialog id="pack-ctor-dlg" style="width:min(900px,94vw);max-height:90vh;margin:auto;border:1px solid var(--border);border-radius:14px;padding:0;background:var(--bg2);color:var(--text);overflow:hidden">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">
       <b style="font-size:15px">Вместимость коробок</b>
       <button onclick="closePackCtor()" style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
@@ -1289,7 +1290,7 @@ function ozonPanelHtml(){
 // Транспортные коробки — данные, редактируются в конструкторе. Размеры в см: w — ширина фасада,
 // d — глубина, h — высота (нужны для пропорций иконок). color — ключ палитры BOX_PALETTE.
 const LS_PACK_RULES='ozon_pack_rules', LS_PACK_ORDER='ozon_pack_order', LS_PACK_NOTES='ozon_pack_notes',
-      LS_TBOX_LOG='ozon_transport_log', LS_PACK_SPENT='ozon_pack_spent', LS_TBOX_TYPES='ozon_transport_types';
+      LS_TBOX_LOG='ozon_transport_log', LS_TBOX_TYPES='ozon_transport_types';
 const BOX_PALETTE={ // [фасад, верх, бок]
   kraft: {name:'Крафт',      colors:['#d4a66a','#e6c393','#b58449']},
   purple:{name:'Фиолетовая', colors:['#8b5cf6','#b197fc','#6d3fd6']},
@@ -1751,30 +1752,6 @@ async function copyPackText(){
   if(btn){ btn.textContent='✓ скопировано'; setTimeout(()=>btn.textContent='📋 копировать текст',1800); }
 }
 
-// Списание транспортных коробок по текущему заданию. Подпись задания защищает от двойного списания.
-function packSignature(task){ return JSON.stringify(Object.entries(task.boxTotals).sort()); }
-function spendPackBoxes(){
-  const task=buildPackTask();
-  const sig=packSignature(task);
-  if(!Object.keys(task.boxTotals).length)return;
-  const log=getTboxLog(), ts=Date.now();
-  const actual={}; // сколько реально списали (остаток не уходит в минус) — столько же вернёт отмена
-  Object.entries(task.boxTotals).forEach(([box,qty])=>{
-    actual[box]=Math.min(qty,calcTboxCount(box));
-    log.push({box,kind:'spend',qty,ts,pack:true});
-  });
-  saveTboxLog(log);
-  localStorage.setItem(LS_PACK_SPENT,JSON.stringify({sig,ts,totals:actual}));
-  redraw();
-}
-function undoSpendPackBoxes(){
-  const spent=lsGet(LS_PACK_SPENT,null); if(!spent)return;
-  const log=getTboxLog(), ts=Date.now();
-  Object.entries(spent.totals).forEach(([box,qty])=>log.push({box,kind:'add',qty,ts,undo:true}));
-  saveTboxLog(log);
-  localStorage.removeItem(LS_PACK_SPENT);
-  redraw();
-}
 function calcTboxCount(box){
   let n=0;
   getTboxLog().filter(e=>e.box===box).forEach(e=>{
@@ -1969,8 +1946,6 @@ function packTaskHtml(){
   if(!task.items.length){
     body=`<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">пока нечего паковать — запланированных отправок нет</div>`;
   }else{
-    const spent=lsGet(LS_PACK_SPENT,null);
-    const alreadySpent=spent&&spent.sig===packSignature(task);
     // Превью — живые блоки (перетаскиваются, комментарий правится прямо в блоке); PNG рисуется из тех же данных.
     const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
         <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(packName(it.article))}</span><span class="pk-qty">${it.total} шт</span>
@@ -1993,9 +1968,6 @@ function packTaskHtml(){
           :`<button style="${btn}" onclick="copyPackImage(0,this)">🖼 копировать картинку</button>`}
         <button style="${btn}" onclick="downloadPackImage()">⬇ скачать PNG${pageCount>1?` (${pageCount} шт)`:''}</button>
         <button id="pack-copy-txt" style="${btn}" onclick="copyPackText()">📋 копировать текст</button>
-        ${packTestMode?'':alreadySpent
-          ?`<button style="${btn};color:var(--muted)" onclick="undoSpendPackBoxes()" title="вернуть коробки на остаток">коробки списаны ✓ ↩</button>`
-          :`<button style="${btn};color:var(--green)" onclick="spendPackBoxes()">📦 упаковано — списать коробки</button>`}
       </div>
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
       <div id="pack-sheet">
@@ -2009,17 +1981,15 @@ function packTaskHtml(){
       <span>📦 Упаковка</span>
       <span style="display:flex;gap:16px;text-transform:none;letter-spacing:0;font-size:11px;font-family:var(--mono)">
         <span style="color:${packTestMode?'var(--amber)':'var(--accent)'};cursor:pointer" onclick="togglePackTest()">${packTestMode?'✕ выключить тест':'🧪 тест: все варианты'}</span>
-        <span style="color:var(--accent);cursor:pointer" onclick="togglePackRules()">⚙ вместимость коробок</span></span></div>
+        <span style="color:var(--accent);cursor:pointer" onclick="togglePackRules()">⚙ коробки и укладки</span></span></div>
     <div class="block" style="padding:0.75rem 1.25rem;margin-top:0${packTestMode?';border-color:var(--amber)':''}">${packTestMode?`<div style="background:var(--amber-bg);color:var(--amber);font-size:12px;font-family:var(--mono);padding:8px 12px;border-radius:6px;margin:4px 0 8px;line-height:1.5">🧪 Тест: здесь показаны все варианты укладки, их сочетания и примеры ошибок. Настоящие отправки и остатки коробок не меняются. Тест остаётся включённым после перезагрузки, пока не нажмёшь «выключить тест».</div>`:''}${body}</div>`;
 }
 
 function transportBoxesHtml(){
-  const task=buildPackTask();
-  const spent=lsGet(LS_PACK_SPENT,null);
-  const alreadySpent=spent&&spent.sig===packSignature(task);
+  const task=buildPackTask(); // в задании только неупакованное — его коробки ещё понадобятся
   const cards=TRANSPORT_BOXES.map(b=>{
     const count=calcTboxCount(b.id);
-    const need=alreadySpent?0:(task.boxTotals[b.id]||0);
+    const need=task.boxTotals[b.id]||0;
     const short=need>count;
     return `<div class="box-card${short?' danger':''}">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px">
@@ -2466,6 +2436,12 @@ function removeAdjustment(idx){
 // Состояния отправки: «план» (ещё пакуют) → «упаковано» (лежит на складе, можно оформлять
 // заявку в Ozon) → «отгружено». Задание упаковщику строится только по плану.
 function adjStage(a){ return a.sent===true?'sent':a.packed===true?'packed':'plan'; }
+// В какую транспортную коробку уходит эта отправка (по вместимости).
+function tboxOfAdj(a){
+  if(a.cluster===LEFTOVER_CLUSTER)return null;
+  const rule=(getPackRules()[a.article]||[]).find(o=>TBOX[o.box]&&o.qty===a.qty);
+  return rule?rule.box:null;
+}
 function setAdjStage(idx,stage){
   const adjs=getAdjs();
   if(!adjs[idx])return;
@@ -2475,6 +2451,15 @@ function setAdjStage(idx,stage){
   if(stage==='packed'&&was==='plan'){ // запоминаем, кто и когда упаковал — для учёта в таблице
     adjs[idx].packedAt=new Date().toISOString();
     adjs[idx].packedBy=assigneeOf(adjs[idx].article)||'';
+    const box=tboxOfAdj(adjs[idx]); // коробка ушла в дело — списываем сразу
+    if(box){
+      adjs[idx].tbox=box;
+      const log=getTboxLog(); log.push({box,kind:'spend',qty:1,ts:Date.now(),auto:true}); saveTboxLog(log);
+    }
+  }
+  if(stage==='plan'&&adjs[idx].tbox){ // вернули в план — коробка снова свободна
+    const log=getTboxLog(); log.push({box:adjs[idx].tbox,kind:'add',qty:1,ts:Date.now(),auto:true}); saveTboxLog(log);
+    delete adjs[idx].tbox;
   }
   if(stage==='plan'){ delete adjs[idx].packedAt; delete adjs[idx].packedBy; }
   saveAdjs(adjs);
