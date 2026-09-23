@@ -28,17 +28,17 @@
 [data-theme="light"] .heatmap td.green{background:rgba(26,138,74,0.1);color:var(--green);}
 [data-theme="light"] .upload-zone{border-color:rgba(58,95,240,0.3);}
 [data-theme="light"] .upload-zone:hover{background:rgba(58,95,240,0.04);}
-.theme-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:6px 12px;cursor:pointer;transition:all 0.15s;}
+.theme-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;transition:all 0.15s;flex-shrink:0;}
 .theme-btn:hover{color:var(--text);border-color:rgba(128,128,128,0.3);}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;}
 .container{max-width:1200px;margin:0 auto;padding:2rem 1.5rem;}
-header{display:flex;align-items:center;gap:1rem;margin-bottom:2.5rem;border-bottom:1px solid var(--border);padding-bottom:1.5rem;flex-wrap:wrap;}
+header{display:flex;align-items:center;gap:10px;margin-bottom:2rem;border-bottom:1px solid var(--border);padding-bottom:1rem;flex-wrap:nowrap;white-space:nowrap;}
 h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em;}
-.tag{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:3px 8px;border-radius:4px;}
-.version{font-family:var(--mono);font-size:10px;color:var(--muted);opacity:0.55;margin-left:2px;letter-spacing:0.02em;}
+.tag{font-family:var(--mono);font-size:11px;flex-shrink:0;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:3px 8px;border-radius:4px;}
+.version{font-family:var(--mono);font-size:10px;color:var(--muted);opacity:0.55;margin-left:2px;letter-spacing:0.02em;flex-shrink:0;}
 #file-info{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 12px;line-height:1.6;display:none;}
-.header-right{margin-left:auto;display:flex;align-items:center;gap:12px;}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .period-tabs{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:3px;}
 .period-tab{font-family:var(--mono);font-size:11px;color:var(--muted);background:none;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;}
 .period-tab.active{background:var(--bg2);color:var(--text);border:1px solid var(--border);}
@@ -49,7 +49,7 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .sales-toggle{font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;}
 .sales-toggle.on{color:var(--text);background:var(--bg2);}
 .sales-toggle .dot{width:10px;height:10px;border-radius:50%;}
-.reset-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;}
+.reset-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;flex-shrink:0;}
 .reset-btn:hover{border-color:rgba(255,255,255,0.2);color:var(--text);}
 .upload-zone{border:1px dashed rgba(91,127,255,0.4);border-radius:12px;padding:4rem 2rem;text-align:center;cursor:pointer;transition:all 0.2s;position:relative;}
 .upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:rgba(91,127,255,0.04);}
@@ -130,6 +130,8 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .container{padding:1rem;}
   header{flex-wrap:wrap;gap:8px;padding-bottom:1rem;margin-bottom:1.5rem;}
   h1{font-size:15px;}
+  .tag,.version{display:none;}
+  header{flex-wrap:wrap;white-space:normal;}
   .header-right{margin-left:0;width:100%;flex-wrap:wrap;gap:6px;}
   .period-tabs{order:-1;}
   .reset-btn{font-size:11px;padding:4px 10px;}
@@ -197,7 +199,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.81 · 23.09.2026</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.82</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -208,7 +210,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
         <button class="period-tab active" onclick="setPeriod(28)">28 дн</button>
       </div>
       <span id="file-date" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
-      <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку с покрытием кластеров">↑ загрузить свежий файл</button>
+      <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку с покрытием кластеров">↑ свежий файл</button>
     </div>
   </header>
 
@@ -2169,7 +2171,7 @@ function cloudStatusText(){
   const s=document.getElementById('cloud-status');
   if(!s)return;
   if(getSheetCfg()){ s.textContent='☁ Диск'; s.style.color='var(--muted)'; }
-  else { s.textContent='☁ синхронизация не настроена'; s.style.color='var(--amber)'; }
+  else { s.textContent='☁ настроить'; s.style.color='var(--amber)'; }
 }
 
 async function saveToCloud(){
