@@ -31,6 +31,9 @@
 .theme-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;transition:all 0.15s;flex-shrink:0;}
 .theme-btn:hover{color:var(--text);border-color:rgba(128,128,128,0.3);}
 *{box-sizing:border-box;margin:0;padding:0;}
+/* Место под полосу прокрутки держим всегда: иначе на короткой вкладке (продажи) она
+   исчезает, ширина окна прыгает на 15px, и центрированный контейнер уезжает вбок. */
+html{scrollbar-gutter:stable;}
 body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;}
 .container{max-width:1200px;margin:0 auto;padding:2rem 1.5rem;}
 header{display:flex;align-items:center;gap:10px;margin-bottom:2rem;border-bottom:1px solid var(--border);padding-bottom:1rem;flex-wrap:nowrap;white-space:nowrap;min-height:51px;}
@@ -199,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.88</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.90</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -2592,11 +2595,12 @@ function packedUnits(){
 function adjRowsHtml(){
   // Приехавшие на склад скрываем: в списке они мешают, но в хранилище остаются —
   // к ним привязаны заявки, грузоместа и этикетки.
-  const adjs=getAdjs().map((a,i)=>({a,i})).filter(x=>!x.a.arrived).map(x=>x.a);
+  // Номер строки в хранилище запоминаем сразу: искать его потом через indexOf нельзя —
+  // getAdjs() каждый раз разбирает JSON заново, объекты новые, сравнение по ссылке даёт -1.
+  const adjs=getAdjs().map((a,i)=>({...a,origIdx:i})).filter(a=>!a.arrived);
   if(!adjs.length)return '';
   const rank={plan:0,packed:1,sent:2};
-  const all=getAdjs();
-  const sorted=[...adjs.map(a=>({...a,origIdx:all.indexOf(a)}))].sort((a,b)=>rank[adjStage(a)]-rank[adjStage(b)]);
+  const sorted=[...adjs].sort((a,b)=>rank[adjStage(a)]-rank[adjStage(b)]);
   const del=i=>`<button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
   return sorted.map(a=>{
     const i=a.origIdx, stage=adjStage(a);
