@@ -33,7 +33,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;}
 .container{max-width:1200px;margin:0 auto;padding:2rem 1.5rem;}
-header{display:flex;align-items:center;gap:10px;margin-bottom:2rem;border-bottom:1px solid var(--border);padding-bottom:1rem;flex-wrap:nowrap;white-space:nowrap;}
+header{display:flex;align-items:center;gap:10px;margin-bottom:2rem;border-bottom:1px solid var(--border);padding-bottom:1rem;flex-wrap:nowrap;white-space:nowrap;min-height:51px;}
 h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em;}
 .tag{font-family:var(--mono);font-size:11px;flex-shrink:0;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:3px 8px;border-radius:4px;}
 .version{font-family:var(--mono);font-size:10px;color:var(--muted);opacity:0.55;margin-left:2px;letter-spacing:0.02em;flex-shrink:0;}
@@ -199,7 +199,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.86</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.87</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -689,6 +689,21 @@ function saveSheetCfg(){
 function forgetSheetCfg(){ if(confirm('Убрать настройки таблицы из этого браузера?')){ localStorage.removeItem(LS_SHEET); redraw(); } }
 
 // Что внутри заявки: только по своим отправкам — за составом чужих заявок в Ozon не ходим.
+// Ячейка «когда везём»: сверху выбранный день, под ним слот Ozon для справки.
+function ozonShipCell(o){
+  const id=String(o.id), d=ozonShipDay(o), slot=ozonSlotDay(o), today=ymd(new Date());
+  const moved=!!getShipDates()[id]&&d!==slot;
+  return `<div style="display:flex;align-items:center;gap:5px">
+      <input type="date" value="${d}" onchange="ozonSetShipDay('${id}',this.value)" title="День, когда реально везём коробки на пункт"
+        style="font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);border-radius:4px;padding:1px 4px;color:${moved?'var(--amber)':'var(--text)'};cursor:pointer">
+      <span style="font-size:11px;color:${moved?'var(--amber)':'var(--muted)'}">${dayLabel(d)}</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">
+      слот ${o.timeslot?ozonWhen(o.timeslot.from):'—'}${moved?' <span style="color:var(--amber)">· перенесли</span>':''}
+      ${d!==today?`· <span onclick="ozonSetShipDay('${id}','${today}')" title="поставить сегодняшний день"
+        style="cursor:pointer;color:var(--accent)">везу сегодня</span>`:''}
+    </div>`;
+}
 // В какие кластеры едет заявка — по нашим отправкам.
 function ozonOrderClusters(orderId){
   const set=new Set();
@@ -838,6 +853,38 @@ let ozonCargoState=null; // {orderId, busy, msg, error, cargoIds, problems}
 let ozonSessionOrders=[]; // заявки, созданные в этом сеансе — для кнопки «этикетки»
 // Отмеченные заявки: null — отмечены все видимые.
 let ozonPickedOrders=null;
+// Слот - это только бронь у Ozon: бывает, что слот дальний, а коробки везём сегодня.
+// Поэтому у заявки есть своя дата отгрузки: по умолчанию день слота, но её можно менять.
+const LS_SHIP_DATES='ozon_ship_dates';
+function getShipDates(){ return lsGet(LS_SHIP_DATES,{}); }
+function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function ozonSlotDay(o){
+  const iso=(o.timeslot&&o.timeslot.from)||o.created;
+  if(!iso)return '';
+  const d=new Date(iso);
+  return isNaN(d)?'':ymd(d);
+}
+function ozonShipDay(o){ return getShipDates()[String(o.id)]||ozonSlotDay(o); }
+function ozonSetShipDay(id,val){
+  const m=getShipDates();
+  if(val) m[String(id)]=val; else delete m[String(id)];   // пустое значение - снова день слота
+  localStorage.setItem(LS_SHIP_DATES,JSON.stringify(m));
+  scheduleSave();
+  redraw();
+}
+// «сегодня», «завтра» или «23 сентября» - так же, как в таблице учёта
+function dayLabel(s){
+  if(!s)return '';
+  const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  const d=new Date(s+'T00:00:00');
+  if(isNaN(d))return s;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const diff=Math.round((d-today)/86400000);
+  if(diff===0)return 'сегодня';
+  if(diff===1)return 'завтра';
+  if(diff===-1)return 'вчера';
+  return d.getDate()+' '+MONTHS[d.getMonth()];
+}
 function ozonOrderChecked(id){ return !ozonPickedOrders||ozonPickedOrders.has(String(id)); }
 function ozonToggleOrder(id,shown){
   if(!ozonPickedOrders) ozonPickedOrders=new Set(shown.map(String));
@@ -1388,7 +1435,14 @@ function ozonPanelHtml(){
     // В работе — пока заявка не уехала с пункта отгрузки: дальше она уже не нужна в дашборде.
     const ACTIVE=['DATA_FILLING','READY_TO_SUPPLY'];
     const when=o=>new Date((o.timeslot&&o.timeslot.from)||o.created||0).getTime()||0;
-    const sorted=[...orders].sort((a,b)=>when(b)-when(a)); // свежие сверху
+    // Порядок - по дате отгрузки, а не по слоту: в работе ближайшие сверху,
+    // в полном списке (это уже история) - наоборот, свежие сверху.
+    const day=o=>ozonShipDay(o)||'9999-12-31';
+    const sorted=[...orders].sort((a,b)=>{
+      const x=day(a), y=day(b);
+      if(x!==y) return ordersAll?(x<y?1:-1):(x<y?-1:1);
+      return when(a)-when(b);
+    });
     const shownOrders=ordersAll?sorted:sorted.filter(o=>ACTIVE.includes(String(o.state||'').replace(/^ORDER_STATE_/,'')));
     const itemsCell=o=>{
       const items=ozonOrderItems(o.id);
@@ -1400,7 +1454,7 @@ function ozonPanelHtml(){
         <td><input type="checkbox" ${ozonOrderChecked(o.id)?'checked':''} onchange="ozonToggleOrder('${String(o.id)}',${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></td>
         <td class="mono">${escHtml(o.number||o.id)}</td>
         <td>${escHtml(ozonState(o.state))}</td>
-        <td class="mono">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>
+        <td class="mono">${ozonShipCell(o)}</td>
         <td style="font-size:12px">${escHtml(ozonOrderClusters(o.id))||'<span style="color:var(--muted)">—</span>'}</td>
         <td class="mono" style="font-size:11px;line-height:1.5">${itemsCell(o)}</td>
         <td class="mono" style="color:var(--muted)">${ozonOrderActions(o.id)}</td>
@@ -1419,7 +1473,7 @@ function ozonPanelHtml(){
       ${pickedIds.length?`<div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(pickedIds))})">⬇ этикетки одним PDF · ${pickedIds.length} ${pkPlural(pickedIds.length,'заявка','заявки','заявок')}</button>
         <span id="labels-all" style="font-family:var(--mono);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
-      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedIds.length===shownIds.length&&shownIds.length?'checked':''} title="выбрать все" onchange="ozonToggleAllPicked(${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th>Кластер</th><th>Что внутри</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
+      <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedIds.length===shownIds.length&&shownIds.length?'checked':''} title="выбрать все" onchange="ozonToggleAllPicked(${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Везём · слот</th><th>Кластер</th><th>Что внутри</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       ${sheetCfgHtml()}${cloudWhereHtml()}
       <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Подключение и справочники</summary>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
@@ -2308,7 +2362,7 @@ async function saveToCloud(){
     record.hiddenArticles=[...getHiddenArticles()];
     record.allArticles=ALL_ARTICLES;
     record.boxTypes=BOX_TYPES; // пользовательские типы коробок
-    record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
+    record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.shipDates=getShipDates(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
 
     const body=JSON.stringify(record);
     const sizeKB=(body.length/1024).toFixed(1);
@@ -2370,6 +2424,7 @@ async function loadFromCloud(){
       if(Array.isArray(rec.transportTypes)&&rec.transportTypes.length){ localStorage.setItem(LS_TBOX_TYPES,JSON.stringify(rec.transportTypes)); loadTransportBoxes(); }
       if(Array.isArray(rec.packOrder)) localStorage.setItem(LS_PACK_ORDER,JSON.stringify(rec.packOrder));
       if(rec.packNotes) localStorage.setItem(LS_PACK_NOTES,JSON.stringify(rec.packNotes));
+      if(rec.shipDates) localStorage.setItem(LS_SHIP_DATES,JSON.stringify(rec.shipDates));
       if(Array.isArray(rec.transportBoxes)&&rec.transportBoxes.length) localStorage.setItem(LS_TBOX_LOG,JSON.stringify(rec.transportBoxes));
       if(Array.isArray(rec.boxTypes)&&rec.boxTypes.length){ localStorage.setItem(LS_BOX_TYPES,JSON.stringify(rec.boxTypes)); loadBoxTypes(); }
     }else{
