@@ -159,7 +159,6 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .heatmap-accordion{display:block;}
   .heatmap-desktop{display:none;}
   /* Шапка облака */
-  #cloud-key-section{padding:0.75rem;}
   /* Элемент списка приоритетов */
   .mpl-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;}
   .mpl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
@@ -198,9 +197,9 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.73 · 23.09.2026</span>
+    <span class="version" title="Версия сборки — сверяй с задеплоенной на GitHub">v2.75 · 23.09.2026</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
-    <button class="reset-btn" onclick="promptCloudKey()" id="cloud-status" style="font-family:var(--mono);font-size:11px">☁ не настроено</button>
+    <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
@@ -230,13 +229,6 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <div id="dash-status" style="display:none;font-family:var(--mono);font-size:12px;color:var(--muted);margin:-4px 0 14px;gap:16px;flex-wrap:wrap"></div>
 
   <div id="upload-section">
-    <div id="cloud-key-section" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem">
-      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px">JSONBin Master Key</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="password" id="cloud-key-input" placeholder="$2a$10$..." style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:8px 12px">
-        <button onclick="applyCloudKey()" style="font-family:var(--mono);font-size:12px;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:6px;padding:8px 16px;cursor:pointer">подключить</button>
-      </div>
-    </div>
     <div class="upload-zone" id="dropzone">
       <input type="file" id="fileInput" accept=".xlsx,.xls">
       <div class="upload-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg></div>
@@ -433,7 +425,7 @@ function submitNewBoxType(){
 }
 loadBoxTypes();
 // ===== OZON SELLER API (только чтение) =====
-// Ключи и кэш живут ТОЛЬКО в этом браузере: в облако (JSONBin) они не уходят — ключ даёт
+// Ключи и кэш живут ТОЛЬКО в этом браузере: в синхронизацию они не уходят — ключ даёт
 // полный доступ к кабинету. Дашборд пока ничего не создаёт и не меняет в Ozon.
 const OZON_API='https://api-seller.ozon.ru';
 const LS_OZON_KEYS='ozon_api_keys', LS_OZON_CACHE='ozon_api_cache', LS_OZON_OPEN='ozon_api_open';
@@ -710,10 +702,10 @@ async function sheetSend(orderId,auto){
   redraw();
 }
 function cloudWhereHtml(){
-  const drive=cloudMode()==='drive';
+  const drive=!!getSheetCfg();
   const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   return `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <span>состояние дашборда: <span style="color:${drive?'var(--green)':'var(--amber)'}">${drive?'файл на Google Диске':'JSONBin (лимит 100 КБ, может не сохраняться)'}</span></span>
+    <span>состояние дашборда: <span style="color:${drive?'var(--green)':'var(--amber)'}">${drive?'файл на Google Диске':'не синхронизируется — данные только в этом браузере'}</span></span>
     ${drive?`<button style="${btn}" onclick="checkDrive()">проверить хранилище</button>`:''}
     <span id="drive-check" style="font-family:var(--mono);font-size:12px"></span></div>`;
 }
@@ -843,56 +835,102 @@ async function ozonSendCargoes(orderId,auto){
   }
 }
 
-// Этикетки на коробки: PDF скачивается файлом. Работает для любой заявки — id коробок
-// при необходимости запрашиваются у Ozon, так что кнопка доступна и позже.
+// PDF этикеток одной заявки: возвращает Blob (используется и для скачивания, и для склейки).
+async function ozonLabelBlob(orderId){
+  const {supplyId}=await ozonSupplyIdOf(orderId);
+  if(!supplyId) throw new Error('не нашёл поставку внутри заявки');
+  let ids=(ozonCargoState&&String(ozonCargoState.orderId)===String(orderId)&&(ozonCargoState.cargoIds||[]).length)
+    ?ozonCargoState.cargoIds:[];
+  if(!ids.length){
+    const got=await ozonApi('/v1/cargoes/get',{supply_ids:[String(supplyId)]});
+    ids=(((got.supply||[])[0]||{}).cargoes||[]).map(c=>c.cargo_id).filter(Boolean);
+  }
+  if(!ids.length) throw new Error('в заявке нет грузомест');
+  const res=await ozonApi('/v1/cargoes-label/create',{supply_id:supplyId,cargoes:ids.map(id=>({cargo_id:id}))});
+  if(!res.operation_id) throw new Error('этикетки не заказались: '+JSON.stringify(res.errors||{}).slice(0,160));
+  let got=null;
+  for(let i=0;i<20;i++){
+    got=await ozonApi('/v1/cargoes-label/get',{operation_id:res.operation_id});
+    if(got.status==='SUCCESS'||got.status==='FAILED')break;
+    await ozonSleep(2000);
+  }
+  if(!got||got.status!=='SUCCESS') throw new Error('этикетки не готовы: '+((got&&got.status)||'нет ответа'));
+  const r=got.result||{};
+  if(r.file_guid){
+    const k=getOzonKeys();
+    const f=await fetch(OZON_API+'/v1/cargoes-label/file/'+r.file_guid,{headers:{'Client-Id':k.clientId,'Api-Key':k.apiKey}});
+    if(!f.ok) throw new Error('файл этикеток: HTTP '+f.status);
+    return {blob:await f.blob(),count:ids.length};
+  }
+  if(r.file_url){
+    const f=await fetch(r.file_url);
+    if(!f.ok) throw new Error('файл этикеток: HTTP '+f.status);
+    return {blob:await f.blob(),count:ids.length};
+  }
+  throw new Error('Ozon не вернул файл');
+}
+function downloadBlob(blob,name){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=name;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+}
+// Склейка PDF в браузере: библиотека подгружается только по нажатию кнопки.
+function loadPdfLib(){
+  if(window.PDFLib) return Promise.resolve(window.PDFLib);
+  return new Promise((ok,fail)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+    s.onload=()=>window.PDFLib?ok(window.PDFLib):fail(new Error('библиотека не загрузилась'));
+    s.onerror=()=>fail(new Error('нет связи с cdnjs — этикетки скачаются отдельными файлами'));
+    document.head.appendChild(s);
+  });
+}
+// Все этикетки сеанса одним файлом.
+async function ozonLabelsMerged(ids){
+  ozonLabelState={orderId:ids[0],busy:true,msg:'собираю этикетки…',error:''};
+  redraw();
+  const blobs=[]; let boxes=0;
+  try{
+    for(const id of ids){
+      ozonLabelState.msg='этикетки '+(blobs.length+1)+' из '+ids.length+'…';
+      const el=document.getElementById('labels-all'); if(el) el.textContent=ozonLabelState.msg;
+      const r=await ozonLabelBlob(id);
+      blobs.push(r.blob); boxes+=r.count;
+    }
+    const PDFLib=await loadPdfLib();
+    const out=await PDFLib.PDFDocument.create();
+    for(const b of blobs){
+      const src=await PDFLib.PDFDocument.load(await b.arrayBuffer());
+      const pages=await out.copyPages(src,src.getPageIndices());
+      pages.forEach(p=>out.addPage(p));
+    }
+    const d=new Date();
+    downloadBlob(new Blob([await out.save()],{type:'application/pdf'}),
+      'этикетки_'+String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'.pdf');
+    ozonLabelState.msg='✓ один файл: '+ids.length+' '+pkPlural(ids.length,'заявка','заявки','заявок')+' · '+boxes+' '+pkPlural(boxes,'коробка','коробки','коробок');
+  }catch(e){
+    // склейка не вышла — отдаём файлы по одному, чтобы работа не встала
+    if(blobs.length){ blobs.forEach((b,i)=>downloadBlob(b,'этикетки_'+ids[i]+'.pdf')); ozonLabelState.msg='скачал по одному файлу: '+e.message; }
+    else ozonLabelState.error=e.message;
+  }
+  ozonLabelState.busy=false;
+  redraw();
+}
+// Этикетки одной заявки: PDF скачивается файлом.
 async function ozonLabels(orderId){
   ozonLabelState={orderId,busy:true,msg:'готовлю этикетки…',error:''};
   redraw();
   try{
-    const {supplyId}=await ozonSupplyIdOf(orderId);
-    if(!supplyId) throw new Error('не нашёл поставку внутри заявки');
-    let ids=(ozonCargoState&&String(ozonCargoState.orderId)===String(orderId)&&(ozonCargoState.cargoIds||[]).length)
-      ?ozonCargoState.cargoIds:[];
-    if(!ids.length){
-      const got=await ozonApi('/v1/cargoes/get',{supply_ids:[String(supplyId)]});
-      ids=(((got.supply||[])[0]||{}).cargoes||[]).map(c=>c.cargo_id).filter(Boolean);
-    }
-    if(!ids.length) throw new Error('в заявке нет грузомест');
-    const res=await ozonApi('/v1/cargoes-label/create',{supply_id:supplyId,cargoes:ids.map(id=>({cargo_id:id}))});
-    if(!res.operation_id) throw new Error('этикетки не заказались: '+JSON.stringify(res.errors||{}).slice(0,160));
-    let got=null;
-    for(let i=0;i<20;i++){
-      got=await ozonApi('/v1/cargoes-label/get',{operation_id:res.operation_id});
-      if(got.status==='SUCCESS'||got.status==='FAILED')break;
-      await ozonSleep(2000);
-    }
-    if(!got||got.status!=='SUCCESS') throw new Error('этикетки не готовы: '+((got&&got.status)||'нет ответа'));
-    const r=got.result||{};
-    let blob=null;
-    if(r.file_guid){
-      const k=getOzonKeys();
-      const f=await fetch(OZON_API+'/v1/cargoes-label/file/'+r.file_guid,{headers:{'Client-Id':k.clientId,'Api-Key':k.apiKey}});
-      if(!f.ok) throw new Error('файл этикеток: HTTP '+f.status);
-      blob=await f.blob();
-    }else if(r.file_url){
-      const f=await fetch(r.file_url);
-      if(!f.ok) throw new Error('файл этикеток: HTTP '+f.status);
-      blob=await f.blob();
-    }else throw new Error('Ozon не вернул файл');
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='этикетки_'+orderId+'.pdf';
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),10000);
-    ozonLabelState.msg='✓ этикетки скачаны ('+ids.length+' '+pkPlural(ids.length,'коробка','коробки','коробок')+')';
+    const {blob,count}=await ozonLabelBlob(orderId);
+    downloadBlob(blob,'этикетки_'+orderId+'.pdf');
+    ozonLabelState.msg='✓ этикетки скачаны ('+count+' '+pkPlural(count,'коробка','коробки','коробок')+')';
   }catch(e){ ozonLabelState.error=e.message; ozonLabelState.msg=''; }
   ozonLabelState.busy=false;
   redraw();
 }
-// Этикетки сразу по нескольким заявкам — файлы скачиваются друг за другом.
-async function ozonLabelsAll(ids){
-  for(const id of ids){ await ozonLabels(id); await ozonSleep(400); }
-}
+
 // Кнопки в таблице заявок: этикетки для любой заявки, повтор грузомест — для созданных из дашборда.
 function ozonOrderActions(orderId){
   const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
@@ -1266,7 +1304,7 @@ function ozonPanelHtml(){
       ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.5">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
     body=`${errs}${keyWarn}
       ${ozonSupplyHtml()}
-      ${sessionOrders.length>1?`<div style="margin:14px 0 0"><button style="${btn};color:var(--accent)" onclick="ozonLabelsAll(${JSON.stringify(sessionOrders.map(String))})">⬇ этикетки всех заявок этого сеанса (${sessionOrders.length})</button></div>`:''}
+      ${sessionOrders.length>1?`<div style="margin:14px 0 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(sessionOrders.map(String)))})">⬇ все этикетки одним PDF (${sessionOrders.length} заявки)</button><span id="labels-all" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></span></div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:16px 0 4px">
         <span style="font-size:12px;color:var(--muted)">${ordersAll?'Все заявки в Ozon · '+orders.length:'Заявки в работе · '+shownOrders.length}</span>
         <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleAllOrders()">${ordersAll?'только в работе':'показать все ('+orders.length+')'}</span></div>
@@ -2050,9 +2088,7 @@ function loadLocal(){
 }
 
 // ===== ХРАНИЛИЩЕ СОСТОЯНИЯ =====
-// Если подключена Google Таблица, состояние дашборда лежит в файле на твоём Диске
-// (без лимита в 100 КБ). Иначе — старое облако JSONBin.
-function cloudMode(){ return getSheetCfg&&getSheetCfg()?'drive':'jsonbin'; }
+// Состояние дашборда лежит в файле на Google Диске: пишем и читаем через Apps Script.
 const DRIVE_CHUNK=48000; // Apps Script не принимает большие тела запроса — шлём частями
 async function driveCall(payload){
   const cfg=getSheetCfg();
@@ -2097,10 +2133,6 @@ async function driveState(op,data){
   }
   return {ok:true,parts};
 }
-// ===== JSONBIN =====
-const JSONBIN_BIN='69f3c4ae856a68218990cb6c';
-const JSONBIN_URL=`https://api.jsonbin.io/v3/b/${JSONBIN_BIN}`;
-let JSONBIN_KEY='';
 let syncTimer=null;
 
 // Компактный формат salesDaily для облака: {q,r,qc,rc} → [q,r,qc,rc].
@@ -2129,39 +2161,21 @@ function expandSalesDaily(compact){
   return out;
 }
 
-function setJsonbinKey(key){
-  JSONBIN_KEY=key.trim();
-  localStorage.setItem('ozon_jsonbin_key',JSONBIN_KEY);
-  testConnection().then(()=>{
-    if(JSONBIN_KEY) loadFromCloud();
-  });
-}
-
-async function testConnection(){
-  const status=document.getElementById('cloud-status');
-  if(!status)return;
-  if(!JSONBIN_KEY){status.textContent='☁ не настроено';status.style.color='var(--muted)';return;}
-  status.textContent='☁ проверяю...';status.style.color='var(--muted)';
-  try{
-    const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY}});
-    if(r.ok){status.textContent='☁ облако ✓';status.style.color='var(--green)';}
-    else{status.textContent=`☁ ошибка ${r.status}`;status.style.color='var(--red)';}
-  }catch(e){status.textContent='☁ нет связи';status.style.color='var(--red)';}
+// Состояние хранится в файле на Google Диске через Apps Script — другого облака нет.
+function cloudStatusText(){
+  const s=document.getElementById('cloud-status');
+  if(!s)return;
+  if(getSheetCfg()){ s.textContent='☁ Диск'; s.style.color='var(--muted)'; }
+  else { s.textContent='☁ синхронизация не настроена'; s.style.color='var(--amber)'; }
 }
 
 async function saveToCloud(){
-  const drive=cloudMode()==='drive';
-  if(!drive&&!JSONBIN_KEY)return;
+  if(!getSheetCfg())return; // синхронизация не настроена — работаем только локально
   try{
-    // Сначала подтягиваем текущий record, чтобы не затереть данные другой вкладки
+    // Сначала подтягиваем текущее состояние, чтобы не затереть данные другой вкладки
     let existing={};
-    try{
-      if(drive){ existing=(await driveState('get')).data||{}; }
-      else{
-        const rr=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY}});
-        if(rr.ok){ const d=await rr.json(); existing=d.record||{}; }
-      }
-    }catch(e){/* нет связи — сохраним хотя бы то, что в памяти */}
+    try{ existing=(await driveState('get')).data||{}; }
+    catch(e){/* нет связи — сохраним хотя бы то, что в памяти */}
 
     // Дополняем существующий record, а не пересоздаём с нуля
     const record={...existing};
@@ -2188,43 +2202,16 @@ async function saveToCloud(){
     record.boxTypes=BOX_TYPES; // пользовательские типы коробок
     record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
 
-    let body=JSON.stringify(record);
-    // На Диске лимита нет — режем только для JSONBin.
-    const LIMIT=drive?Infinity:98000;
-    // Защита от лимита JSONBin (100 КБ на free). Урезаем по нарастающей, пока не влезем:
-    // 1) лог отправок до 5 записей, 2) старые дни salesDaily (по одному, с конца истории).
-    // Локальный salesDaily в памяти браузера НЕ трогаем — режем только то, что уходит в облако.
-    let trimmedDays=0;
-    if(body.length>LIMIT && record.log && record.log.length>5){
-      record.log=record.log.slice(0,5);
-      body=JSON.stringify(record);
-    }
-    if(body.length>LIMIT && record.salesDailyC){
-      const dates=Object.keys(record.salesDailyC).sort(); // старые даты первыми
-      while(body.length>LIMIT && dates.length>7){ // не режем последнюю неделю ни при каких условиях
-        delete record.salesDailyC[dates.shift()];
-        trimmedDays++;
-        body=JSON.stringify(record);
-      }
-    }
+    const body=JSON.stringify(record);
     const sizeKB=(body.length/1024).toFixed(1);
     let resp;
-    if(drive){
-      try{ await driveState('put',record); resp={ok:true}; }
-      catch(e){ resp={ok:false,status:'Drive',text:async()=>e.message}; }
-    }else{
-      resp=await fetch(JSONBIN_URL,{
-        method:'PUT',
-        headers:{'Content-Type':'application/json','X-Master-Key':JSONBIN_KEY},
-        body
-      });
-    }
+    try{ await driveState('put',record); resp={ok:true}; }
+    catch(e){ resp={ok:false,status:'Диск',text:async()=>e.message}; }
     const s=document.getElementById('cloud-status');
     if(resp.ok){
-      if(s){s.textContent=drive?'☁ Диск ✓':'☁ сохранено ✓';s.style.color='var(--green)';}
+      if(s){s.textContent='☁ Диск ✓';s.style.color='var(--green)';}
       localStorage.setItem('ozon_local_saved_at',record.savedAt); // локал и облако теперь в синхроне
       let msg=`Сохранено в облако: ${sizeKB} КБ | поставки: ${record.rawDataC?record.rawDataC.length+' строк':'нет'} | продажи: ${record.salesDailyC?Object.keys(record.salesDailyC).length+' дней':'нет'}`;
-      if(trimmedDays>0) msg+=` | ⚠ обрезано ${trimmedDays} старых дней продаж в облаке (в браузере история цела)`;
       cloudDiag(msg);
     }else{
       const txt=await resp.text().catch(()=>'');
@@ -2235,19 +2222,11 @@ async function saveToCloud(){
 }
 
 async function loadFromCloud(){
-  const drive=cloudMode()==='drive';
-  if(!drive&&!JSONBIN_KEY)return;
+  if(!getSheetCfg())return;
   try{
     let rec={};
-    if(drive){
-      try{ rec=(await driveState('get')).data||{}; }
-      catch(e){ cloudDiag('ОШИБКА чтения с Диска: '+e.message); return; }
-    }else{
-      const r=await fetch(JSONBIN_URL+'/latest',{headers:{'X-Master-Key':JSONBIN_KEY}});
-      if(!r.ok){ cloudDiag('ОШИБКА чтения облака: HTTP '+r.status); return; }
-      const data=await r.json();
-      rec=data.record||{};
-    }
+    try{ rec=(await driveState('get')).data||{}; }
+    catch(e){ cloudDiag('ОШИБКА чтения с Диска: '+e.message); return; }
     // Диагностика: что реально лежит в облаке
     const keys=Object.keys(rec);
     const rawCount = rec.rawDataC ? rec.rawDataC.length : (rec.rawData ? rec.rawData.length : 0);
@@ -3706,21 +3685,7 @@ function handleFile(file){
 document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.files[0])handleFile(e.target.files[0]);});
 document.getElementById('profileInput').addEventListener('change',e=>{if(e.target.files[0])loadProfileFile(e.target.files[0]);});
 
-function promptCloudKey(){
-  const section=document.getElementById('cloud-key-section');
-  if(section)section.style.display=section.style.display==='none'?'block':'none';
-}
 
-function applyCloudKey(){
-  const input=document.getElementById('cloud-key-input');
-  if(!input)return;
-  const key=input.value.trim();
-  if(!key)return;
-  setJsonbinKey(key);
-  const section=document.getElementById('cloud-key-section');
-  if(section)section.style.display='none';
-  loadFromCloud();
-}
 
 // Инициализация
 (()=>{
@@ -3744,10 +3709,8 @@ function applyCloudKey(){
       renderBoxes(); // и коробки тоже
     }
   }catch(e){ console.log('Восстановление из локала: часть рендера не удалась (возможно, нет связи с CDN):',e); }
-  // Загружаем ключ из localStorage если был сохранён — облако догоняет и синхронизирует
-  const savedKey=localStorage.getItem('ozon_jsonbin_key');
-  if(savedKey){JSONBIN_KEY=savedKey;testConnection().then(()=>{if(JSONBIN_KEY)loadFromCloud();});}
-  else{const s=document.getElementById('cloud-status');if(s){s.textContent='☁ нажми чтобы настроить';s.style.color='var(--muted)';}}
+  cloudStatusText();
+  if(getSheetCfg()) loadFromCloud(); // состояние догоняет из файла на Диске
   // Вкладки видны сразу — обе равноценны, доступны до загрузки данных
   document.getElementById('main-tabs').style.display='flex';
 })();
