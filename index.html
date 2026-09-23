@@ -199,7 +199,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.82</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.83</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="switchView('ship')" id="cloud-status" title="Синхронизация: файл на Google Диске (настраивается на вкладке «Отгрузка»)" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -210,6 +210,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
         <button class="period-tab active" onclick="setPeriod(28)">28 дн</button>
       </div>
       <span id="file-date" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
+      <button class="reset-btn" id="stocks-btn" onclick="ozonLoadStocks()" title="Взять остатки и продажи прямо из Ozon вместо выгрузки файла">⟳ данные Ozon</button>
       <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку с покрытием кластеров">↑ свежий файл</button>
     </div>
   </header>
@@ -557,6 +558,63 @@ async function ozonRefresh(){
   redraw();
 }
 
+// Данные о покрытии кластеров берём из Ozon: это тот же раздел, что «FBO → Управление
+// остатками» в кабинете, и он заменяет ручную выгрузку xlsx.
+async function ozonLoadStocks(){
+  if(!getOzonKeys()){ alert('Сначала подключи ключ Ozon на вкладке «Отгрузка».'); return; }
+  const btn=document.getElementById('stocks-btn');
+  const say=(t,c)=>{ if(btn){ btn.textContent=t; btn.style.color=c||''; } };
+  try{
+    say('обновляю…','var(--accent)');
+    let skus=Object.values(getOzonCache().skus||{}).map(s=>s.sku).filter(Boolean);
+    if(!skus.length){ // справочник ещё не загружен — тянем товары
+      const res=await ozonApi('/v3/product/info/list',{offer_id:ALL_ARTICLES});
+      const cache=getOzonCache(), map={};
+      (res.items||[]).forEach(it=>{ map[it.offer_id]={sku:it.sku,name:it.name,barcode:(it.barcodes||[])[0]||''}; });
+      cache.skus=map; saveOzonCache(cache);
+      skus=Object.values(map).map(s=>s.sku).filter(Boolean);
+    }
+    if(!skus.length) throw new Error('не нашёл SKU товаров');
+    const skuToArt={};
+    Object.entries(getOzonCache().skus||{}).forEach(([art,s])=>{ if(s&&s.sku) skuToArt[String(s.sku)]=art; });
+    const items=[];
+    for(let i=0;i<skus.length;i+=100){ // запас по размеру запроса
+      const part=skus.slice(i,i+100);
+      say('обновляю '+Math.min(i+part.length,skus.length)+' из '+skus.length+'…','var(--accent)');
+      const r=await ozonApi('/v1/analytics/stocks',{skus:part.map(String)});
+      (r.items||[]).forEach(x=>items.push(x));
+    }
+    // строки приходят по складам — складываем по паре товар + кластер
+    const rows={};
+    items.forEach(x=>{
+      const art=skuToArt[String(x.sku)]||x.offer_id;
+      const cluster=x.cluster_name||'';
+      if(!art||!cluster)return;
+      const k=art+'|'+cluster;
+      const row=rows[k]||(rows[k]={article:art,cluster,rec:0,sales:0,fbo:0,transit:0,fromProfile:false});
+      row.fbo+=Number(x.available_stock_count)||0;
+      row.transit+=Number(x.transit_stock_count)||0;
+      row.sales=Math.max(row.sales,Number(x.ads_cluster)||0); // продажи считаются на кластер, не на склад
+    });
+    const data=Object.values(rows).map(r=>{
+      const total=r.fbo+r.transit;
+      return {...r,total,days:r.sales>0?total/r.sales:99};
+    });
+    if(!data.length) throw new Error('Ozon вернул пустой список остатков');
+    rawData=data;
+    localStorage.setItem('ozon_stocks_at',JSON.stringify(new Date().toISOString()));
+    addLogEntry&&addLogEntry(data);
+    persistLocal();
+    populateClusterSelect(rawData);
+    redraw();
+    scheduleSave();
+    say('⟳ данные Ozon','var(--green)');
+    setTimeout(()=>say('⟳ данные Ozon',''),2500);
+  }catch(e){
+    say('⟳ данные Ozon','var(--red)');
+    alert('Не удалось обновить данные: '+e.message);
+  }
+}
 function ozonWhen(iso){
   if(!iso)return '—';
   const d=new Date(iso);
@@ -2372,7 +2430,7 @@ function applyAdjustments(data){
   const adjs=getAdjs();
   if(!adjs.length)return data;
   return data.map(row=>{
-    const extra=adjs.filter(a=>a.article===row.article&&a.cluster===row.cluster).reduce((s,a)=>s+a.qty,0);
+    const extra=adjs.filter(a=>a.article===row.article&&a.cluster===row.cluster&&!a.arrived).reduce((s,a)=>s+a.qty,0);
     if(!extra)return row;
     const nt=row.transit+extra,tt=row.fbo+nt;
     return{...row,transit:nt,total:tt,days:row.sales>0?tt/row.sales:99};
@@ -2482,7 +2540,7 @@ function adjRowsHtml(){
     const qtyStyle=stage==='sent'?'text-decoration:line-through;opacity:0.45':'color:var(--green)';
     const badge=stage==='packed'
       ?`<span style="font-size:10px;font-family:var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
-      :stage==='sent'?`<span style="font-size:10px;font-family:var(--mono);color:var(--muted)">отгружено</span>`:'';
+      :stage==='sent'?`<span style="font-size:10px;font-family:var(--mono);color:var(--muted)">${a.arrived?'приехало на склад':'отгружено'}</span>`:'';
     const who=stage==='plan'?'':`<select title="кто паковал" onchange="setAdjPacker(${i},this.value)" style="font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:${a.packedBy?'var(--text)':'var(--muted)'};padding:1px 4px;cursor:pointer">
         <option value="" ${!a.packedBy?'selected':''}>— кто паковал</option>
         ${getPackers().map(p=>`<option value="${escHtml(p)}" ${a.packedBy===p?'selected':''}>${escHtml(p)}</option>`).join('')}
@@ -2598,8 +2656,8 @@ function autoCleanAdjs(newData){
     (byKey[key]=byKey[key]||[]).push({...a,idx});
   });
 
-  const toRemove=new Set();
-  const removedList=[];
+  const toMark=new Set();
+  const markedList=[];
 
   for(const key in byKey){
     const [article,cluster]=key.split('|');
@@ -2611,21 +2669,21 @@ function autoCleanAdjs(newData){
     //  • transit===0 — товар вышел из пути (уже в FBO-остатке или уже распродан) → отправка завершена,
     //    убираем её. Это чинит зависание, когда весь цикл «в пути → приехало» прошёл между выгрузками файла.
     if(row.transit===0){
-      for(const a of sorted){ toRemove.add(a.idx); removedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty}`); }
+      for(const a of sorted){ toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty}`); }
     }else{
       let pool=row.transit;
       for(const a of sorted){
-        if(pool>=a.qty){ toRemove.add(a.idx); pool-=a.qty; }
+        if(pool>=a.qty){ toMark.add(a.idx); pool-=a.qty; }
       }
     }
   }
 
-  if(!toRemove.size)return;
-  const cleaned=adjs.filter((_,i)=>!toRemove.has(i));
-  saveAdjs(cleaned);
+  const fresh=adjs.filter((_,i)=>toMark.has(i)&&!adjs[i].arrived);
+  if(!fresh.length)return;
+  adjs.forEach((a,i)=>{ if(toMark.has(i)&&!a.arrived){ a.arrived=true; a.arrivedAt=new Date().toISOString(); } });
+  saveAdjs(adjs);
   saveToCloud();
-  // Страховка от редкого настоящего недовоза: показываем, что именно авто-убрали.
-  cloudDiag(`Авто-убрано приехавших отправок: ${toRemove.size} (${removedList.slice(0,6).join('; ')}${removedList.length>6?'…':''})`);
+  console.log(`Отмечено приехавших отправок: ${fresh.length} (${markedList.slice(0,6).join('; ')}${markedList.length>6?'…':''})`);
 }
 
 function populateClusterSelect(data){
@@ -3178,10 +3236,19 @@ function setPeriod(days){
 function renderFileDate(){
   const el=document.getElementById('file-date');
   if(!el)return;
+  const short=d=>String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  const fromApi=lsGet('ozon_stocks_at',null);
+  if(fromApi){ el.textContent='данные '+short(new Date(fromApi)); el.title='Взяты из Ozon'; return; }
   const log=getLog?getLog():[];
   const last=log&&log.length?log[0]:null;
   const ts=last&&last.ts?new Date(last.ts):null;
-  el.textContent=ts?'файл от '+String(ts.getDate()).padStart(2,'0')+'.'+String(ts.getMonth()+1).padStart(2,'0'):'';
+  el.textContent=ts?'файл от '+short(ts):'';
+  el.title='Загружен файлом';
+}
+// Кнопка обновления имеет смысл только с ключом Ozon.
+function renderStocksBtn(){
+  const b=document.getElementById('stocks-btn');
+  if(b) b.style.display=getOzonKeys()?'inline-block':'none';
 }
 function render(data){
   document.getElementById('upload-section').style.display='none';
@@ -3618,6 +3685,7 @@ function render(data){
   renderDashStatus();
   renderBoxes();
   renderFileDate();
+  renderStocksBtn();
   paintPackCanvases();
 }
 
