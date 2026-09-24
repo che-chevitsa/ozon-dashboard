@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.92</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.93</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -656,21 +656,28 @@ const ozonNorm=s=>String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^a-z
 // ===== УПАКОВЩИКИ И КОДЫ ДЛЯ ТАБЛИЦЫ =====
 // Исполнитель назначается на товар прямо в задании; при отметке «упаковано» имя и дата
 // фиксируются в отправке — из них потом строится учёт в Google Таблице.
-const LS_PACKERS='ozon_packers', LS_PACK_ASSIGN='ozon_pack_assign', LS_SHEET_CODES='ozon_sheet_codes';
+const LS_PACKERS='ozon_packers', LS_PACK_ASSIGN='ozon_pack_assign', LS_PACK_WHO='ozon_pack_who', LS_SHEET_CODES='ozon_sheet_codes';
 const DEFAULT_SHEET_CODES={'PF-OV-100x60-WH-PG':'Овал','PF-СК-D55-WH-PG':'5','PF-СК-D60-WH-PG':'6','PF-СК-D70-WH-PG':'7'};
 function getPackers(){ const v=lsGet(LS_PACKERS,null); return Array.isArray(v)&&v.length?v:['Аня','Даша']; }
 function savePackers(list){ localStorage.setItem(LS_PACKERS,JSON.stringify(list)); scheduleSave(); }
 function getAssign(){ return lsGet(LS_PACK_ASSIGN,{})||{}; }
-function assigneeOf(art){ return getAssign()[art]||''; }
-function setAssignee(art,name){
-  const a=getAssign();
-  if(name) a[art]=name; else delete a[art];
-  localStorage.setItem(LS_PACK_ASSIGN,JSON.stringify(a));
-  scheduleSave();
-  paintPackCanvases();
-  const el=document.querySelector(`.pk-sec[data-art="${CSS.escape(art)}"] .pk-who`);
-  if(el) el.value=name; // перерисовывать весь дашборд ради выбора имени не нужно
+// Упаковщик один на всё задание: смену обычно пакует один человек, и выбирать имя
+// заново у каждого товара было лишней работой.
+function getPackWho(){
+  const v=lsGet(LS_PACK_WHO,null);
+  if(v!==null) return v;
+  // Старые назначения по товарам не теряем: берём самое частое имя как общее.
+  const counts={};
+  Object.values(getAssign()).forEach(n=>{ if(n) counts[n]=(counts[n]||0)+1; });
+  const top=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  return top?top[0]:'';
 }
+function setPackWho(name){
+  localStorage.setItem(LS_PACK_WHO,JSON.stringify(name||''));
+  scheduleSave();
+  redraw();
+}
+function assigneeOf(){ return getPackWho(); } // кто паковал — теперь общий ответ на задание
 function addPacker(){
   const name=(prompt('Имя упаковщика:')||'').trim();
   if(!name)return;
@@ -1733,8 +1740,6 @@ function buildPackPages(task){
       txt(ctx,packName(it.article),P+50,hy+24,`800 28px ${F}`,'#1a1d27');
       const nw=ctx.measureText(packName(it.article)).width;
       txt(ctx,`${it.total} шт`,P+50+nw+12,hy+24,`500 22px ${F}`,'#6b6e80');
-      const who=assigneeOf(it.article);
-      if(who){ ctx.textAlign='right'; txt(ctx,who,W-P,hy+24,`600 20px ${F}`,'#444a5c'); ctx.textAlign='left'; }
       if(nh){
         const ny=y+86;
         ctx.fillStyle='#fff4c2'; ctx.beginPath(); ctx.roundRect(P,ny,W-2*P,nh,8); ctx.fill();
@@ -1775,7 +1780,7 @@ function buildPackPages(task){
     });
   });
 
-  const d=new Date(), total=pages.length;
+  const d=new Date(), total=pages.length, who=getPackWho();
   return pages.map((pg,pi)=>({draw:ctx=>{
     ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,PK_PAGE_H);
     const title='Что пакуем', tColor='#1a1d27';
@@ -1784,7 +1789,7 @@ function buildPackPages(task){
       txt(ctx,packSubtitle(task,d),P,P+62,`500 19px ${F}`,'#6b6e80');
       totLines.forEach((l,i)=>txt(ctx,l,P,P+88+i*24,totFont,'#9ca0ad'));
     }else{
-      txt(ctx,title,P,P+28,`800 26px ${F}`,tColor);
+      txt(ctx,title+(who?' · '+who:''),P,P+28,`800 26px ${F}`,tColor);
     }
     if(total>1){
       ctx.font=`700 22px ${F}`; ctx.fillStyle='#6b6e80'; ctx.textAlign='right';
@@ -1807,8 +1812,8 @@ function pkPlural(n,one,few,many){ const m10=n%10,m100=n%100; return m10===1&&m1
 function pkDate(d){ return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`; }
 function pkUnits(task){ return task.items.reduce((s,i)=>s+i.total,0); }
 function packSubtitle(task,d){
-  const units=pkUnits(task), boxes=Object.values(task.boxTotals).reduce((s,c)=>s+c,0);
-  return `${pkDate(d)} · ${units} ${pkPlural(units,'коробочка','коробочки','коробочек')} → ${boxes} ${pkPlural(boxes,'коробка','коробки','коробок')}`;
+  const units=pkUnits(task), boxes=Object.values(task.boxTotals).reduce((s,c)=>s+c,0), who=getPackWho();
+  return `${pkDate(d)} · ${units} ${pkPlural(units,'коробочка','коробочки','коробочек')} → ${boxes} ${pkPlural(boxes,'коробка','коробки','коробок')}${who?' · пакует '+who:''}`;
 }
 function packTotalsLine(task){ return Object.entries(task.boxTotals).map(([b,c])=>`${TBOX[b].name} × ${c}`).join('   ·   '); }
 
@@ -2076,7 +2081,6 @@ const PACK_SHEET_CSS=`<style>
 .pk-name{font-size:28px;font-weight:800;line-height:1.15}
 .pk-qty{font-size:22px;color:#6b6e80;font-weight:500;white-space:nowrap}
 .pk-grip{margin-left:8px;color:#b8bcc8;font-size:20px;line-height:1;user-select:none}
-.pk-who{margin-left:auto;font:500 15px "Golos Text","Segoe UI",Arial,sans-serif;color:#444a5c;background:#f1f3f7;border:1px solid #dfe2e8;border-radius:8px;padding:4px 8px;cursor:pointer}
 .pk-sec:hover .pk-grip{color:#6b6e80}
 .pk-note{display:block;width:100%;min-height:1em;word-break:break-word;margin:10px 0 2px;border:0;border-left:4px solid #f2b705;border-radius:8px;background:#fff4c2;color:#2b2100;font:500 20px/1.4 "Golos Text","Segoe UI",Arial,sans-serif;padding:9px 14px;cursor:text}
 .pk-note:empty{background:transparent;border-left-color:transparent;padding:4px 14px;font-size:16px}
@@ -2102,11 +2106,6 @@ function packTaskHtml(){
     // Превью — живые блоки (перетаскиваются, комментарий правится прямо в блоке); PNG рисуется из тех же данных.
     const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
         <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(packName(it.article))}</span><span class="pk-qty">${it.total} шт</span>
-          <select class="pk-who" onchange="if(this.value==='+'){this.value=assigneeOf('${it.article}');addPacker();}else setAssignee('${it.article}',this.value)" onpointerdown="event.stopPropagation()" title="кто пакует">
-            <option value="">кто пакует?</option>
-            ${getPackers().map(p=>`<option value="${escHtml(p)}" ${assigneeOf(it.article)===p?'selected':''}>${escHtml(p)}</option>`).join('')}
-            <option value="+">+ добавить…</option>
-          </select>
           <span class="pk-grip">⠿</span></div>
         <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
@@ -2115,7 +2114,12 @@ function packTaskHtml(){
     const tot=packTotalsLine(task);
     const pageCount=buildPackPages(task).length;
     body=`${PACK_SHEET_CSS}
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px;align-items:center">
+        <select style="${btn}" onchange="if(this.value==='+'){this.value=getPackWho();addPacker();}else setPackWho(this.value)" title="кто пакует всё это задание">
+          <option value="">кто пакует?</option>
+          ${getPackers().map(p=>`<option value="${escHtml(p)}" ${getPackWho()===p?'selected':''}>${escHtml(p)}</option>`).join('')}
+          <option value="+">+ добавить…</option>
+        </select>
         ${pageCount>1
           ?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button style="${btn}" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
           :`<button style="${btn}" onclick="copyPackImage(0,this)">🖼 копировать картинку</button>`}
@@ -2334,7 +2338,7 @@ async function saveToCloud(){
     record.hiddenArticles=[...getHiddenArticles()];
     record.allArticles=ALL_ARTICLES;
     record.boxTypes=BOX_TYPES; // пользовательские типы коробок
-    record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
+    record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.packWho=getPackWho(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
 
     const body=JSON.stringify(record);
     const sizeKB=(body.length/1024).toFixed(1);
@@ -2392,6 +2396,7 @@ async function loadFromCloud(){
       if(rec.packLabels) localStorage.setItem(LS_PACK_LABELS,JSON.stringify(rec.packLabels));
       if(Array.isArray(rec.packers)&&rec.packers.length) localStorage.setItem(LS_PACKERS,JSON.stringify(rec.packers));
       if(rec.packAssign) localStorage.setItem(LS_PACK_ASSIGN,JSON.stringify(rec.packAssign));
+      if(typeof rec.packWho==='string') localStorage.setItem(LS_PACK_WHO,JSON.stringify(rec.packWho));
       if(rec.sheetCodes) localStorage.setItem(LS_SHEET_CODES,JSON.stringify(rec.sheetCodes));
       if(Array.isArray(rec.transportTypes)&&rec.transportTypes.length){ localStorage.setItem(LS_TBOX_TYPES,JSON.stringify(rec.transportTypes)); loadTransportBoxes(); }
       if(Array.isArray(rec.packOrder)) localStorage.setItem(LS_PACK_ORDER,JSON.stringify(rec.packOrder));
