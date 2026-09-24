@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.91</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.92</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -253,6 +253,9 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
       <div class="upload-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg></div>
       <div class="upload-title">Загрузить продажи: xlsx из «Аналитика → Графики» или orders.csv</div>
       <div class="upload-sub">Аналитика → Графики → детализация по дням → Скачать xlsx (общие продажи FBO+FBS). Файл обрабатывается локально.</div>
+    </div>
+    <div id="sales-api-wrap" style="display:none;text-align:center;margin:-8px 0 14px">
+      <button class="period-tab" id="sales-api-btn" onclick="ozonLoadSales()" title="Взять продажи по дням прямо из Ozon — без выгрузки файла">⟳ продажи из Ozon</button>
     </div>
     <div id="sales-content" style="display:none">
       <div class="block">
@@ -443,7 +446,8 @@ function ozonPause(ms){ return new Promise(r=>setTimeout(r,ms)); }
 // Лимиты Ozon: несколько запросов в секунду на всё и 2 в минуту на создание черновика/заявки.
 // Поэтому запросы идут строго по очереди, с нужными паузами и повтором при 429.
 const OZON_SLOW=/^\/v[12]\/draft\/(direct|crossdock|multi-cluster)\/create$|^\/v2\/draft\/supply\/create$/;
-let _ozonGate=Promise.resolve(), _ozonLast=0, _ozonLastSlow=0;
+const OZON_MINUTE=/^\/v1\/analytics\/data$/;   // документация: не больше 1 запроса в минуту
+let _ozonGate=Promise.resolve(), _ozonLast=0, _ozonLastSlow=0, _ozonLastMinute=0;
 async function ozonApi(path,body){
   const run=()=>ozonApiRaw(path,body);
   const p=_ozonGate.then(run,run);
@@ -453,15 +457,17 @@ async function ozonApi(path,body){
 async function ozonApiRaw(path,body){
   const k=getOzonKeys();
   if(!k) throw new Error('не введены Client-Id и Api-Key');
-  const slow=OZON_SLOW.test(path);
+  const slow=OZON_SLOW.test(path), minute=OZON_MINUTE.test(path);
   for(let attempt=0;attempt<6;attempt++){
     // пауза перед запросом: 0.4 с на обычные, 31 с между созданиями черновиков и заявок
     let wait=Math.max(0,_ozonLast+400-Date.now());
     if(slow) wait=Math.max(wait,_ozonLastSlow+31000-Date.now());
+    if(minute) wait=Math.max(wait,_ozonLastMinute+61000-Date.now());
     if(wait>1500) ozonNote('жду лимит Ozon: '+Math.ceil(wait/1000)+' с…');
     if(wait>0) await ozonPause(wait);
     _ozonLast=Date.now();
     if(slow) _ozonLastSlow=Date.now();
+    if(minute) _ozonLastMinute=Date.now();
     const r=await fetch(OZON_API+path,{method:'POST',
       headers:{'Content-Type':'application/json','Client-Id':k.clientId,'Api-Key':k.apiKey},
       body:JSON.stringify(body||{})});
@@ -478,7 +484,7 @@ async function ozonApiRaw(path,body){
       const msg=(data&&(data.message||data.error))||text.slice(0,160);
       // 403 с упоминанием роли — не проблема ключа целиком, а нехватка прав на конкретный метод
       if(r.status===403&&/role/i.test(msg)){
-        const where=path.startsWith('/v1/analytics')?'аналитике остатков (роль Report или Admin read only)'
+        const where=path.startsWith('/v1/analytics')?'аналитике остатков и продаж (роль Report или Admin read only)'
           :path.includes('draft')||path.includes('supply')||path.includes('cargo')?'поставкам FBO (роль Supply order)'
           :path.includes('product')?'товарам (роль Product read-only)'
           :path.includes('warehouse')||path.includes('cluster')?'складам (роль Warehouse)':'этому разделу';
@@ -3318,8 +3324,11 @@ function renderFileDate(){
 }
 // Кнопка обновления имеет смысл только с ключом Ozon.
 function renderStocksBtn(){
+  const has=!!getOzonKeys();
   const b=document.getElementById('stocks-btn');
-  if(b) b.style.display=getOzonKeys()?'inline-block':'none';
+  if(b) b.style.display=has?'inline-block':'none';
+  const s=document.getElementById('sales-api-wrap');   // продажи тоже тянутся только с ключом
+  if(s) s.style.display=has?'block':'none';
 }
 function render(data){
   document.getElementById('upload-section').style.display='none';
@@ -4097,6 +4106,93 @@ function parseSalesRows(rows){
     });
   });
   return Object.keys(incoming).length?incoming:null;
+}
+
+// Продажи по дням прямо из Ozon: раздел «Аналитика → Графики» — тот же источник, что и файл.
+// Метод пускает не чаще раза в минуту и отдаёт максимум 1000 строк, поэтому период режем
+// на куски: строк получается «дней × товаров». Собранный агрегат уходит в ту же
+// applySalesIncoming, что и файл, — вся защита от неполных дней работает как прежде.
+async function ozonLoadSales(){
+  if(!getOzonKeys()){ alert('Сначала подключи ключ Ozon на вкладке «Отгрузка».'); return; }
+  const btn=document.getElementById('sales-api-btn');
+  const label=btn?btn.textContent:'⟳ продажи из Ozon';
+  const say=(t,c)=>{ if(btn){ btn.textContent=t; btn.style.color=c||''; } };
+  try{
+    say('спрашиваю Ozon…','var(--accent)');
+    let skus=getOzonCache().skus||{};
+    if(!Object.keys(skus).length){          // справочник нужен, чтобы превратить sku в артикулы
+      const res=await ozonApi('/v3/product/info/list',{offer_id:ALL_ARTICLES});
+      const cache=getOzonCache(), map={};
+      (res.items||[]).forEach(it=>{ map[it.offer_id]={sku:it.sku,name:it.name,barcode:(it.barcodes||[])[0]||''}; });
+      cache.skus=map; saveOzonCache(cache); skus=map;
+    }
+    const skuToArt={};
+    Object.entries(skus).forEach(([art,s])=>{ if(s&&s.sku) skuToArt[String(s.sku)]=art; });
+    const perDay=Math.max(1,Object.keys(skuToArt).length);
+    // Дату собираем по местному календарю: toISOString перевёл бы её в UTC и сдвинул на день.
+    const day=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const today=new Date();
+    let from=new Date(today.getTime()-29*86400000);   // без истории берём последние 30 дней
+    const have=salesDaily?Object.keys(salesDaily).sort():[];
+    if(have.length){
+      const last=new Date(have[have.length-1]+'T00:00:00');
+      const cont=new Date(last.getTime()-2*86400000); // хвост перекрываем: последние дни бывают неполными
+      if(cont>from) from=cont;
+    }
+    const chunkDays=Math.max(1,Math.floor(1000/perDay));
+    let metrics=['ordered_units','revenue','cancellations'], noCancel=false;
+    const ask=(a,b)=>ozonApi('/v1/analytics/data',
+      {date_from:day(a),date_to:day(b),dimension:['sku','day'],metrics,limit:1000,offset:0});
+    const acc={};
+    let cur=new Date(from);
+    while(cur<=today){
+      const to=new Date(Math.min(today.getTime(),cur.getTime()+(chunkDays-1)*86400000));
+      say('беру '+day(cur)+' – '+day(to)+'…','var(--accent)');
+      let res;
+      try{ res=await ask(cur,to); }
+      catch(e){
+        if(noCancel) throw e;
+        // «Отменено товаров» Ozon отдаёт только по подписке Premium Plus — повторяем без неё
+        noCancel=true; metrics=['ordered_units','revenue'];
+        res=await ask(cur,to);
+      }
+      (((res.result||{}).data)||[]).forEach(row=>{
+        const dims=row.dimensions||[], m=row.metrics||[];
+        const dDate=dims.find(x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x.id)));
+        const dSku=dims.find(x=>x!==dDate);
+        if(!dDate||!dSku)return;
+        const date=String(dDate.id);
+        const art=skuToArt[String(dSku.id)];
+        if(art) learnSalesName(art,dSku.name);
+        const name=art?salesName(art):String(dSku.name||dSku.id).split(',')[0].trim().slice(0,28);
+        if(!acc[date])acc[date]={};
+        const a=acc[date][name]||(acc[date][name]={qt:0,qc:0,rev:0});
+        a.qt+=Number(m[0])||0;                    // заказано товаров — вместе с отменами
+        a.rev+=Number(m[1])||0;                   // заказано на сумму
+        a.qc+=noCancel?0:(Number(m[2])||0);       // отменено товаров
+      });
+      cur=new Date(to.getTime()+86400000);
+    }
+    // Считаем ровно так же, как из файла: чистые = заказано минус отмены, цена — средняя за день.
+    const incoming={};
+    Object.keys(acc).forEach(date=>{
+      incoming[date]={};
+      Object.keys(acc[date]).forEach(name=>{
+        const a=acc[date][name];
+        const qc=Math.min(a.qc,a.qt), q=a.qt-qc;
+        const price=a.qt>0?a.rev/a.qt:0;
+        incoming[date][name]={q,r:Math.round(q*price),qc,rc:Math.round(qc*price)};
+      });
+    });
+    if(!Object.keys(incoming).length) throw new Error('Ozon вернул пустой отчёт за этот период');
+    applySalesIncoming(incoming);
+    say('⟳ продажи из Ozon','var(--green)');
+    if(noCancel) alert('Продажи загружены. Отмены Ozon отдаёт только с подпиской Premium Plus, поэтому в этих днях они не вычтены — числа могут быть чуть выше, чем в файле.');
+    setTimeout(()=>say(label,''),3000);
+  }catch(e){
+    say('⟳ продажи из Ozon','var(--red)');
+    alert('Не удалось загрузить продажи: '+e.message);
+  }
 }
 
 // Общее слияние загруженного агрегата с накопленной историей + сохранение и перерисовка.
