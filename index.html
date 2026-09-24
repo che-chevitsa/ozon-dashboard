@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.94</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.95</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1596,8 +1596,7 @@ function packTaskText(task){
   const notes=getPackNotes();
   const d=new Date();
   const tot=Object.entries(task.boxTotals).map(([b,c])=>`${TBOX[b].name} × ${c}`).join(', ');
-  const who=getPackWho();
-  const lines=[`Что пакуем · ${packSubtitle(task,d)}${who?' · '+who:''}`];
+  const lines=[`Что пакуем · ${packSubtitle(task,d)}`];
   if(tot) lines.push(tot);
   lines.push('');
   task.items.forEach((it,n)=>{
@@ -1781,19 +1780,16 @@ function buildPackPages(task){
     });
   });
 
-  const d=new Date(), total=pages.length, who=getPackWho();
+  const d=new Date(), total=pages.length;
   return pages.map((pg,pi)=>({draw:ctx=>{
     ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,W,PK_PAGE_H);
     const title='Что пакуем', tColor='#1a1d27';
     if(pi===0){
       txt(ctx,title,P,P+32,`800 32px ${F}`,tColor);
-      const sub=packSubtitle(task,d);
-      txt(ctx,sub+(who?' · ':''),P,P+62,`500 19px ${F}`,'#6b6e80');
-      if(who){ ctx.font=`500 19px ${F}`; txt(ctx,who,P+ctx.measureText(sub+' · ').width,P+62,`500 19px ${F}`,'#b3b7c2'); }
+      txt(ctx,packSubtitle(task,d),P,P+62,`500 19px ${F}`,'#6b6e80');
       totLines.forEach((l,i)=>txt(ctx,l,P,P+88+i*24,totFont,'#9ca0ad'));
     }else{
       txt(ctx,title,P,P+28,`800 26px ${F}`,tColor);
-      if(who){ ctx.font=`800 26px ${F}`; txt(ctx,who,P+ctx.measureText(title+'  ').width,P+28,`500 22px ${F}`,'#b3b7c2'); }
     }
     if(total>1){
       ctx.font=`700 22px ${F}`; ctx.fillStyle='#6b6e80'; ctx.textAlign='right';
@@ -2133,7 +2129,7 @@ function packTaskHtml(){
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
       <div id="pack-sheet">
         <div class="pk-h1">Что пакуем</div>
-        <div class="pk-sub">${packSubtitle(task,new Date())}${getPackWho()?` · <span style="color:#b3b7c2">${escHtml(getPackWho())}</span>`:''}</div>
+        <div class="pk-sub">${packSubtitle(task,new Date())}</div>
         ${tot?`<div class="pk-total"><div class="pk-total-sub">${escHtml(tot)}</div></div>`:''}
         <div class="pk-secs">${secs}</div>
       </div>`;
