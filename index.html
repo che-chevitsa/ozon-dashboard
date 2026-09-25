@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.97</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.99</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -510,8 +510,9 @@ function forgetOzonKeys(){
   localStorage.removeItem(LS_OZON_KEYS); localStorage.removeItem(LS_OZON_CACHE);
   redraw();
 }
+let ordersAllOnce=false; // живёт до перезагрузки: остальные заявки нужны редко
 function toggleAllOrders(){
-  localStorage.setItem('ozon_orders_all',JSON.stringify(lsGet('ozon_orders_all',false)!==true));
+  ordersAllOnce=!ordersAllOnce;
   redraw();
 }
 function toggleOzonPanel(){
@@ -977,7 +978,7 @@ function ozonCargoTexts(orderId,ids){
 // Подпись рисуем картинкой: встроенные шрифты pdf-lib не знают кириллицу.
 // Чёрная и очень мелкая — термопринтер печатает без полутонов, серое рассыпалось бы в точки.
 async function ozonStampPng(doc,text){
-  const scale=8, fs=6;                     // 6 pt, рисуем в 8× и уменьшаем — чтобы не мылилось
+  const scale=12, fs=4;                    // 4 pt, рисуем в 12× и уменьшаем — чтобы не мылилось
   const font=`600 ${fs*scale}px "Golos Text","Segoe UI",Arial,sans-serif`;
   const c=document.createElement('canvas'), ctx=c.getContext('2d');
   ctx.font=font;
@@ -1475,7 +1476,7 @@ function ozonPanelHtml(){
     }).join('');
     // по умолчанию показываем только готовые к отгрузке: именно их этикетки нужны,
     // а «выбрать все» сразу даёт набор для скачивания одной кнопкой
-    const ordersAll=lsGet('ozon_orders_all',false)===true;
+    const ordersAll=ordersAllOnce;
     const ACTIVE=['READY_TO_SUPPLY'];
     const filling=orders.filter(o=>String(o.state||'').replace(/^ORDER_STATE_/,'')==='DATA_FILLING').length;
     const when=o=>new Date((o.timeslot&&o.timeslot.from)||o.created||0).getTime()||0;
