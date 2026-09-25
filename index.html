@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v2.99</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v3.00</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -623,9 +623,13 @@ async function ozonLoadStocks(){
       return {...r,total,days:r.sales>0?total/r.sales:99};
     });
     if(!data.length) throw new Error('Ozon вернул пустой список остатков');
+    // Дальше всё то же, что и при загрузке файла: сперва отмечаем приехавшие отправки,
+    // потом пишем лог (он сравнивает с прошлым снимком) и сохраняем новый снимок «в пути».
+    autoCleanAdjs(data);
     rawData=data;
     localStorage.setItem('ozon_stocks_at',JSON.stringify(new Date().toISOString()));
     addLogEntry&&addLogEntry(data);
+    savePrevTransit(data);
     persistLocal();
     populateClusterSelect(rawData);
     redraw();
