@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.105</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.106</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1029,6 +1029,12 @@ async function ozonStampPng(doc,text){
   c.height=Math.ceil(fs*scale*1.4);
   setup(ctx); ctx.fillStyle='#000'; ctx.textBaseline='middle';
   ctx.fillText(text,scale*2,c.height/2);
+  // Термопринтер раздувает каждую точку, поэтому буквы подтачиваем заранее: обводим тот же
+  // контур в режиме стирания. Шрифта легче 400 у нас нет, а так штрих тоньше при той же форме.
+  ctx.globalCompositeOperation='destination-out';
+  ctx.lineWidth=scale*0.12; ctx.lineJoin='round';
+  ctx.strokeText(text,scale*2,c.height/2);
+  ctx.globalCompositeOperation='source-over';
   return {png:await doc.embedPng(c.toDataURL('image/png')),w:c.width/scale,h:c.height/scale};
 }
 // Склейка кусков в один PDF с подписями. parts: [{blob,text}]
