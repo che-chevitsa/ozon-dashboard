@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.106</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.108</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -760,6 +760,8 @@ async function sheetRows(orderId){
   const order=await ozonOrderInfo(orderId)||{};
   const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   const fmt=d=>d?d.getDate()+' '+MONTHS[d.getMonth()]:''; // как в твоей таблице учёта
+  const state=String(order.state||'').replace(/^ORDER_STATE_/,'');
+  const shippedAt=order.acceptedAt||(OZON_SHIPPED.includes(state)?order.stateAt:'');
   const by={};
   let sentAt=''; // отметка «отгружено» точнее слота: слот — бронь, а везём когда везём
   getAdjs().forEach(a=>{
@@ -773,8 +775,9 @@ async function sheetRows(orderId){
   });
   return Object.values(by).map(g=>({
     // Слот — это бронь, а не факт. Берём, что известно раньше: твою отметку «отгружено»
-    // или дату приёмки на пункте от Ozon. Сегодняшняя дата — только для ручной записи.
-    shipDate:fmt(new Date(sentAt||order.acceptedAt||order.stateAt||Date.now())),
+    // или дату приёмки на пункте от Ozon. Дата смены статуса годится, только если статус
+    // означает отгрузку: у «готова к отгрузке» это вчерашнее создание заявки. Иначе — сегодня.
+    shipDate:fmt(new Date(sentAt||shippedAt||Date.now())),
     orderNumber:order.number||String(orderId),
     orderUrl:(cfg.link||'https://seller.ozon.ru/app/supply/orders/{id}').replace('{id}',String(orderId)),
     what:sheetCode(g.article),
@@ -789,6 +792,10 @@ async function sheetRows(orderId){
 async function sheetSend(orderId,auto){
   const cfg=getSheetCfg();
   if(!cfg){ if(!auto) alert('Сначала настрой Google Таблицу в разделе ниже.'); return; }
+  // Скрипт таблицы только дописывает строки, поэтому повтор создаст вторую копию — спрашиваем.
+  const already=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
+  if(!auto&&already.length&&already.every(a=>a.sheetSentAt)
+     &&!confirm('Строки этой заявки уже записаны в таблицу. Записать ещё раз?')) return;
   const rows=await sheetRows(orderId);
   if(!rows.length){ if(!auto) alert('Нет строк для этой заявки.'); return; }
   sheetState={orderId,busy:true,msg:'отправляю в таблицу…',error:''};
@@ -887,8 +894,15 @@ function sheetBtnHtml(orderId){
   const st=sheetState&&String(sheetState.orderId)===String(orderId)?sheetState:null;
   if(st&&st.busy)return `<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(st.msg)}</span>`;
   const sent=ours.every(a=>a.sheetSentAt);
-  const color=st&&st.error?'var(--red)':sent?'var(--green)':'var(--muted)';
-  const hint=st&&st.error?'ошибка записи — нажми, чтобы повторить':sent?'строки записаны в Google Таблицу':'записать строки в Google Таблицу';
+  const order=((getOzonCache().orders)||[]).find(o=>String(o.id)===String(orderId))||{};
+  const state=String(order.state||'').replace(/^ORDER_STATE_/,'');
+  // Строки уходят сами, когда отгрузка подтвердилась. Пока нет — показываем, что ждём, а не молчим.
+  const waiting=!sent&&!OZON_SHIPPED.includes(state)&&!ours.some(a=>a.sentAt);
+  const color=st&&st.error?'var(--red)':sent?'var(--green)':waiting?'var(--amber)':'var(--text)';
+  const hint=st&&st.error?'ошибка записи — нажми, чтобы повторить'
+    :sent?'строки записаны в Google Таблицу'
+    :waiting?'ждём подтверждения отгрузки: строки уйдут сами, когда пункт примет коробки или отметишь «отгружено». Нажми, чтобы записать сегодняшним числом'
+    :'записать строки в Google Таблицу';
   const ico='font-size:15px;line-height:1;background:none;border:none;padding:2px 3px;cursor:pointer';
   return `<button style="${ico};color:${color}" title="${hint}" onclick="sheetSend('${String(orderId)}')">▤</button>`;
 }
