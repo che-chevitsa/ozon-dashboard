@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v3.02</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.104</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -563,13 +563,24 @@ async function ozonRefresh(){
       cache.orders=[];
       if(ids.length){
         const got=await ozonApi('/v3/supply-order/get',{order_ids:ids});
-        cache.orders=(got.orders||[]).map(o=>({
-          id:o.order_id, number:o.order_number, state:o.state,
-          created:o.created_date, deadline:o.data_filling_deadline_utc,
-          warehouse:(o.dropoff_warehouse||{}).name||'',
-          timeslot:((o.timeslot||{}).timeslot)||null,
-          supplies:(o.supplies||[]).map(s=>({id:s.supply_id,state:s.state,bundleId:s.bundle_id,clusterId:s.macrolocal_cluster_id})),
-        }));
+        const before={};
+        ((cache.orders)||[]).forEach(o=>{ if(o.acceptedAt) before[String(o.id)]=o.acceptedAt; });
+        cache.orders=(got.orders||[]).map(o=>{
+          const state=String(o.state||'').replace(/^ORDER_STATE_/,'');
+          const rec={
+            id:o.order_id, number:o.order_number, state:o.state,
+            created:o.created_date, deadline:o.data_filling_deadline_utc,
+            stateAt:o.state_updated_date,
+            warehouse:(o.dropoff_warehouse||{}).name||'',
+            timeslot:((o.timeslot||{}).timeslot)||null,
+            supplies:(o.supplies||[]).map(s=>({id:s.supply_id,state:s.state,bundleId:s.bundle_id,clusterId:s.macrolocal_cluster_id})),
+          };
+          // Момент, когда пункт принял коробки, — это и есть факт отгрузки. Запоминаем его
+          // навсегда: дальше state_updated_date уедет на следующий статус.
+          const prev=before[String(o.order_id)];
+          rec.acceptedAt=prev||(OZON_SHIPPED.includes(state)?o.state_updated_date:'');
+          return rec;
+        });
       }
     }catch(e){ errors.push('заявки: '+e.message); }
 
@@ -577,6 +588,7 @@ async function ozonRefresh(){
     cache.errors=errors;
     saveOzonCache(cache);
   }finally{ ozonBusy=false; }
+  await sheetAutoSend();   // отгрузка подтвердилась — можно писать строки учёта
   redraw();
 }
 
@@ -648,6 +660,8 @@ function ozonWhen(iso){
   return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
 // Статусы приходят строками вида ORDER_STATE_IN_TRANSIT — показываем по-русски.
+// Заявка доехала до пункта или дальше — значит, отгрузка состоялась.
+const OZON_SHIPPED=['ACCEPTED_AT_SUPPLY_WAREHOUSE','IN_TRANSIT','ACCEPTANCE_AT_STORAGE_WAREHOUSE','REPORTS_CONFIRMATION_AWAITING','COMPLETED'];
 const OZON_ALL_STATES=['DATA_FILLING','READY_TO_SUPPLY','ACCEPTED_AT_SUPPLY_WAREHOUSE','IN_TRANSIT','ACCEPTANCE_AT_STORAGE_WAREHOUSE','REPORTS_CONFIRMATION_AWAITING','REPORT_REJECTED','COMPLETED','REJECTED_AT_SUPPLY_WAREHOUSE','CANCELLED','OVERDUE'];
 const OZON_STATES={
   DATA_FILLING:'заполнение данных', READY_TO_SUPPLY:'готова к отгрузке', ACCEPTED_AT_SUPPLY_WAREHOUSE:'принята на точке отгрузки',
@@ -744,7 +758,6 @@ async function ozonOrderInfo(orderId){
 async function sheetRows(orderId){
   const cfg=getSheetCfg()||{};
   const order=await ozonOrderInfo(orderId)||{};
-  const ship=order.timeslot&&order.timeslot.from?new Date(order.timeslot.from):null;
   const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
   const fmt=d=>d?d.getDate()+' '+MONTHS[d.getMonth()]:''; // как в твоей таблице учёта
   const by={};
@@ -759,7 +772,9 @@ async function sheetRows(orderId){
     if(a.packedBy&&!g.packedBy) g.packedBy=a.packedBy;
   });
   return Object.values(by).map(g=>({
-    shipDate:fmt(sentAt?new Date(sentAt):ship),
+    // Слот — это бронь, а не факт. Берём, что известно раньше: твою отметку «отгружено»
+    // или дату приёмки на пункте от Ozon. Сегодняшняя дата — только для ручной записи.
+    shipDate:fmt(new Date(sentAt||order.acceptedAt||order.stateAt||Date.now())),
     orderNumber:order.number||String(orderId),
     orderUrl:(cfg.link||'https://seller.ozon.ru/app/supply/orders/{id}').replace('{id}',String(orderId)),
     what:sheetCode(g.article),
@@ -793,6 +808,26 @@ async function sheetSend(orderId,auto){
   }catch(e){ sheetState.error=e.message; sheetState.msg=''; }
   sheetState.busy=false;
   redraw();
+}
+// Строки учёта отправляются не при создании заявки (вечером заявка, утром отгрузка —
+// дата была бы вчерашней), а когда отгрузка подтвердилась: по отметке «отгружено»
+// или по статусу «принята на точке отгрузки» от Ozon.
+async function sheetAutoSend(){
+  if(!getSheetCfg())return;
+  const orders=(getOzonCache().orders)||[];
+  const adjs=getAdjs();
+  const done=new Set();
+  for(const o of orders){
+    const id=String(o.id);
+    if(done.has(id))continue;
+    const state=String(o.state||'').replace(/^ORDER_STATE_/,'');
+    const ours=adjs.filter(a=>String(a.ozonOrderId||'')===id);
+    if(!ours.length||ours.every(a=>a.sheetSentAt))continue;
+    const shipped=OZON_SHIPPED.includes(state)||ours.some(a=>a.sentAt);
+    if(!shipped)continue;
+    done.add(id);
+    try{ await sheetSend(id,true); }catch{}
+  }
 }
 function cloudWhereHtml(){
   const drive=!!getSheetCfg();
@@ -1371,7 +1406,6 @@ async function ozonCreateSupply(){
       // грузоместа — сразу, состав известен из плана упаковки
       const cargo=await ozonSendCargoes(st.order_id,true);
       r.boxes=cargo&&cargo.count; r.cargoError=cargo&&cargo.error; r.cargoNotes=(ozonCargoState&&ozonCargoState.notes)||[];
-      if(getSheetCfg()) await sheetSend(st.order_id,true); // строки учёта в Google Таблицу
       r.rejected=(draft.rejected||[]).map(x=>x.name+' — '+x.reasons);
       r.status='ok';
     }catch(e){ r.status='err'; r.error=e.message; }
@@ -2693,6 +2727,7 @@ function setAdjStage(idx,stage){
     delete adjs[idx].tbox;
   }
   if(stage==='sent'&&was!=='sent') adjs[idx].sentAt=new Date().toISOString(); // день, когда коробки реально уехали
+  if(stage==='sent'&&was!=='sent'&&adjs[idx].ozonOrderId) setTimeout(sheetAutoSend,0);
   if(stage!=='sent') delete adjs[idx].sentAt;
   if(stage==='plan'){ delete adjs[idx].packedAt; delete adjs[idx].packedBy; }
   saveAdjs(adjs);
