@@ -202,7 +202,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v3.00</span>
+    <span class="version" title="Версия сборки от 23.09.2026 — сверяй с задеплоенной на GitHub">v3.02</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -853,8 +853,9 @@ function sheetBtnHtml(orderId){
   if(st&&st.busy)return `<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(st.msg)}</span>`;
   const sent=ours.every(a=>a.sheetSentAt);
   const color=st&&st.error?'var(--red)':sent?'var(--green)':'var(--muted)';
-  const label=st&&st.error?'таблица ещё раз':sent?'таблица ✓':'таблица';
-  return `<button style="${btn};color:${color}" title="записать строки в Google Таблицу" onclick="sheetSend('${String(orderId)}')">${label}</button>`;
+  const hint=st&&st.error?'ошибка записи — нажми, чтобы повторить':sent?'строки записаны в Google Таблицу':'записать строки в Google Таблицу';
+  const ico='font-size:15px;line-height:1;background:none;border:none;padding:2px 3px;cursor:pointer';
+  return `<button style="${ico};color:${color}" title="${hint}" onclick="sheetSend('${String(orderId)}')">▤</button>`;
 }
 
 // ===== ГРУЗОМЕСТА И ЭТИКЕТКИ =====
@@ -1126,13 +1127,14 @@ function ozonOrderActions(orderId){
   const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
   const mine=ours.length>0;
   const cargoSent=mine&&ours.every(a=>a.cargoSentAt);
+  const ico='font-size:15px;line-height:1;background:none;border:none;padding:2px 3px;cursor:pointer';
   const cs=ozonCargoState&&String(ozonCargoState.orderId)===String(orderId)?ozonCargoState:null;
   const ls=ozonLabelState&&String(ozonLabelState.orderId)===String(orderId)?ozonLabelState:null;
   const parts=[];
   // Грузоместа уходят сами при создании заявки: кнопка нужна, только если не дошли.
   if(cs&&cs.busy) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(cs.msg||'…')}</span>`);
-  else if(mine&&cargoSent) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--green)" title="состав коробок передан">грузоместа ✓</span>`);
-  else if(mine) parts.push(`<button style="${btn};color:var(--red)" title="состав коробок не передан" onclick="ozonSendCargoes('${String(orderId)}')">передать грузоместа</button>`);
+  else if(mine&&cargoSent) parts.push(`<span style="${ico};color:var(--green)" title="состав коробок передан">▣</span>`);
+  else if(mine) parts.push(`<button style="${ico};color:var(--red)" title="состав коробок не передан — нажми, чтобы передать" onclick="ozonSendCargoes('${String(orderId)}')">▣</button>`);
   parts.push(sheetBtnHtml(orderId));
   parts.push(ls&&ls.busy
     ?`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
@@ -1265,17 +1267,45 @@ async function ozonMakeDraft(cluster){
   return {cluster,clusterId,items,idx:grp.idx,draftId:res.draft_id,warehouseId,scw,days,rejected,tz:box.warehouse_timezone||'',supplyType};
 }
 
-// Шаг 1: черновик по первому кластеру, чтобы показать реальные слоты.
+// Общий список слотов по всем черновикам: у каждого слота помним, каким кластерам он доступен.
+// Сравниваем по моменту времени, а не по строке: у складов разные часовые пояса.
+function ozonUnionDays(drafts){
+  const map={};
+  Object.entries(drafts).forEach(([cluster,dr])=>{
+    (dr.days||[]).forEach(day=>(day.slots||[]).forEach(s=>{
+      const k=new Date(s.from).getTime()+'|'+new Date(s.to).getTime();
+      (map[k]=map[k]||{from:s.from,to:s.to,have:[]}).have.push(cluster);
+    }));
+  });
+  const byDay={};
+  Object.values(map).forEach(s=>{ const d=String(s.from).slice(0,10); (byDay[d]=byDay[d]||[]).push(s); });
+  return Object.keys(byDay).sort().map(date=>({date,slots:byDay[date].sort((a,b)=>new Date(a.from)-new Date(b.from))}));
+}
+// Шаг 1: черновик по КАЖДОМУ выбранному кластеру — только так видно настоящие слоты.
+// Ozon пускает создавать черновики раз в 31 секунду, поэтому на несколько кластеров это небыстро.
 async function ozonStartDraft(){
   const clusters=ozonSelected();
   if(!clusters.length){ alert('Отметь хотя бы один кластер.'); return; }
-  ozonDraft={clusters,stage:'draft',busy:true,errors:[],rejected:[],results:[]};
+  ozonDraft={clusters,stage:'draft',busy:true,errors:[],rejected:[],results:[],drafts:{},progress:''};
   redraw();
-  try{
-    const d=await ozonMakeDraft(clusters[0]);
-    Object.assign(ozonDraft,d,{stage:'slots',first:d});
-    if(!d.days.length) ozonDraft.errors.push('на ближайшую неделю свободных слотов нет');
-  }catch(e){ ozonDraft.errors.push(clusters[0]+': '+e.message); ozonDraft.stage='error'; }
+  for(let i=0;i<clusters.length;i++){
+    const c=clusters[i];
+    ozonDraft.progress=`черновик ${i+1} из ${clusters.length} · ${c}`;
+    redraw();
+    try{
+      const dr=await ozonMakeDraft(c);
+      ozonDraft.drafts[c]=dr;
+      if(!ozonDraft.supplyType) ozonDraft.supplyType=dr.supplyType;
+      if(!ozonDraft.tz) ozonDraft.tz=dr.tz;
+      if(!dr.days.length) ozonDraft.errors.push(c+': свободных слотов на неделю нет');
+      (dr.rejected||[]).forEach(r=>ozonDraft.rejected.push(r));
+    }catch(e){ ozonDraft.errors.push(c+': '+e.message); }
+  }
+  const ready=Object.keys(ozonDraft.drafts);
+  ozonDraft.clusters=clusters.filter(c=>ready.includes(c)); // кластеры без черновика дальше не идут
+  ozonDraft.days=ozonUnionDays(ozonDraft.drafts);
+  ozonDraft.stage=ozonDraft.clusters.length&&ozonDraft.days.length?'slots':'error';
+  ozonDraft.progress='';
   ozonDraft.busy=false;
   redraw();
 }
@@ -1306,7 +1336,8 @@ async function ozonCreateSupply(){
     const r={cluster,status:'…'};
     d.results.push(r); d.current=cluster; redraw();
     try{
-      const draft=cluster===d.clusters[0]&&d.first?d.first:await ozonMakeDraft(cluster);
+      // Черновик уже создан на шаге выбора слота; если протух — делаем заново.
+      const draft=(d.drafts||{})[cluster]||await ozonMakeDraft(cluster);
       // ищем тот же слот; если его нет — ближайший в тот же день
       // Слоты у кластеров могут не совпадать: берём точный, иначе ближайший к выбранному.
       const flat=[];
@@ -1385,15 +1416,21 @@ function ozonSupplyHtml(){
         <button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button></div>`;
     let inner='';
     if(d.stage==='draft'&&d.busy){
-      inner=`<div style="font-family:var(--mono);font-size:12px;color:var(--accent)">создаю черновик и жду расчёт Ozon…</div>`;
+      inner=`<div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${escHtml(d.progress||'создаю черновик')} — жду расчёт Ozon…</div>
+        ${d.clusters.length>1?`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px">черновик на кластер Ozon отдаёт раз в 31 секунду, поэтому ${d.clusters.length} ${pkPlural(d.clusters.length,'кластер займёт','кластера займут','кластеров займут')} около ${Math.ceil(d.clusters.length*35/60)} мин</div>`:''}`;
     }else if(d.stage==='slots'){
       const dayName=iso=>{ const dt=new Date(iso+'T00:00:00'); return ['вс','пн','вт','ср','чт','пт','сб'][dt.getDay()]+', '+String(dt.getDate()).padStart(2,'0')+'.'+String(dt.getMonth()+1).padStart(2,'0'); };
       const hhmm=iso=>{ const dt=new Date(iso); return String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); };
-      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Выбери таймслот${d.tz?' · время '+escHtml(d.tz):''} — он будет общим для всех выбранных кластеров. Черновик живёт 30 минут.</div>
+      const total=d.clusters.length;
+      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Выбери таймслот${d.tz?' · время '+escHtml(d.tz):''} — слоты собраны по всем ${total>1?total+' кластерам':'кластеру'}. Если у какого-то кластера выбранного слота нет, он поедет в ближайший свободный. Черновик живёт 30 минут.</div>
         ${(d.days||[]).map((day,di)=>`<div style="margin-bottom:10px">
           <div style="font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:4px">${escHtml(dayName(day.date||day.slots[0].from.slice(0,10)))}
             <span style="color:var(--muted)">· ${day.slots.length} ${pkPlural(day.slots.length,'слот','слота','слотов')}</span></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">${day.slots.map((s,si)=>`<button style="${btn}" onclick="ozonPickSlot(${di},${si})">${hhmm(s.from)}–${hhmm(s.to)}</button>`).join('')}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${day.slots.map((s,si)=>{
+            const n=(s.have||[]).length, all=n>=total;
+            const miss=d.clusters.filter(c=>!(s.have||[]).includes(c));
+            return `<button style="${btn}${all?'':';color:var(--amber)'}" title="${all?'доступен всем кластерам':'нет у: '+escHtml(miss.join(', '))+' — они поедут в ближайший свободный'}" onclick="ozonPickSlot(${di},${si})">${hhmm(s.from)}–${hhmm(s.to)}${all||total<2?'':` <span style="opacity:0.7">${n}/${total}</span>`}</button>`;
+          }).join('')}</div>
         </div>`).join('')||'<span style="font-size:12px;color:var(--muted)">слотов нет</span>'}`;
     }else if(d.stage==='confirm'){
       inner=`<div style="font-family:var(--mono);font-size:12px;line-height:1.7">
