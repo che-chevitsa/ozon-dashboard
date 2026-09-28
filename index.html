@@ -211,7 +211,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.110</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.111</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1722,6 +1722,61 @@ function leftoversSummary(){ return ALL_ARTICLES.map(a=>[a,plannedLeftover(a)]).
 function plannedLeftover(art){ return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&a.sent!==true&&a.packed!==true&&!adjHidden(a)).reduce((s,a)=>s+a.qty,0); }
 // Остатки — однотипные позиции по всем товарам. Плитками они видны разом, а строками
 // занимали одиннадцать рядов таблицы приоритетов и сбивали чтение.
+// Свёрнут ли блок колец — удобство этого браузера.
+let ringsCollapsed=lsGet('ozon_rings_collapsed',false)===true;
+function toggleRings(){ ringsCollapsed=!ringsCollapsed; localStorage.setItem('ozon_rings_collapsed',JSON.stringify(ringsCollapsed)); redraw(); }
+// Какие кластеры раскрыты: клик по кольцу показывает, где товара нет.
+let ringOpen=null;
+function toggleRing(art){ ringOpen=ringOpen===art?null:art; redraw(); }
+// Кольцо на товар: заполненная дуга — в скольких кластерах товар есть на складе,
+// светлая — куда уже едет. Нужно, чтобы одним взглядом видеть дыры по всем товарам,
+// включая те, за которыми не следишь в таблице приоритетов.
+function fboRingsHtml(data){
+  if(!data||!data.length)return '';
+  const clusters=[...new Set(data.map(r=>r.cluster))].filter(c=>c&&c!==LEFTOVER_CLUSTER);
+  const total=clusters.length;
+  if(!total)return '';
+  const by={};
+  data.forEach(r=>{
+    if(r.cluster===LEFTOVER_CLUSTER)return;
+    const a=by[r.article]||(by[r.article]={have:[],coming:[]});
+    if(r.fbo>0) a.have.push(r.cluster);
+    else if(r.transit>0) a.coming.push(r.cluster);
+  });
+  const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Заполненность складов
+        <span style="color:var(--muted)">· в скольких кластерах товар есть, из ${total}</span></span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
+    </div>`;
+  if(ringsCollapsed){
+    const holes=ALL_ARTICLES.filter(a=>((by[a]||{have:[]}).have.length)<total).length;
+    return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
+      <div style="font-family:var(--mono);font-size:12px;margin-top:6px;color:${holes?'var(--amber)':'var(--green)'}">${holes?`с дырами: ${holes} ${pkPlural(holes,'товар','товара','товаров')}`:'везде всё есть'}</div></div>`;
+  }
+  const R=17, C=2*Math.PI*R;
+  const tiles=ALL_ARTICLES.map(art=>{
+    const a=by[art]||{have:[],coming:[]};
+    const have=a.have.length, coming=a.coming.length;
+    const col=have>=total?'var(--green)':have>0?'var(--amber)':'var(--red)';
+    const p1=C*have/total, p2=C*coming/total;
+    const miss=clusters.filter(c=>!a.have.includes(c));
+    const open=ringOpen===art;
+    return `<div class="lf-tile${open?' on':''}" onclick="toggleRing('${escHtml(art)}')" title="${have}/${total} кластеров${coming?`, ещё в ${coming} едет`:''}">
+      <svg width="46" height="46" viewBox="0 0 46 46" style="display:block;margin:0 auto">
+        <circle cx="23" cy="23" r="${R}" fill="none" stroke="${have?'var(--bg2)':col}" stroke-opacity="${have?1:0.25}" stroke-width="5"/>
+        ${coming?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="5"
+          stroke-dasharray="${p2.toFixed(1)} ${(C-p2).toFixed(1)}" stroke-dashoffset="${(-p1).toFixed(1)}" transform="rotate(-90 23 23)"/>`:''}
+        ${have?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-width="5"
+          stroke-dasharray="${p1.toFixed(1)} ${(C-p1).toFixed(1)}" transform="rotate(-90 23 23)"/>`:''}
+        <text x="23" y="27" text-anchor="middle" font-size="12" font-family="var(--mono)" fill="${col}">${have}</text>
+      </svg>
+      <div class="lf-name" style="margin-top:4px">${artName(art)}</div>
+      ${open?`<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.3">${miss.length?'нет: '+miss.map(escHtml).join(', '):'есть везде'}</div>`:''}
+    </div>`;
+  }).join('');
+  return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
+    <div class="lf-grid">${tiles}</div></div>`;
+}
 function leftoversTilesHtml(){
   const sum=leftoversSummary();
   const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
@@ -3783,6 +3838,7 @@ function render(data){
   // Остатки — всегда все товары, независимо от галочек «Товары в расчёте».
   html += '</tbody></table></div>';
   html += leftoversTilesHtml();   // остатки — отдельным блоком плиток, не строками таблицы
+  html += fboRingsHtml(data);     // кольца: где каких товаров нет на складах
 
   // Мобильный список приоритетов (А+Б)
   html+='<div class="mobile-priority-list">';
