@@ -43,6 +43,14 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 #file-info{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 12px;line-height:1.6;display:none;}
 .header-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .period-tabs{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:3px;}
+/* Плитки остатков: по товару на плитку, шесть в ряд (на телефоне три — в медиазапросе ниже) */
+.lf-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px;}
+.lf-tile{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:border-color 0.15s;}
+.lf-tile:hover{border-color:rgba(128,128,128,0.35);}
+.lf-tile.on{border-color:rgba(61,204,122,0.45);}
+.lf-name{font-size:11px;color:var(--text);line-height:1.25;}
+.lf-qty{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;}
+.lf-tile.on .lf-qty{color:var(--green);}
 .period-tab{font-family:var(--mono);font-size:11px;color:var(--muted);background:none;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;}
 .period-tab.active{background:var(--bg2);color:var(--text);border:1px solid var(--border);}
 .main-tabs{display:flex;gap:6px;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0;}
@@ -135,6 +143,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   h1{font-size:15px;}
   .tag,.version{display:none;}
   header{flex-wrap:wrap;white-space:normal;}
+  .lf-grid{grid-template-columns:repeat(3,1fr);}
   .header-right{margin-left:0;width:100%;flex-wrap:wrap;gap:6px;}
   .period-tabs{order:-1;}
   .reset-btn{font-size:11px;padding:4px 10px;}
@@ -165,7 +174,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .heatmap-desktop{display:none;}
   /* Шапка облака */
   /* Элемент списка приоритетов */
-  .mpl-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;}
+.mpl-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;}
   .mpl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
   .mpl-dot.red{background:var(--red);}
   .mpl-dot.amber{background:var(--amber);}
@@ -202,7 +211,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.108</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.110</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1710,12 +1719,39 @@ function toggleLeftovers(){ leftoversCollapsed=!leftoversCollapsed; localStorage
 // Краткая сводка для свёрнутого блока: «Форма 7 см 30 · Лилии 20».
 function leftoversSummary(){ return ALL_ARTICLES.map(a=>[a,plannedLeftover(a)]).filter(([,q])=>q>0).map(([a,q])=>`${artName(a)} ${q} шт`).join(' · '); }
 // Сколько остатков по товару уже запланировано (неотправленные).
-function plannedLeftover(art){ return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&a.sent!==true&&a.packed!==true).reduce((s,a)=>s+a.qty,0); }
+function plannedLeftover(art){ return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&a.sent!==true&&a.packed!==true&&!adjHidden(a)).reduce((s,a)=>s+a.qty,0); }
+// Остатки — однотипные позиции по всем товарам. Плитками они видны разом, а строками
+// занимали одиннадцать рядов таблицы приоритетов и сбивали чтение.
+function leftoversTilesHtml(){
+  const sum=leftoversSummary();
+  const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleLeftovers()">${leftoversCollapsed?'▸':'▾'} Остатки
+        <span style="color:var(--muted)">· без большой коробки, на полку</span></span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleLeftovers()">${leftoversCollapsed?'развернуть':'свернуть'}</span>
+    </div>`;
+  if(leftoversCollapsed){
+    return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
+      <div style="font-family:var(--mono);font-size:12px;margin-top:6px">${sum?`<span style="color:var(--green)">${escHtml(sum)}</span>`:'<span style="color:var(--muted)">не запланированы</span>'}</div></div>`;
+  }
+  const tiles=ALL_ARTICLES.map(art=>{
+    const planned=plannedLeftover(art), fid=`${art.replace(/\W/g,'_')}_ostatki`;
+    return `<div class="lf-tile${planned?' on':''}" data-adj="${art}|${LEFTOVER_CLUSTER}" onclick="toggleMplForm('${fid}')" title="запланировать остатки: ${escHtml(artName(art))}">
+      <div class="lf-name">${artName(art)}</div>
+      <div class="lf-qty">${planned?planned+' шт':'+'}</div>
+      <div id="mpl-form-${fid}" data-article="${art}" data-cluster="${LEFTOVER_CLUSTER}" onclick="event.stopPropagation()" style="display:none;margin-top:6px;gap:4px;align-items:center;justify-content:center">
+        <input type="number" placeholder="шт" min="1" style="width:52px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 6px">
+        <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:4px 8px;cursor:pointer">✓</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
+    <div class="lf-grid">${tiles}</div></div>`;
+}
 function buildPackTask(){
   const rules=getPackRules();
   const byArt={};
   getPackAdjs().forEach(a=>{
-    if(a.sent===true||a.packed===true)return; // упакованное уже не пакуем
+    if(a.sent===true||a.packed===true||adjHidden(a))return; // упакованное и скрытое не пакуем
     const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,unknown:{},loose:0});
     t.total+=a.qty;
     if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; return; }
@@ -2676,7 +2712,7 @@ function applyAdjustments(data){
   const adjs=getAdjs();
   if(!adjs.length)return data;
   return data.map(row=>{
-    const extra=adjs.filter(a=>a.article===row.article&&a.cluster===row.cluster&&!a.arrived).reduce((s,a)=>s+a.qty,0);
+    const extra=adjs.filter(a=>a.article===row.article&&a.cluster===row.cluster&&!a.arrived&&!adjHidden(a)).reduce((s,a)=>s+a.qty,0);
     if(!extra)return row;
     const nt=row.transit+extra,tt=row.fbo+nt;
     return{...row,transit:nt,total:tt,days:row.sales>0?tt/row.sales:99};
@@ -2724,6 +2760,27 @@ function removeAdjustment(idx){
 // Состояния отправки: «план» (ещё пакуют) → «упаковано» (лежит на складе, можно оформлять
 // заявку в Ozon) → «отгружено». Задание упаковщику строится только по плану.
 function adjStage(a){ return a.sent===true?'sent':a.packed===true?'packed':'plan'; }
+// Скрытая плановая отправка не участвует ни в одном расчёте — как будто её не планировали.
+// Скрывать можно только план: упакованное и отгруженное уже существует физически.
+function adjHidden(a){ return a.hidden===true&&a.sent!==true&&a.packed!==true; }
+function toggleAdjHidden(idx){
+  const adjs=getAdjs();
+  if(!adjs[idx]||adjs[idx].sent===true||adjs[idx].packed===true)return;
+  if(adjs[idx].hidden) delete adjs[idx].hidden; else adjs[idx].hidden=true;
+  saveAdjs(adjs);
+  renderAdjList();
+  redraw();
+}
+function setAllAdjHidden(on){
+  const adjs=getAdjs();
+  adjs.forEach(a=>{
+    if(a.sent===true||a.packed===true)return;
+    if(on) a.hidden=true; else delete a.hidden;
+  });
+  saveAdjs(adjs);
+  renderAdjList();
+  redraw();
+}
 // В какую транспортную коробку уходит эта отправка (по вместимости).
 function tboxOfAdj(a){
   if(a.cluster===LEFTOVER_CLUSTER)return null;
@@ -2789,7 +2846,8 @@ function adjRowsHtml(){
   const del=i=>`<button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
   return sorted.map(a=>{
     const i=a.origIdx, stage=adjStage(a);
-    const textStyle=stage==='sent'?'text-decoration:line-through;opacity:0.45':'';
+    const dim=adjHidden(a)?'opacity:0.35':'';
+    const textStyle=(stage==='sent'?'text-decoration:line-through;opacity:0.45':'')+dim;
     const qtyStyle=stage==='sent'?'text-decoration:line-through;opacity:0.45':'color:var(--green)';
     const badge=stage==='packed'
       ?`<span style="font-size:10px;font-family:var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
@@ -2798,15 +2856,19 @@ function adjRowsHtml(){
         <option value="" ${!a.packedBy?'selected':''}>— кто паковал</option>
         ${getPackers().map(p=>`<option value="${escHtml(p)}" ${a.packedBy===p?'selected':''}>${escHtml(p)}</option>`).join('')}
       </select>`;
+    const hid=adjHidden(a);
+    const eye=stage==='plan'
+      ?`<button class="adj-del" style="color:${hid?'var(--amber)':'var(--muted)'};font-size:12px" title="${hid?'вернуть в расчёты':'скрыть: не учитывать нигде, как будто не планировали'}" onclick="toggleAdjHidden(${i})">${hid?'◌':'◉'}</button>`:'';
     const btns=stage==='plan'
-      ?`<button class="adj-del" style="color:var(--accent);opacity:0.8;font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
+      ?`${eye}<button class="adj-del" style="color:var(--accent);opacity:0.8;font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
       :stage==='packed'
       ?`<button class="adj-del" style="color:var(--green);opacity:0.7;font-size:13px" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
       :`<button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в «упаковано»" onclick="unconfirmAdjustment(${i})">↩</button>${del(i)}`;
     return `<div class="adj-item">
       <span style="${textStyle}">${NAMES[a.article]||a.article}</span>
       <span style="color:var(--text);${textStyle}">→ ${a.cluster}</span>
-      <span style="font-family:var(--mono);font-size:12px;${qtyStyle}">+${a.qty} шт</span>
+      <span style="font-family:var(--mono);font-size:12px;${qtyStyle};${dim}">+${a.qty} шт</span>
+      ${adjHidden(a)?`<span style="font-size:10px;font-family:var(--mono);color:var(--amber)">скрыто</span>`:''}
       ${badge}
       ${who}
       ${btns}
@@ -2828,6 +2890,7 @@ function plannedUnits(){
   let total=0;
   adjs.forEach(a=>{
     if(a.sent===true||a.packed===true)return; // упакованное и отгруженное не пакуем
+    if(adjHidden(a))return;                   // скрытое не считаем нигде
     total+=a.qty;
     byArticle[a.article]=(byArticle[a.article]||0)+a.qty;
   });
@@ -3562,7 +3625,15 @@ function render(data){
     const breakdown=Object.entries(pl.byArticle).map(([art,q])=>`${NAMES[art]||art}: ${q}`).join(' · ');
     const pk=packedUnits();
     const counter=`${pl.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--green);font-weight:500;text-transform:none;letter-spacing:0">${pl.total} шт к упаковке</span>${breakdown?`<span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:8px">${breakdown}</span>`:''}`:''}${pk.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0;margin-left:12px">${pk.total} шт упаковано, ждёт заявки</span>`:''}`;
-    adjLogHtml=id=>`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span>${counter}</span></div>
+    // Скрытие нужно, когда планы уже набросаны, но смотреть хочется на «чистую» картину.
+    const plans=getAdjs().filter(a=>a.sent!==true&&a.packed!==true);
+    const hiddenCount=plans.filter(adjHidden).length;
+    const lnk='font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0';
+    const tools=plans.length?`<span style="display:flex;gap:10px;align-items:baseline">
+        ${hiddenCount<plans.length?`<span style="${lnk}" onclick="setAllAdjHidden(true)">скрыть все</span>`:''}
+        ${hiddenCount?`<span style="${lnk}" onclick="setAllAdjHidden(false)">показать все (${hiddenCount})</span>`:''}
+      </span>`:'';
+    adjLogHtml=id=>`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">${counter}${tools}</span></div>
     <div class="block" style="padding:0.75rem 1.25rem">
       <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
   }
@@ -3710,34 +3781,8 @@ function render(data){
   if (!hasAny) html += `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Дефицита нет</td></tr>`;
   // Группа «Остатки» — всегда видна, по строке на каждый товар в расчёте. Кнопка добавляет коробочки «на полку».
   // Остатки — всегда все товары, независимо от галочек «Товары в расчёте».
-  if(leftoversCollapsed){
-    const sum=leftoversSummary();
-    html+=`<tr style="cursor:pointer" onclick="toggleLeftovers()" title="развернуть">
-      <td style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:12px 16px;white-space:nowrap;border-right:1px solid var(--border);border-top:2px solid var(--border)">▸ Остатки</td>
-      <td colspan="8" style="font-family:var(--mono);font-size:12px;border-top:2px solid var(--border)">${sum?`<span style="color:var(--green)">${escHtml(sum)}</span>`:'<span style="color:var(--muted)">не запланированы</span>'} <span style="color:var(--accent);margin-left:10px">развернуть</span></td>
-    </tr>`;
-  }
-  (leftoversCollapsed?[]:ALL_ARTICLES).forEach((art,idx)=>{
-    const planned=plannedLeftover(art);
-    const groupCell = idx===0
-      ? `<td rowspan="${ALL_ARTICLES.length}" style="font-family:var(--mono);font-size:11px;color:var(--muted);vertical-align:top;padding:12px 16px;white-space:nowrap;border-right:1px solid var(--border);border-top:2px solid var(--border);min-width:110px">
-          <div style="margin-bottom:6px;cursor:pointer;color:var(--text)" onclick="toggleLeftovers()" title="свернуть">▾ Остатки</div>
-          <div style="font-size:11px;line-height:1.4">без большой<br>коробки</div>
-          <div style="font-size:11px;margin-top:8px;color:var(--accent);cursor:pointer" onclick="toggleLeftovers()">свернуть</div>
-        </td>` : '';
-    html+=`<tr data-adj="${art}|${LEFTOVER_CLUSTER}">
-      ${groupCell}
-      <td class="item-name"${idx===0?' style="border-top:2px solid var(--border)"':''}>${artName(art)}</td>
-      <td style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">на полку</td>
-      <td class="mono" style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">—</td>
-      <td class="mono"${idx===0?' style="border-top:2px solid var(--border)"':''}>${planned?`<span style="color:var(--green)">${planned} шт</span>`:'<span style="color:var(--muted)">—</span>'}</td>
-      <td class="mono" style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">—</td>
-      <td class="mono" style="color:var(--muted)${idx===0?';border-top:2px solid var(--border)':''}">—</td>
-      <td${idx===0?' style="border-top:2px solid var(--border)"':''}></td>
-      <td${idx===0?' style="border-top:2px solid var(--border)"':''}><button onclick="showInlineSend('${art}','${LEFTOVER_CLUSTER}')" style="font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer">+ остатки</button></td>
-    </tr>`;
-  });
   html += '</tbody></table></div>';
+  html += leftoversTilesHtml();   // остатки — отдельным блоком плиток, не строками таблицы
 
   // Мобильный список приоритетов (А+Б)
   html+='<div class="mobile-priority-list">';
@@ -3786,25 +3831,7 @@ function render(data){
       </div>
     </div>`;
   }
-  (leftoversCollapsed?[]:ALL_ARTICLES).forEach(art=>{
-    const planned=plannedLeftover(art), fid=`${art.replace(/\W/g,'_')}_ostatki`;
-    html+=`<div class="mpl-item" data-adj="${art}|${LEFTOVER_CLUSTER}">
-      <div class="mpl-dot" style="background:var(--muted)"></div>
-      <div class="mpl-main">
-        <div class="mpl-top">
-          <span class="mpl-name">${artName(art)} · Остатки</span>
-          <span class="mpl-qty" style="color:${planned?'var(--green)':'var(--muted)'}">${planned?planned+' шт':'—'}</span>
-        </div>
-        <div class="mpl-sub"><span class="mpl-cluster">без большой коробки · на полку</span></div>
-        <div id="mpl-form-${fid}" data-article="${art}" data-cluster="${LEFTOVER_CLUSTER}" style="display:none;margin-top:8px;gap:6px;align-items:center">
-          <input type="number" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:5px 8px">
-          <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
-          <button onclick="this.parentElement.style.display='none'" style="font-family:var(--mono);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
-        </div>
-      </div>
-      <button class="mpl-btn" onclick="toggleMplForm('${fid}')">+</button>
-    </div>`;
-  });
+
   html+='</div>';
 
   // Adj log inline
