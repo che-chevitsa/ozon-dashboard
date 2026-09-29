@@ -211,7 +211,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.112</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.113</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1746,16 +1746,20 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
     const rows=data.filter(r=>r.article===art&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)&&r.cluster!==LEFTOVER_CLUSTER);
     const sold=rows.filter(r=>r.sales>0);
     const need=sold.reduce((s,r)=>s+r.sales*period,0);
-    const covered=sold.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0);
+    const covered=sold.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0);      // склад + путь + план
+    const coveredNow=sold.reduce((s,r)=>s+Math.min(r.fbo,r.sales*period),0);     // только то, что уже лежит
     const have=rows.filter(r=>r.fbo>0).map(r=>r.cluster);
     const coming=rows.filter(r=>r.fbo<=0&&r.transit>0).map(r=>r.cluster);
     return {
       pct: need>0?Math.min(100,covered/need*100):null,
+      pctNow: need>0?Math.min(100,coveredNow/need*100):null,
       sales: rows.reduce((s,r)=>s+r.sales,0),
       need: Math.round(need), covered: Math.round(covered),
       fbo: Math.round(rows.reduce((s,r)=>s+r.fbo,0)),
       transit: Math.round(rows.reduce((s,r)=>s+r.transit,0)),
-      have, coming, miss: clusters.filter(c=>!have.includes(c)),
+      // «Нет» — только там, где ни товара, ни отправки: если коробка уже запланирована,
+      // дыра считается закрытой, иначе одно и то же место попадало и в «нет», и в «едет».
+      have, coming, miss: clusters.filter(c=>!have.includes(c)&&!coming.includes(c)),
     };
   };
   if(ringsCollapsed){
@@ -1768,27 +1772,30 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
     const s=stat(art);
     // Товар без продаж процентом не описывается: показываем прочерк, но если его нет нигде —
     // это как раз то, что нужно заметить, и кольцо краснеет.
-    const empty=!s.have.length;
+    const empty=!s.have.length&&!s.coming.length;
     const pct=s.pct;
     const col=pct===null?(empty?'var(--red)':'var(--muted)'):`var(--${pctClass(pct)})`;
     const label=pct===null?(empty?'нет':'—'):Math.round(pct)+'%';
-    const arc=pct===null?0:C*Math.min(100,pct)/100;
+    const arc=pct===null?0:C*Math.min(100,pct)/100;                       // вся дуга — с учётом плана
+    const arcNow=s.pctNow===null?0:C*Math.min(100,s.pctNow)/100;          // плотная часть — что уже на складе
     const open=ringOpen===art;
     const focus=FOCUS.includes(art);
-    return `<div class="lf-tile${open?' on':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}, есть в ${s.have.length} из ${total} кластеров">
+    return `<div class="lf-tile${open?' on':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}${s.coming.length?' с учётом запланированного':''}, есть в ${s.have.length} из ${total} кластеров${s.coming.length?`, едет ещё в ${s.coming.length}`:''}">
       <svg width="46" height="46" viewBox="0 0 46 46" style="display:block;margin:0 auto">
         <circle cx="23" cy="23" r="${R}" fill="none" stroke="${arc?'var(--bg2)':col}" stroke-opacity="${arc?1:0.25}" stroke-width="5"/>
-        ${arc?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-width="5"
+        ${arc?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="5"
           stroke-dasharray="${arc.toFixed(1)} ${(C-arc).toFixed(1)}" transform="rotate(-90 23 23)"/>`:''}
+        ${arcNow?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-width="5"
+          stroke-dasharray="${arcNow.toFixed(1)} ${(C-arcNow).toFixed(1)}" transform="rotate(-90 23 23)"/>`:''}
         <text x="23" y="27" text-anchor="middle" font-size="${label.length>3?10:12}" font-family="var(--mono)" fill="${col}">${label}</text>
       </svg>
       <div class="lf-name" style="margin-top:4px;${focus?'':'color:var(--muted)'}">${artName(art)}</div>
-      <div class="lf-qty" style="color:${s.miss.length?'var(--amber)':'var(--muted)'}">${s.have.length}/${total}</div>
+      <div class="lf-qty" style="color:${s.miss.length?'var(--amber)':'var(--muted)'}">${s.have.length}${s.coming.length?`<span style="opacity:0.55">+${s.coming.length}</span>`:''}/${total}</div>
       ${open?`<div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.45;text-align:left">
         ${s.sales>0?`${s.sales.toFixed(1)} шт/день · покрыто ${s.covered} из ${s.need}<br>`:''}
-        ${s.fbo} на складе · ${s.transit} в пути
+        ${s.fbo} на складе · ${s.transit} в пути и в плане
         ${s.miss.length?`<br><span style="color:var(--amber)">нет: ${s.miss.map(escHtml).join(', ')}</span>`:''}
-        ${s.coming.length?`<br>едет в: ${s.coming.map(escHtml).join(', ')}`:''}
+        ${s.coming.length?`<br><span style="color:var(--green)">закрыто отправкой: ${s.coming.map(escHtml).join(', ')}</span>`:''}
       </div>`:''}
     </div>`;
   }).join('');
