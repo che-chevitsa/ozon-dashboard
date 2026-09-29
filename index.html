@@ -211,7 +211,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.111</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.112</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1728,50 +1728,68 @@ function toggleRings(){ ringsCollapsed=!ringsCollapsed; localStorage.setItem('oz
 // Какие кластеры раскрыты: клик по кольцу показывает, где товара нет.
 let ringOpen=null;
 function toggleRing(art){ ringOpen=ringOpen===art?null:art; redraw(); }
-// Кольцо на товар: заполненная дуга — в скольких кластерах товар есть на складе,
-// светлая — куда уже едет. Нужно, чтобы одним взглядом видеть дыры по всем товарам,
-// включая те, за которыми не следишь в таблице приоритетов.
-function fboRingsHtml(data){
+// Кольцо на товар вместо карточек процентов: в центре то же покрытие потребности и те же
+// цвета, что были в карточках, но показываются ВСЕ товары — включая те, за которыми не
+// следишь в таблице. Дуга — покрытие, светлая дуга — сколько из него едет.
+// Под названием — в скольких кластерах товар физически лежит: так видно дыры на FBO.
+function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   if(!data||!data.length)return '';
-  const clusters=[...new Set(data.map(r=>r.cluster))].filter(c=>c&&c!==LEFTOVER_CLUSTER);
+  const clusters=[...new Set(data.map(r=>r.cluster))].filter(c=>c&&c!==LEFTOVER_CLUSTER&&!isClusterHidden(c,hiddenGroups,hiddenClusters));
   const total=clusters.length;
   if(!total)return '';
-  const by={};
-  data.forEach(r=>{
-    if(r.cluster===LEFTOVER_CLUSTER)return;
-    const a=by[r.article]||(by[r.article]={have:[],coming:[]});
-    if(r.fbo>0) a.have.push(r.cluster);
-    else if(r.transit>0) a.coming.push(r.cluster);
-  });
   const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span style="font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Заполненность складов
-        <span style="color:var(--muted)">· в скольких кластерах товар есть, из ${total}</span></span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
+        <span style="color:var(--muted)">· ${period} дней · все товары</span></span>
       <span style="font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
     </div>`;
+  const stat=art=>{
+    const rows=data.filter(r=>r.article===art&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)&&r.cluster!==LEFTOVER_CLUSTER);
+    const sold=rows.filter(r=>r.sales>0);
+    const need=sold.reduce((s,r)=>s+r.sales*period,0);
+    const covered=sold.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0);
+    const have=rows.filter(r=>r.fbo>0).map(r=>r.cluster);
+    const coming=rows.filter(r=>r.fbo<=0&&r.transit>0).map(r=>r.cluster);
+    return {
+      pct: need>0?Math.min(100,covered/need*100):null,
+      sales: rows.reduce((s,r)=>s+r.sales,0),
+      need: Math.round(need), covered: Math.round(covered),
+      fbo: Math.round(rows.reduce((s,r)=>s+r.fbo,0)),
+      transit: Math.round(rows.reduce((s,r)=>s+r.transit,0)),
+      have, coming, miss: clusters.filter(c=>!have.includes(c)),
+    };
+  };
   if(ringsCollapsed){
-    const holes=ALL_ARTICLES.filter(a=>((by[a]||{have:[]}).have.length)<total).length;
+    const holes=ALL_ARTICLES.filter(a=>stat(a).miss.length).length;
     return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
-      <div style="font-family:var(--mono);font-size:12px;margin-top:6px;color:${holes?'var(--amber)':'var(--green)'}">${holes?`с дырами: ${holes} ${pkPlural(holes,'товар','товара','товаров')}`:'везде всё есть'}</div></div>`;
+      <div style="font-family:var(--mono);font-size:12px;margin-top:6px;color:${holes?'var(--amber)':'var(--green)'}">${holes?`есть не во всех кластерах: ${holes} ${pkPlural(holes,'товар','товара','товаров')}`:'везде всё есть'}</div></div>`;
   }
   const R=17, C=2*Math.PI*R;
   const tiles=ALL_ARTICLES.map(art=>{
-    const a=by[art]||{have:[],coming:[]};
-    const have=a.have.length, coming=a.coming.length;
-    const col=have>=total?'var(--green)':have>0?'var(--amber)':'var(--red)';
-    const p1=C*have/total, p2=C*coming/total;
-    const miss=clusters.filter(c=>!a.have.includes(c));
+    const s=stat(art);
+    // Товар без продаж процентом не описывается: показываем прочерк, но если его нет нигде —
+    // это как раз то, что нужно заметить, и кольцо краснеет.
+    const empty=!s.have.length;
+    const pct=s.pct;
+    const col=pct===null?(empty?'var(--red)':'var(--muted)'):`var(--${pctClass(pct)})`;
+    const label=pct===null?(empty?'нет':'—'):Math.round(pct)+'%';
+    const arc=pct===null?0:C*Math.min(100,pct)/100;
     const open=ringOpen===art;
-    return `<div class="lf-tile${open?' on':''}" onclick="toggleRing('${escHtml(art)}')" title="${have}/${total} кластеров${coming?`, ещё в ${coming} едет`:''}">
+    const focus=FOCUS.includes(art);
+    return `<div class="lf-tile${open?' on':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}, есть в ${s.have.length} из ${total} кластеров">
       <svg width="46" height="46" viewBox="0 0 46 46" style="display:block;margin:0 auto">
-        <circle cx="23" cy="23" r="${R}" fill="none" stroke="${have?'var(--bg2)':col}" stroke-opacity="${have?1:0.25}" stroke-width="5"/>
-        ${coming?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="5"
-          stroke-dasharray="${p2.toFixed(1)} ${(C-p2).toFixed(1)}" stroke-dashoffset="${(-p1).toFixed(1)}" transform="rotate(-90 23 23)"/>`:''}
-        ${have?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-width="5"
-          stroke-dasharray="${p1.toFixed(1)} ${(C-p1).toFixed(1)}" transform="rotate(-90 23 23)"/>`:''}
-        <text x="23" y="27" text-anchor="middle" font-size="12" font-family="var(--mono)" fill="${col}">${have}</text>
+        <circle cx="23" cy="23" r="${R}" fill="none" stroke="${arc?'var(--bg2)':col}" stroke-opacity="${arc?1:0.25}" stroke-width="5"/>
+        ${arc?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-width="5"
+          stroke-dasharray="${arc.toFixed(1)} ${(C-arc).toFixed(1)}" transform="rotate(-90 23 23)"/>`:''}
+        <text x="23" y="27" text-anchor="middle" font-size="${label.length>3?10:12}" font-family="var(--mono)" fill="${col}">${label}</text>
       </svg>
-      <div class="lf-name" style="margin-top:4px">${artName(art)}</div>
-      ${open?`<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.3">${miss.length?'нет: '+miss.map(escHtml).join(', '):'есть везде'}</div>`:''}
+      <div class="lf-name" style="margin-top:4px;${focus?'':'color:var(--muted)'}">${artName(art)}</div>
+      <div class="lf-qty" style="color:${s.miss.length?'var(--amber)':'var(--muted)'}">${s.have.length}/${total}</div>
+      ${open?`<div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.45;text-align:left">
+        ${s.sales>0?`${s.sales.toFixed(1)} шт/день · покрыто ${s.covered} из ${s.need}<br>`:''}
+        ${s.fbo} на складе · ${s.transit} в пути
+        ${s.miss.length?`<br><span style="color:var(--amber)">нет: ${s.miss.map(escHtml).join(', ')}</span>`:''}
+        ${s.coming.length?`<br>едет в: ${s.coming.map(escHtml).join(', ')}`:''}
+      </div>`:''}
     </div>`;
   }).join('');
   return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
@@ -3718,26 +3736,9 @@ function render(data){
   </div>`:''}`;
 
   // Cards
-  html+=`<div class="section-label">Покрытие потребности · ${period} дней</div>`;
-  if(!FOCUS.length) html+=`<div class="block" style="padding:0.75rem 1.25rem;font-size:12px;color:var(--muted);font-family:var(--mono)">не выбран ни один товар — отметь галочками выше</div>`;
-  html+=`<div class="cards">`;
-  FOCUS.forEach(art=>{
-    const pct=coverage[art],cls=pctClass(pct);
-    const rows=data.filter(r=>r.article===art&&r.sales>0&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters));
-    const totalSales=rows.reduce((s,r)=>s+r.sales,0);
-    const need=Math.round(rows.reduce((s,r)=>s+r.sales*period,0));
-    const cov=Math.round(rows.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0));
-    const totalFbo=Math.round(rows.reduce((s,r)=>s+r.fbo,0));
-    const totalTransit=Math.round(rows.reduce((s,r)=>s+r.transit,0));
-    html+=`<div class="card">
-      <div class="card-label">${artName(art)}</div>
-      <div class="card-value ${cls}">${Math.round(pct)}%</div>
-      <div class="pct-track"><div class="pct-fill ${cls}" style="width:${Math.round(pct)}%"></div></div>
-      <div class="card-days">${totalSales.toFixed(1)} шт/день · покрыто ${cov} из ${need} шт</div>
-      <div class="card-days" style="margin-top:4px"><span style="color:var(--text)">${totalFbo}</span> на складе · <span style="color:var(--muted)">${totalTransit} в пути</span></div>
-    </div>`;
-  });
-  html+='</div>';
+  // Карточки процентов и кольца заполненности показывали одно и то же разными способами —
+  // теперь это один блок: кольцо на товар, в центре покрытие, под названием охват кластеров.
+  html+=coverageRingsHtml(data,period,hiddenGroups,hiddenClusters);
 
   // Фильтр по артикулам и сортировка
   const sortOptions = [
@@ -3838,7 +3839,6 @@ function render(data){
   // Остатки — всегда все товары, независимо от галочек «Товары в расчёте».
   html += '</tbody></table></div>';
   html += leftoversTilesHtml();   // остатки — отдельным блоком плиток, не строками таблицы
-  html += fboRingsHtml(data);     // кольца: где каких товаров нет на складах
 
   // Мобильный список приоритетов (А+Б)
   html+='<div class="mobile-priority-list">';
