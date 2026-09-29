@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.117</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.118</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1074,7 +1074,17 @@ async function ozonLabelsPdf(parts){
   const out=await PDFLib.PDFDocument.create();
   const stamps={};
   for(const part of parts){
-    const src=await PDFLib.PDFDocument.load(await part.blob.arrayBuffer());
+    const bytes=new Uint8Array(await part.blob.arrayBuffer());
+    // Иногда вместо PDF приходит архив или страница ошибки — понятнее сказать, что именно пришло,
+    // чем показывать «invalid object» из недр библиотеки.
+    const head=String.fromCharCode(...bytes.slice(0,5));
+    if(head.slice(0,4)!=='%PDF'){
+      const what=head.slice(0,2)==='PK'?'архив':(head.slice(0,1)==='<'?'веб-страницу':'файл '+(part.blob.type||'без типа'));
+      throw new Error('Ozon прислал не PDF, а '+what+' ('+Math.round(part.blob.size/1024)+' КБ)');
+    }
+    // Этикетки Ozon бывают помечены как защищённые, хотя пароля нет: без этого флага pdf-lib
+    // отказывается их открывать, и склейка разваливается на отдельные файлы.
+    const src=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true});
     const pages=await out.copyPages(src,src.getPageIndices());
     for(const p of pages){
       out.addPage(p);
@@ -1172,7 +1182,7 @@ async function ozonLabelsMerged(ids){
       +(plain?' · без подписи: '+plain:'');
   }catch(e){
     // склейка не вышла — отдаём файлы по одному, чтобы работа не встала
-    if(parts.length){ parts.forEach((p,i)=>downloadBlob(p.blob,'этикетки_'+(i+1)+'.pdf')); ozonMergeState.msg='скачал по одному файлу: '+e.message; }
+    if(parts.length){ parts.forEach((p,i)=>downloadBlob(p.blob,'этикетки_'+(i+1)+'.pdf')); ozonMergeState.msg='⚠ склейка не вышла, скачал '+parts.length+' файлами без подписей: '+e.message; }
     else { ozonMergeState.error=e.message; ozonMergeState.msg=''; }
   }
   ozonMergeState.busy=false;
@@ -1186,11 +1196,19 @@ async function ozonLabels(orderId){
     const say=t=>{ ozonLabelState.msg=t; redraw(); };
     const parts=await ozonLabelParts(orderId,say);
     const count=parts.reduce((s,p)=>s+p.count,0), plain=parts.filter(p=>!p.text).reduce((s,p)=>s+p.count,0);
-    let blob;
+    let blob=null, why='';
     try{ blob=await ozonLabelsPdf(parts); }
-    catch(e){ blob=parts.length===1?parts[0].blob:null; if(!blob) throw e; } // без подписей, но файл будет
-    downloadBlob(blob,'этикетки_'+orderId+'.pdf');
-    ozonLabelState.msg='✓ этикетки скачаны ('+count+' '+pkPlural(count,'коробка','коробки','коробок')+(plain?', без подписи: '+plain:'')+')';
+    catch(e){ why=e.message; if(parts.length===1) blob=parts[0].blob; }   // без подписей, но файл будет
+    if(blob){
+      downloadBlob(blob,'этикетки_'+orderId+'.pdf');
+      ozonLabelState.msg=why
+        ?'⚠ один файл, но без подписей: '+why
+        :'✓ этикетки скачаны ('+count+' '+pkPlural(count,'коробка','коробки','коробок')+(plain?', без подписи: '+plain:'')+')';
+    }else{
+      // Склейка не вышла — отдаём коробки по одной, чтобы работа не встала.
+      parts.forEach((p,i)=>downloadBlob(p.blob,'этикетки_'+orderId+'_'+(i+1)+'.pdf'));
+      ozonLabelState.msg='⚠ скачал '+parts.length+' отдельными файлами без подписей: '+why;
+    }
   }catch(e){ ozonLabelState.error=e.message; ozonLabelState.msg=''; }
   ozonLabelState.busy=false;
   redraw();
