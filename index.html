@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.120</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.123</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -256,6 +256,9 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
       <div class="upload-icon"><svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12M8 8l4-4 4 4"/></svg></div>
       <div class="upload-title">Загрузить таблицу доступности</div>
       <div class="upload-sub">Аналитика → Планирование поставок → Доступность товаров → Скачать xlsx</div>
+    </div>
+    <div id="upload-api-wrap" style="display:none;text-align:center;margin-top:12px">
+      <button class="period-tab" id="upload-api-btn" onclick="ozonLoadStocks()" title="Взять остатки и продажи прямо из Ozon — файл не нужен">⟳ взять данные из Ozon</button>
     </div>
     <div id="upload-cancel" style="display:none;text-align:center;margin-top:12px">
       <span onclick="cancelUpload()" style="cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--muted)">← вернуться к дашборду</span>
@@ -1619,6 +1622,62 @@ function ozonSupplyHtml(){
     ${groups.length&&(!d||d.stage==='done')?`<button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4);margin-top:10px" onclick="ozonStartDraft()">создать ${sel.length>1?sel.length+' заявки одним слотом':'заявку'}</button>`:''}`;
 }
 
+// Браузер вытесняет хранилище сайта целиком, когда на диске кончается место, — так пропали
+// и данные, и ключи. persist() просит исключить сайт из такой уборки. Chrome обычно разрешает
+// молча, если сайтом реально пользуются.
+let storagePersisted=null;
+async function askPersistentStorage(){
+  try{
+    if(!navigator.storage||!navigator.storage.persist) return null;
+    storagePersisted=await navigator.storage.persisted();
+    if(!storagePersisted) storagePersisted=await navigator.storage.persist();
+  }catch(e){ storagePersisted=null; }
+  return storagePersisted;
+}
+// Резервная копия — единственный путь назад, если хранилище всё-таки вычистят: облачная
+// синхронизация не спасёт, потому что её адрес лежит там же и пропадёт вместе со всем.
+function backupText(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k&&k.indexOf('ozon_')===0) data[k]=localStorage.getItem(k);
+  }
+  return JSON.stringify({kind:'ozon-dashboard-backup',savedAt:new Date().toISOString(),data},null,1);
+}
+function downloadBackup(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  downloadBlob(new Blob([backupText()],{type:'application/json'}),
+    'дашборд-копия_'+p(d.getDate())+'-'+p(d.getMonth()+1)+'.json');
+}
+async function restoreBackup(input){
+  const file=input&&input.files&&input.files[0];
+  input.value='';
+  if(!file)return;
+  let obj=null;
+  try{ obj=JSON.parse(await file.text()); }catch(e){}
+  if(!obj||obj.kind!=='ozon-dashboard-backup'||!obj.data){ alert('Это не файл резервной копии дашборда.'); return; }
+  const keys=Object.keys(obj.data);
+  if(!confirm('Восстановить '+keys.length+' записей из копии от '+ozonWhen(obj.savedAt)+'?\n\nТо, что сейчас в этом браузере, будет заменено.'))return;
+  let bad=0;
+  keys.forEach(k=>{ try{ localStorage.setItem(k,obj.data[k]); }catch(e){ bad++; } });
+  if(bad) alert('Не записалось: '+bad+' из '+keys.length+'. Скорее всего не хватает места на диске.');
+  location.reload();
+}
+function storageBlockHtml(){
+  const st=storagePersisted===true?'<span style="color:var(--green)">защищено от очистки</span>'
+    :storagePersisted===false?'<span style="color:var(--amber)">обычное — браузер может стереть при нехватке места</span>'
+    :'<span style="color:var(--muted)">неизвестно</span>';
+  const b='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+    <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px">Хранилище браузера: ${st}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button style="${b}" onclick="downloadBackup()" title="Ключи, отправки, коробки, настройки и загруженные данные одним файлом">скачать резервную копию</button>
+      <button style="${b}" onclick="document.getElementById('backup-file').click()">восстановить из файла</button>
+      <input type="file" id="backup-file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this)">
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">В копии лежит и ключ Ozon — храни файл как пароль.</div>
+  </div>`;
+}
 function ozonPanelHtml(){
   const open=lsGet(LS_OZON_OPEN,false)===true;
   const keys=getOzonKeys(), cache=getOzonCache();
@@ -1640,7 +1699,8 @@ function ozonPanelHtml(){
         <input id="ozon-api-key" type="password" placeholder="Api-Key" style="${inp};width:320px">
         <button style="${btn};color:var(--green)" onclick="saveOzonKeys()">подключить</button>
       </div>
-      <div id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px"></div>`;
+      <div id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px"></div>
+      ${storageBlockHtml()}`;
   }else{
     const clusters=cache.clusters||[], skus=cache.skus||{}, orders=cache.orders||[];
     const dashClusters=rawData?[...new Set(rawData.map(r=>r.cluster))].sort():[];
@@ -1716,6 +1776,7 @@ function ozonPanelHtml(){
         <div style="font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:8px">роли ключа: ${(cache.roles||[]).length?(cache.roles||[]).map(r=>escHtml(r.name)).join(', '):'—'}${cache.keyExpiresAt?' · действует до '+ozonWhen(cache.keyExpiresAt):''}</div>
         <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
         <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Товары ↔ SKU Ozon (найдено ${Object.keys(skus).length} из ${ALL_ARTICLES.length})</summary><div style="margin-top:6px">${skuRows}</div></details>
+        ${storageBlockHtml()}
       </details>`;
   }
   return head+`<div class="block" style="padding:0.75rem 1.25rem;margin-top:0">${body}</div>`;
@@ -2585,7 +2646,25 @@ function persistLocal(){
     localStorage.setItem(LS_PERIOD,String(currentPeriod));
     // Отметка времени последнего локального изменения — по ней решаем, свежее ли облако.
     localStorage.setItem('ozon_local_saved_at',new Date().toISOString());
-  }catch(e){ console.log('persistLocal error (квота localStorage?):',e); }
+    saveWarn('');
+  }catch(e){
+    console.log('persistLocal error (квота localStorage?):',e);
+    const why=(e&&e.name==='QuotaExceededError')?'в браузере кончилось место':(e&&e.message)||'ошибка записи';
+    saveWarn('данные не сохранились: '+why+'. Не закрывай вкладку, пока место не освободится — иначе при перезагрузке дашборд будет пустым.');
+  }
+}
+// Полоса поверх страницы: без неё потеря данных заметна только после перезагрузки, когда поздно.
+function saveWarn(msg){
+  let el=document.getElementById('save-warn');
+  if(!msg){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement('div');
+    el.id='save-warn';
+    el.style.cssText='position:sticky;top:0;z-index:99;padding:8px 14px;background:rgba(230,169,64,0.15);'
+      +'border-bottom:1px solid rgba(230,169,64,0.4);color:var(--amber);font-family:var(--mono);font-size:12px;line-height:1.4';
+    document.body.prepend(el);
+  }
+  el.textContent='⚠ '+msg;
 }
 function loadLocal(){
   let loadedAny=false;
@@ -2712,6 +2791,7 @@ async function saveToCloud(){
 
     // Дополняем существующий record, а не пересоздаём с нуля
     const record={...existing};
+    const keepCloudLater=(mine,def,cloud)=>(cloud&&JSON.stringify(mine)===JSON.stringify(def))?cloud:mine;
     record.adjustments=getAdjs();
     record.boxes=getBoxLog();
     record.log=getLog().slice(0,20); // лог обрезаем до 20 последних — глубже не нужно
@@ -2732,8 +2812,12 @@ async function saveToCloud(){
     // Галочки товаров и список найденных артикулов — чтобы вид совпадал на всех устройствах
     record.hiddenArticles=[...getHiddenArticles()];
     record.allArticles=ALL_ARTICLES;
-    record.boxTypes=BOX_TYPES; // пользовательские типы коробок
-    record.packRules=getPackRules(); record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.packWho=getPackWho(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=lsGet(LS_TBOX_TYPES,null); // задание упаковщику
+    record.boxTypes=keepCloudLater(BOX_TYPES,DEFAULT_BOX_TYPES,existing.boxTypes); // пользовательские типы коробок
+    // Настройки по умолчанию не должны затирать облако: после чистки хранилища браузер
+    // отдаёт заводские правила, и один автосейв стёр бы в облаке всю ручную настройку.
+    const keepCloud=(mine,def,cloud)=>(cloud&&JSON.stringify(mine)===JSON.stringify(def))?cloud:mine;
+    record.packRules=keepCloud(getPackRules(),DEFAULT_PACK_RULES,existing.packRules);
+    record.packLabels=getPackLabels(); record.packers=getPackers(); record.packAssign=getAssign(); record.packWho=getPackWho(); record.sheetCodes=getSheetCodes(); record.packOrder=getPackOrder(); record.packNotes=getPackNotes(); record.transportBoxes=getTboxLog(); record.transportTypes=keepCloudLater(lsGet(LS_TBOX_TYPES,null),null,existing.transportTypes); // задание упаковщику
 
     const body=JSON.stringify(record);
     const sizeKB=(body.length/1024).toFixed(1);
@@ -3757,6 +3841,9 @@ function renderStocksBtn(){
   if(b) b.style.display=has?'inline-block':'none';
   const s=document.getElementById('sales-api-wrap');   // продажи тоже тянутся только с ключом
   if(s) s.style.display=has?'block':'none';
+  // На пустом экране файл — не единственный выход: с ключом данные берутся прямо из Ozon.
+  const u=document.getElementById('upload-api-wrap');
+  if(u) u.style.display=has?'block':'none';
 }
 function render(data){
   document.getElementById('upload-section').style.display='none';
@@ -4207,6 +4294,8 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
   document.getElementById('upload-section').style.display='block';
   document.getElementById('dashboard').style.display='none';
   document.getElementById('reset-wrap').style.display='none';
+  renderStocksBtn();
+  askPersistentStorage().then(()=>{ if(document.getElementById('backup-file')) redraw(); });
   const p=getProfile();
   const count=Object.keys(p).length;
   if(count>0){
