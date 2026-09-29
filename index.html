@@ -43,6 +43,13 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 #file-info{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 12px;line-height:1.6;display:none;}
 .header-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .period-tabs{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:3px;}
+/* Подсказки по упаковке прямо в строке дефицита: кнопка на каждую укладку, клик планирует */
+.sug-row{display:flex;gap:4px;margin-top:5px;}   /* строкой под числом дефицита, не сбоку */
+.sug-btn{font-family:var(--mono);font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer;white-space:nowrap;
+  border:1px solid var(--border);background:none;color:var(--muted);transition:background 0.15s,color 0.15s;}
+.sug-btn:hover{border-color:var(--accent);color:var(--accent);}
+.sug-btn.best{border-color:rgba(91,127,255,0.45);background:rgba(91,127,255,0.12);color:var(--accent);}
+.sug-btn.short{border-color:rgba(230,169,64,0.45);color:var(--amber);}
 /* Плитки остатков: по товару на плитку, шесть в ряд (на телефоне три — в медиазапросе ниже) */
 .lf-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px;}
 .lf-tile{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:border-color 0.15s;}
@@ -144,6 +151,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .tag,.version{display:none;}
   header{flex-wrap:wrap;white-space:normal;}
   .lf-grid{grid-template-columns:repeat(3,1fr);}
+  .sug-btn{font-size:11px;padding:4px 9px;}   /* пальцем — по кнопке, а не мимо */
   .header-right{margin-left:0;width:100%;flex-wrap:wrap;gap:6px;}
   .period-tabs{order:-1;}
   .reset-btn{font-size:11px;padding:4px 10px;}
@@ -211,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.113</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.117</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1732,6 +1740,41 @@ function toggleRing(art){ ringOpen=ringOpen===art?null:art; redraw(); }
 // цвета, что были в карточках, но показываются ВСЕ товары — включая те, за которыми не
 // следишь в таблице. Дуга — покрытие, светлая дуга — сколько из него едет.
 // Под названием — в скольких кластерах товар физически лежит: так видно дыры на FBO.
+// Задание на упаковку принимает отправку, только если её количество в точности равно
+// вместимости коробки, — иначе она висит как «непонятно, в какую коробку». Поэтому в строке
+// приоритетов рядом с дефицитом стоит готовая коробка, а не «сколько не хватает».
+function boxSuggestion(rules,r){
+  const opts=(rules[r.article]||[]).filter(o=>TBOX[o.box]).sort((a,b)=>b.qty-a.qty);
+  if(!opts.length)return null;
+  let opt=opts.find(o=>o.qty<=r.needed);                 // самая большая, что влезает целиком
+  // Дефицит меньше самой маленькой коробки: предлагаем её, только если она закрывает
+  // хотя бы две трети — иначе на склад уедет заведомо лишнее.
+  if(!opt){ const min=opts[opts.length-1]; if(r.needed>=min.qty*0.66) opt=min; }
+  if(!opt)return null;
+  return {opt, box:TBOX[opt.box], label:packOptionLabel(rules,r.article,opt),
+          after:r.sales>0?(r.total+opt.qty)/r.sales:0};
+}
+// В строке дефицита — все укладки этого товара кнопками с количеством: 105, 90, 68…
+// Клик планирует ровно столько. Подсвечена та, что ложится в дефицит без перелёта.
+function sugBtnHtml(r){
+  const rules=getPackRules();
+  const opts=(rules[r.article]||[]).filter(o=>TBOX[o.box]).sort((a,b)=>b.qty-a.qty);
+  if(!opts.length)return '';
+  const best=boxSuggestion(rules,r);
+  // Про нехватку коробок предупреждаем, только если их вообще считают: без учёта
+  // calcBoxCount всегда вернёт ноль, и кнопки обросли бы ложной тревогой.
+  const type=BOX_TYPE[r.article];
+  const tracked=type&&getBoxLog().some(e=>e.type===type&&(e.kind==='set'||e.kind==='add'));
+  const left=tracked?calcBoxCount(type):null;
+  const seen=new Set();
+  return '<span class="sug-row">'+opts.filter(o=>{ if(seen.has(o.qty))return false; seen.add(o.qty); return true; }).map(o=>{
+    const isBest=best&&best.opt.qty===o.qty;
+    const short=left!==null&&left<o.qty;
+    const after=r.sales>0?Math.round((r.total+o.qty)/r.sales):0;
+    return `<button class="sug-btn${isBest?' best':''}${short?' short':''}" onclick="event.stopPropagation();addAdjustmentInline('${r.article}','${r.cluster}',${o.qty})"
+      title="${o.qty} шт — ${escHtml(TBOX[o.box].name.toLowerCase())} коробка, ${packOptionLabel(rules,r.article,o)}; хватит на ${after} дн${short?`. Коробок осталось ${left}`:''}">${o.qty}</button>`;
+  }).join('')+'</span>';
+}
 function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   if(!data||!data.length)return '';
   const clusters=[...new Set(data.map(r=>r.cluster))].filter(c=>c&&c!==LEFTOVER_CLUSTER&&!isClusterHidden(c,hiddenGroups,hiddenClusters));
@@ -3832,7 +3875,7 @@ function render(data){
         <td class="item-name" style="${isTop?'':'opacity:0.7'}">${NAMES[r.article]||r.article}${isTop?' <span style="font-size:10px;color:var(--accent)">★</span>':''}</td>
         <td style="${clusterStyle}">${r.cluster}${markupBadge(r.cluster)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.sales.toFixed(1)}${r.fromProfile?'<span style="font-size:9px;color:var(--amber);margin-left:3px" title="историческое">~</span>':''}</td>
-        <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт</td>
+        <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт${sugBtnHtml(r)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
         <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}">${Math.round(r.transit)}</td>
         <td><span class="badge ${dc}">${daysLabel}</span></td>
@@ -3866,6 +3909,7 @@ function render(data){
               <span class="mpl-name">${NAMES[r.article]||r.article}${isTop?' ★':''} · ${r.cluster}${markupBadge(r.cluster)}</span>
               <span class="mpl-qty ${dc}">${r.needed} шт</span>
             </div>
+            ${sugBtnHtml(r)?`<div style="margin-top:6px">${sugBtnHtml(r)}</div>`:''}
             <div class="mpl-sub">
               <span class="mpl-cluster">${groupName} · ${r.sales.toFixed(1)}/день${r.fromProfile?' ~':''}</span>
               <span class="mpl-badge ${dc}">${daysLabel}</span>
