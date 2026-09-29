@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.123</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.124</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -751,12 +751,68 @@ function forgetSheetCfg(){ if(confirm('Убрать настройки табл�
 function ozonOrderClusters(orderId){
   const set=new Set();
   getAdjs().forEach(a=>{ if(String(a.ozonOrderId||'')===String(orderId)) set.add(a.cluster); });
-  return [...set].join(', ');
+  if(set.size) return [...set].join(', ');
+  // Своих записей нет — заявку собирали не здесь или чистили хранилище. Кластер всё равно
+  // известен: он приходит вместе с поставкой, остаётся перевести id в название.
+  const c=getOzonCache();
+  const ord=(c.orders||[]).find(x=>String(x.id)===String(orderId));
+  const names=((ord&&ord.supplies)||[]).map(s=>{
+    const cl=(c.clusters||[]).find(x=>String(x.id)===String(s.clusterId));
+    return cl&&cl.name;
+  }).filter(Boolean);
+  return [...new Set(names)].join(', ');
 }
 function ozonOrderItems(orderId){
   const by={};
   getAdjs().forEach(a=>{ if(String(a.ozonOrderId||'')===String(orderId)) by[a.article]=(by[a.article]||0)+a.qty; });
-  return Object.entries(by).map(([art,q])=>({name:artName(art),qty:q}));
+  const mine=Object.entries(by).map(([art,q])=>({name:artName(art),qty:q}));
+  if(mine.length) return mine;
+  const saved=(getOzonCache().orderItems||{})[String(orderId)];
+  return Array.isArray(saved)?saved:[];
+}
+// Состав чужой заявки — у Ozon. Спрашиваем по кнопке, а не на каждой перерисовке: заявок
+// полсотни, и дёргать API ради столбца, который обычно и так заполнен, незачем.
+let ozonItemsBusy=null;
+async function ozonAskItems(orderId){
+  ozonItemsBusy={orderId,msg:'спрашиваю Ozon…'};
+  redraw();
+  try{
+    const list=await ozonFetchOrderItems(orderId);
+    ozonItemsBusy=list.length?null:{orderId,msg:'Ozon не вернул состав'};
+  }catch(e){ ozonItemsBusy={orderId,msg:e.message}; }
+  redraw();
+}
+async function ozonFetchOrderItems(orderId){
+  const c=getOzonCache();
+  let ord=(c.orders||[]).find(x=>String(x.id)===String(orderId));
+  if(!ord||!(ord.supplies||[]).length) ord=await ozonOrderInfo(orderId);
+  const bundles=((ord&&ord.supplies)||[]).map(s=>s.bundleId).filter(Boolean);
+  if(!bundles.length) throw new Error('у заявки нет состава');
+  const skuToArt={};
+  Object.entries(c.skus||{}).forEach(([art,s])=>{ if(s&&s.sku) skuToArt[String(s.sku)]=art; });
+  const by={};
+  for(const id of bundles){
+    let lastId='';
+    for(let page=0;page<20;page++){
+      const body={bundle_ids:[String(id)],limit:100};
+      if(lastId) body.last_id=lastId;
+      const r=await ozonApi('/v1/supply-order/bundle',body);
+      const items=r.items||r.result||[];
+      items.forEach(it=>{
+        const art=(it.offer_id&&ALL_ARTICLES.includes(it.offer_id))?it.offer_id:skuToArt[String(it.sku||'')];
+        const qty=it.quantity||it.quantity_total||it.qty||0;
+        const name=art?artName(art):(it.offer_id||it.name||('sku '+(it.sku||'?')));
+        if(qty) by[name]=(by[name]||0)+qty;
+      });
+      lastId=r.last_id||'';
+      if(!lastId||!items.length||r.has_next===false)break;
+    }
+  }
+  const list=Object.entries(by).map(([name,qty])=>({name,qty}));
+  const cache=getOzonCache();          // перечитываем: за время запроса кэш мог обновиться
+  cache.orderItems={...(cache.orderItems||{}),[String(orderId)]:list};
+  saveOzonCache(cache);
+  return list;
 }
 async function ozonOrderInfo(orderId){
   const c=getOzonCache();
@@ -1737,7 +1793,11 @@ function ozonPanelHtml(){
     const shownOrders=ordersAll?sorted:sorted.filter(o=>ACTIVE.includes(String(o.state||'').replace(/^ORDER_STATE_/,'')));
     const itemsCell=o=>{
       const items=ozonOrderItems(o.id);
-      return items.length?items.map(i=>escHtml(i.name)+' '+i.qty+' шт').join('<br>'):'<span style="color:var(--muted)">—</span>';
+      if(items.length) return items.map(i=>escHtml(i.name)+' '+i.qty+' шт').join('<br>');
+      const busy=ozonItemsBusy&&String(ozonItemsBusy.orderId)===String(o.id);
+      return busy
+        ?`<span style="color:var(--muted)">${escHtml(ozonItemsBusy.msg)}</span>`
+        :`<span style="color:var(--accent);cursor:pointer" onclick="ozonAskItems('${String(o.id)}')" title="спросить состав у Ozon">узнать</span>`;
     };
     const shownIds=shownOrders.map(o=>String(o.id));
     const pickedIds=shownIds.filter(id=>ozonOrderChecked(id));
