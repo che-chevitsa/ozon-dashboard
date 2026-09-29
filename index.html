@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.118</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.119</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1153,15 +1153,40 @@ function downloadBlob(blob,name){
   setTimeout(()=>URL.revokeObjectURL(a.href),10000);
 }
 // Склейка PDF в браузере: библиотека подгружается только по нажатию кнопки.
-function loadPdfLib(){
-  if(window.PDFLib) return Promise.resolve(window.PDFLib);
+// Источников несколько: заблокированный CDN не отдаёт ошибку, а молча висит, поэтому у каждого
+// свой таймаут, и после него пробуем следующий.
+const PDFLIB_SOURCES=[
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js',
+  'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js',
+  'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js',
+];
+let pdfLibLoading=null;
+function loadPdfScript(url,ms){
   return new Promise((ok,fail)=>{
     const s=document.createElement('script');
-    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
-    s.onload=()=>window.PDFLib?ok(window.PDFLib):fail(new Error('библиотека не загрузилась'));
-    s.onerror=()=>fail(new Error('нет связи с cdnjs — этикетки скачаются отдельными файлами'));
+    let done=false;
+    const finish=(err)=>{ if(done)return; done=true; clearTimeout(timer); err?fail(err):ok(); };
+    const timer=setTimeout(()=>{ s.remove(); finish(new Error('не ответил за '+Math.round(ms/1000)+' с')); },ms);
+    s.src=url;
+    s.onload=()=>finish(window.PDFLib?null:new Error('файл пустой'));
+    s.onerror=()=>finish(new Error('не открылся'));
     document.head.appendChild(s);
   });
+}
+function loadPdfLib(){
+  if(window.PDFLib) return Promise.resolve(window.PDFLib);
+  if(pdfLibLoading) return pdfLibLoading;
+  pdfLibLoading=(async()=>{
+    const fails=[];
+    for(const url of PDFLIB_SOURCES){
+      const host=(()=>{ try{ return new URL(url).hostname.replace(/^www\./,''); }catch{ return url; } })();
+      try{ await loadPdfScript(url,8000); if(window.PDFLib) return window.PDFLib; fails.push(host+': пусто'); }
+      catch(e){ fails.push(host+': '+e.message); }
+    }
+    pdfLibLoading=null;
+    throw new Error('библиотека склейки не загрузилась — '+fails.join('; '));
+  })();
+  return pdfLibLoading;
 }
 // Все этикетки сеанса одним файлом.
 async function ozonLabelsMerged(ids){
