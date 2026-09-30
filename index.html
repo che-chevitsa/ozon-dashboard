@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.128</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.129</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -3099,7 +3099,10 @@ function applyAdjustments(data){
 function addAdjustmentInline(article,cluster,qty){
   if(!qty||qty<=0)return;
   const adjs=getAdjs();
-  adjs.push({article,cluster,qty,ts:Date.now()});
+  // Сколько Ozon показывал в пути в этот кластер на момент планирования. Дальше по росту
+  // этого числа понимаем, что наша коробка доехала до его учёта, а не путаем её с чужой.
+  const row=(rawData||[]).find(r=>r.article===article&&r.cluster===cluster);
+  adjs.push({article,cluster,qty,ts:Date.now(),baseTransit:row?row.transit:0});
   saveAdjs(adjs);
   spendBoxes(article,qty);
   renderAdjList();
@@ -3358,6 +3361,29 @@ function undoEarlyArrivals(){
   if(back){ saveAdjs(adjs); console.log('Возвращено в учёт отправок: '+back); }
   return back;
 }
+// Статусы, начиная с которых Ozon уже считает коробки своими: до них товар в его цифрах
+// не появляется, и списывать нашу запись нельзя — иначе кластер выглядит пустым.
+function orderHandedOver(a){
+  if(!a.ozonOrderId)return true;                       // заявки нет — судим по прежним признакам
+  const o=((getOzonCache().orders)||[]).find(x=>String(x.id)===String(a.ozonOrderId));
+  if(!o)return true;
+  return OZON_SHIPPED.includes(String(o.state||'').replace(/^ORDER_STATE_/,''));
+}
+// Второй разовый ремонт: возвращаем отправки, списанные при том, что Ozon ещё не принял
+// заявку. Такие он в своих цифрах не учитывает, значит наша запись должна жить.
+function undoNotHandedOver(){
+  if(lsGet('ozon_fix_not_handed',false)===true)return 0;
+  const adjs=getAdjs();
+  let back=0;
+  adjs.forEach(a=>{
+    if(a.arrived!==true)return;
+    if(orderHandedOver(a))return;
+    delete a.arrived; delete a.arrivedAt; back++;
+  });
+  localStorage.setItem('ozon_fix_not_handed','true');
+  if(back){ saveAdjs(adjs); console.log('Возвращено в учёт непереданных отправок: '+back); }
+  return back;
+}
 function autoCleanAdjs(newData){
   const adjs=getAdjs();
   if(!adjs.length)return;
@@ -3389,14 +3415,20 @@ function autoCleanAdjs(newData){
       // Раньше такие отправки объявлялись приехавшими и исчезали из покрытия — и кластер выглядел
       // пустым, хотя поставка туда уже едет.
       for(const a of sorted){
+        if(!orderHandedOver(a))continue;                               // заявка ещё у нас на руках
         const when=Date.parse(a.sentAt||'')||a.ts||0;
         if(when&&Date.now()-when<ARRIVE_GRACE_MS)continue;             // свежую не трогаем
         toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty}`);
       }
     }else{
+      // Раньше сравнивали с полным transit: если в кластер уже ехало 136 чужих коробок,
+      // наши 68 считались их частью и пропадали из учёта. Считаем только прирост пути
+      // относительно того, что было в момент планирования.
       let pool=row.transit;
       for(const a of sorted){
-        if(pool>=a.qty){ toMark.add(a.idx); pool-=a.qty; }
+        if(!orderHandedOver(a))continue;
+        const base=typeof a.baseTransit==='number'?a.baseTransit:0;
+        if(pool-base>=a.qty){ toMark.add(a.idx); pool-=a.qty; }
       }
     }
   }
@@ -4429,8 +4461,8 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
   document.getElementById('dashboard').style.display='none';
   document.getElementById('reset-wrap').style.display='none';
   renderStocksBtn();
-  const backInPlay=undoEarlyArrivals();
-  if(backInPlay) setTimeout(()=>saveWarn('вернул в учёт отправок: '+backInPlay+' — они были списаны как приехавшие слишком рано'),300);
+  const backInPlay=undoEarlyArrivals()+undoNotHandedOver();
+  if(backInPlay) setTimeout(()=>saveWarn('вернул в учёт отправок: '+backInPlay+' — они были списаны как приехавшие, хотя Ozon их ещё не принял'),300);
   askPersistentStorage().then(()=>{ if(document.getElementById('backup-file')) redraw(); });
   const p=getProfile();
   const count=Object.keys(p).length;
