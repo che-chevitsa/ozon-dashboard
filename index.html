@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.129</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.132</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -645,13 +645,16 @@ async function ozonLoadStocks(){
       const cluster=x.cluster_name||'';
       if(!art||!cluster)return;
       const k=art+'|'+cluster;
-      const row=rows[k]||(rows[k]={article:art,cluster,rec:0,sales:0,fbo:0,transit:0,fromProfile:false});
+      const row=rows[k]||(rows[k]={article:art,cluster,rec:0,sales:0,fbo:0,transit:0,requested:0,fromProfile:false});
       row.fbo+=Number(x.available_stock_count)||0;
       row.transit+=Number(x.transit_stock_count)||0;
+      // «В заявках на поставку» — оформленные заявки, которые Ozon ещё не принял. Товар уже
+      // распределён в кластер, и покрытие должно его видеть, иначе туда закажешь второй раз.
+      row.requested+=Number(x.requested_stock_count)||0;
       row.sales=Math.max(row.sales,Number(x.ads_cluster)||0); // продажи считаются на кластер, не на склад
     });
     const data=Object.values(rows).map(r=>{
-      const total=r.fbo+r.transit;
+      const total=r.fbo+r.transit+(r.requested||0);
       return {...r,total,days:r.sales>0?total/r.sales:99};
     });
     if(!data.length) throw new Error('Ozon вернул пустой список остатков');
@@ -2903,7 +2906,7 @@ async function saveToCloud(){
     // rawData храним КОМПАКТНО: только несводимые поля, без вычислимых total/days.
     // Формат: [article, cluster, rec, sales, fbo, transit, fromProfile?1:0]
     if(rawData){
-      record.rawDataC=rawData.map(r=>[r.article,r.cluster,r.rec,r.sales,r.fbo,r.transit,r.fromProfile?1:0]);
+      record.rawDataC=rawData.map(r=>[r.article,r.cluster,r.rec,r.sales,r.fbo,r.transit,r.fromProfile?1:0,r.requested||0]);
       delete record.rawData; // убираем старый громоздкий формат если был
       if(currentPeriod) record.period=currentPeriod;
     }
@@ -2996,8 +2999,8 @@ async function loadFromCloud(){
     let restoredRaw=null;
     if(rec.rawDataC&&rec.rawDataC.length>0){
       restoredRaw=rec.rawDataC.map(a=>{
-        const fbo=a[4]||0, transit=a[5]||0, sales=a[3]||0, total=fbo+transit;
-        return {article:a[0],cluster:a[1],rec:a[2]||0,sales,fbo,transit,total,days:sales>0?total/sales:99,fromProfile:a[6]===1};
+        const fbo=a[4]||0, transit=a[5]||0, sales=a[3]||0, requested=a[7]||0, total=fbo+transit+requested;
+        return {article:a[0],cluster:a[1],rec:a[2]||0,sales,fbo,transit,requested,total,days:sales>0?total/sales:99,fromProfile:a[6]===1};
       });
     }else if(rec.rawData&&rec.rawData.length>0){
       restoredRaw=rec.rawData; // обратная совместимость со старым форматом
@@ -3091,7 +3094,7 @@ function applyAdjustments(data){
   return data.map(row=>{
     const extra=adjs.filter(a=>a.article===row.article&&a.cluster===row.cluster&&!a.arrived&&!adjHidden(a)).reduce((s,a)=>s+a.qty,0);
     if(!extra)return row;
-    const nt=row.transit+extra,tt=row.fbo+nt;
+    const nt=row.transit+extra,tt=row.fbo+nt+(row.requested||0);
     return{...row,transit:nt,total:tt,days:row.sales>0?tt/row.sales:99};
   });
 }
@@ -3102,7 +3105,7 @@ function addAdjustmentInline(article,cluster,qty){
   // Сколько Ozon показывал в пути в этот кластер на момент планирования. Дальше по росту
   // этого числа понимаем, что наша коробка доехала до его учёта, а не путаем её с чужой.
   const row=(rawData||[]).find(r=>r.article===article&&r.cluster===cluster);
-  adjs.push({article,cluster,qty,ts:Date.now(),baseTransit:row?row.transit:0});
+  adjs.push({article,cluster,qty,ts:Date.now(),baseTransit:row?row.transit+(row.requested||0):0});
   saveAdjs(adjs);
   spendBoxes(article,qty);
   renderAdjList();
@@ -3219,11 +3222,26 @@ function adjRowsHtml(){
   // к ним привязаны заявки, грузоместа и этикетки.
   // Номер строки в хранилище запоминаем сразу: искать его потом через indexOf нельзя —
   // getAdjs() каждый раз разбирает JSON заново, объекты новые, сравнение по ссылке даёт -1.
-  const adjs=getAdjs().map((a,i)=>({...a,origIdx:i})).filter(a=>!a.arrived);
-  if(!adjs.length)return '';
+  const all=getAdjs().map((a,i)=>({...a,origIdx:i}));
+  const adjs=all.filter(a=>!a.arrived);
+  const gone=all.filter(a=>a.arrived);
+  if(!adjs.length&&!gone.length)return '';
   const rank={plan:0,packed:1,sent:2};
   const sorted=[...adjs].sort((a,b)=>rank[adjStage(a)]-rank[adjStage(b)]);
   const del=i=>`<button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
+  // Списанные («приехало на склад») раньше исчезали совсем, и проверить их было нельзя.
+  // Теперь они свёрнуты внизу, и любую можно вернуть в учёт одной кнопкой.
+  const goneHtml=gone.length?`<details style="margin-top:10px">
+    <summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--muted)">приехало на склад · ${gone.length} — списаны из учёта</summary>
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+      ${gone.slice().reverse().map(a=>`<div style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;color:var(--muted)">
+        <span>${escHtml(artName(a.article))} → ${escHtml(a.cluster)} · ${a.qty} шт</span>
+        <span style="font-size:10px">${a.arrivedAt?ozonWhen(a.arrivedAt):''}</span>
+        <button onclick="unarriveAdjustment(${a.origIdx})" title="вернуть в учёт покрытия"
+          style="font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);color:var(--accent);border-radius:4px;padding:2px 8px;cursor:pointer">вернуть</button>
+      </div>`).join('')}
+    </div></details>`:'';
+  if(!adjs.length) return goneHtml;
   return sorted.map(a=>{
     const i=a.origIdx, stage=adjStage(a);
     const dim=adjHidden(a)?'opacity:0.35':'';
@@ -3253,9 +3271,22 @@ function adjRowsHtml(){
       ${who}
       ${btns}
     </div>`;
-  }).join('');
+  }).join('')+goneHtml;
 }
 
+// Вернуть списанную отправку в учёт: база пути обновляется на текущую, иначе правило
+// спишет её снова на ближайшем обновлении данных.
+function unarriveAdjustment(idx){
+  const adjs=getAdjs();
+  const a=adjs[idx];
+  if(!a)return;
+  delete a.arrived; delete a.arrivedAt;
+  const row=(rawData||[]).find(r=>r.article===a.article&&r.cluster===a.cluster);
+  a.baseTransit=row?row.transit+(row.requested||0):0;
+  saveAdjs(adjs);
+  renderAdjList();
+  redraw();
+}
 function renderAdjList(){
   const list=document.getElementById('adj-list');
   if(!list)return;
@@ -3380,6 +3411,13 @@ function undoNotHandedOver(){
     if(orderHandedOver(a))return;
     delete a.arrived; delete a.arrivedAt; back++;
   });
+  // Возвращённой отправке нужна отметка о том, сколько Ozon уже видел в этом кластере.
+  // Без неё ближайшее обновление данных спишет её снова: чужой путь примут за нашу коробку.
+  adjs.forEach(a=>{
+    if(a.arrived===true||typeof a.baseTransit==='number')return;
+    const row=(rawData||[]).find(r=>r.article===a.article&&r.cluster===a.cluster);
+    a.baseTransit=row?row.transit+(row.requested||0):0;
+  });
   localStorage.setItem('ozon_fix_not_handed','true');
   if(back){ saveAdjs(adjs); console.log('Возвращено в учёт непереданных отправок: '+back); }
   return back;
@@ -3397,6 +3435,17 @@ function autoCleanAdjs(newData){
     (byKey[key]=byKey[key]||[]).push({...a,idx});
   });
 
+  // Если в данных есть графа «в заявках на поставку», оформленную заявку считает сам Ozon —
+  // и своя запись о ней становится лишней. Без этой графы (старый файл выгрузки) продолжаем
+  // судить по косвенным признакам, как раньше.
+  const hasRequested=newData.some(r=>typeof r.requested==='number');
+  const liveOrder=a=>{
+    if(!a.ozonOrderId)return false;
+    const o=((getOzonCache().orders)||[]).find(x=>String(x.id)===String(a.ozonOrderId));
+    if(!o)return true;                                   // заявка есть, состояние неизвестно
+    const st=String(o.state||'').replace(/^ORDER_STATE_/,'');
+    return st!=='CANCELLED'&&st!=='REJECTED_AT_SUPPLY_WAREHOUSE';
+  };
   const toMark=new Set();
   const markedList=[];
 
@@ -3409,7 +3458,18 @@ function autoCleanAdjs(newData){
     //  • transit>0 — товар ещё в пути: списываем FIFO ровно на «бюджет» transit (как раньше).
     //  • transit===0 — товар вышел из пути (уже в FBO-остатке или уже распродан) → отправка завершена,
     //    убираем её. Это чинит зависание, когда весь цикл «в пути → приехало» прошёл между выгрузками файла.
-    if(row.transit===0){
+    // Ozon делит будущий товар надвое: «в заявках на поставку» и «в пути». Как только он
+    // показал нашу отправку в любой из этих граф, своя запись больше не нужна — иначе одно
+    // и то же количество посчитается дважды.
+    const pipeline=row.transit+(row.requested||0);
+    // Заявка оформлена в Ozon, и Ozon показывает такие в отдельной графе — считать её ещё и
+    // у себя значит удвоить количество.
+    if(hasRequested){
+      const inOzon=sorted.filter(a=>liveOrder(a));
+      inOzon.forEach(a=>{ toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty} (учтено Ozon)`); });
+      if(inOzon.length===sorted.length)continue;
+    }
+    if(pipeline===0){
       // Правило нулевого пути придумано для случая, когда весь цикл «в пути → приехало» прошёл
       // между выгрузками. У свежей отправки ноль означает другое: Ozon ещё не оприходовал коробки.
       // Раньше такие отправки объявлялись приехавшими и исчезали из покрытия — и кластер выглядел
@@ -3424,9 +3484,10 @@ function autoCleanAdjs(newData){
       // Раньше сравнивали с полным transit: если в кластер уже ехало 136 чужих коробок,
       // наши 68 считались их частью и пропадали из учёта. Считаем только прирост пути
       // относительно того, что было в момент планирования.
-      let pool=row.transit;
+      // Здесь проверка по статусу заявки не нужна: цифры Ozon сами показывают, что он
+      // принял отправку в учёт — неважно, как называется её статус.
+      let pool=pipeline;
       for(const a of sorted){
-        if(!orderHandedOver(a))continue;
         const base=typeof a.baseTransit==='number'?a.baseTransit:0;
         if(pool-base>=a.qty){ toMark.add(a.idx); pool-=a.qty; }
       }
@@ -3927,6 +3988,9 @@ function processRows(rows,useProfile=true){
   const colSales=findCol(headers,'Среднесуточные продажи, шт');
   const colFBO=findCol(headers,'Остаток FBO');
   const colTransit=findCol(headers,'Товары в пути');
+  // «Товары в заявках на поставку» — если колонка есть в выгрузке. Ищем по нескольким
+  // написаниям, но не по одному слову «заявк»: под него попадут и заявки на возврат.
+  const colRequested=findCol(headers,'в заявках на поставку','Товары в заявках','заявках на поставку');
   const profile=useProfile?getProfile():{};
 
   // Автоподхват новых артикулов: всё, что есть в файле, попадает в ALL_ARTICLES,
@@ -3950,13 +4014,14 @@ function processRows(rows,useProfile=true){
       let sales=parseFloat(r[colSales])||0;
       const fbo=parseFloat(r[colFBO])||0;
       const transit=parseFloat(r[colTransit])||0;
-      const total=fbo+transit;
+      const requested=colRequested?parseFloat(r[colRequested])||0:0;
+      const total=fbo+transit+requested;
       let fromProfile=false;
       if(sales===0&&useProfile){
         const key=article+'|'+cluster;
         if(profile[key]){sales=profile[key];fromProfile=true;}
       }
-      return{article,cluster,rec:parseFloat(r[colRec])||0,sales,fbo,transit,total,
+      return{article,cluster,rec:parseFloat(r[colRec])||0,sales,fbo,transit,requested,total,
         days:sales>0?total/sales:99,fromProfile};
     });
 
@@ -4196,7 +4261,7 @@ function render(data){
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.sales.toFixed(1)}${r.fromProfile?'<span style="font-size:9px;color:var(--amber);margin-left:3px" title="историческое">~</span>':''}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт${sugBtnHtml(r)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
-        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}">${Math.round(r.transit)}</td>
+        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}"${r.requested?` title="в пути ${Math.round(r.transit)} · в заявках на поставку ${Math.round(r.requested)}"`:''}>${Math.round(r.transit+(r.requested||0))}${r.requested?`<span style="font-size:9px;opacity:0.7"> из них ${Math.round(r.requested)} в заявках</span>`:''}</td>
         <td><span class="badge ${dc}">${daysLabel}</span></td>
         <td><button onclick="showInlineSend('${r.article}','${r.cluster}')" style="font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer">отправил</button></td>
       </tr>`;
