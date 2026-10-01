@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.132</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.136</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1977,8 +1977,31 @@ function toggleRing(art){ ringOpen=ringOpen===art?null:art; redraw(); }
 // Задание на упаковку принимает отправку, только если её количество в точности равно
 // вместимости коробки, — иначе она висит как «непонятно, в какую коробку». Поэтому в строке
 // приоритетов рядом с дефицитом стоит готовая коробка, а не «сколько не хватает».
+// Коробки, которых сейчас нет под рукой: их не предлагаем, пока не вернёшь. Держим только
+// в этом браузере — запас коробок у каждого рабочего места свой.
+const LS_BOXES_OFF='ozon_boxes_off';
+function getBoxesOff(){ try{ return new Set(lsGet(LS_BOXES_OFF,[])); }catch(e){ return new Set(); } }
+function toggleBoxOff(id){
+  const s=getBoxesOff();
+  s.has(id)?s.delete(id):s.add(id);
+  localStorage.setItem(LS_BOXES_OFF,JSON.stringify([...s]));
+  redraw();
+  const dlg=document.getElementById('pack-ctor-dlg');
+  if(dlg&&dlg.open) rerenderPackCtor();
+}
+// Видно только когда что-то выключено: сама настройка живёт в «⚙ настройки → Коробки».
+function boxesOffNoteHtml(){
+  const off=[...getBoxesOff()].map(id=>TBOX[id]).filter(Boolean);
+  if(!off.length)return '';
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-family:var(--mono);font-size:11px;color:var(--amber)">
+    <span>не предлагаю: ${off.map(b=>escHtml(b.name.toLowerCase())).join(', ')}</span>
+    <span style="color:var(--accent);cursor:pointer" onclick="clearBoxesOff()">вернуть</span>
+  </div>`;
+}
+function clearBoxesOff(){ localStorage.removeItem(LS_BOXES_OFF); redraw(); }
 function boxSuggestion(rules,r){
-  const opts=(rules[r.article]||[]).filter(o=>TBOX[o.box]).sort((a,b)=>b.qty-a.qty);
+  const off=getBoxesOff();
+  const opts=(rules[r.article]||[]).filter(o=>TBOX[o.box]&&!off.has(o.box)).sort((a,b)=>b.qty-a.qty);
   if(!opts.length)return null;
   let opt=opts.find(o=>o.qty<=r.needed);                 // самая большая, что влезает целиком
   // Дефицит меньше самой маленькой коробки: предлагаем её, только если она закрывает
@@ -1992,7 +2015,8 @@ function boxSuggestion(rules,r){
 // Клик планирует ровно столько. Подсвечена та, что ложится в дефицит без перелёта.
 function sugBtnHtml(r){
   const rules=getPackRules();
-  const opts=(rules[r.article]||[]).filter(o=>TBOX[o.box]).sort((a,b)=>b.qty-a.qty);
+  const off=getBoxesOff();
+  const opts=(rules[r.article]||[]).filter(o=>TBOX[o.box]&&!off.has(o.box)).sort((a,b)=>b.qty-a.qty);
   if(!opts.length)return '';
   const best=boxSuggestion(rules,r);
   // Про нехватку коробок предупреждаем, только если их вообще считают: без учёта
@@ -2614,7 +2638,13 @@ function packRulesHtml(){
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Размеры нужны только для пропорций иконок в задании. Удалить коробку можно, если ею никто не пакует.</div>
       <div class="pk-ctor-row pk-ctor-box" style="${head}"><span>название</span><span>длина</span><span>ширина</span><span>высота</span><span>цвет</span><span></span></div>
       ${boxRows}
-      <button style="${btn};margin-top:8px" onclick="pdAddBox()">＋ коробка</button>`:''}
+      <button style="${btn};margin-top:8px" onclick="pdAddBox()">＋ коробка</button>
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Чего сейчас нет под рукой. Снятая галочка убирает коробку из подсказок в списке приоритетов — на сами укладки и задание упаковщику это не влияет. Применяется сразу, отдельно от «Сохранить», и только в этом браузере.</div>
+        ${TRANSPORT_BOXES.map(b=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0;font-family:var(--mono);font-size:12px;cursor:pointer;color:${getBoxesOff().has(b.id)?'var(--muted)':'var(--text)'}">
+          <input type="checkbox" ${getBoxesOff().has(b.id)?'':'checked'} onchange="toggleBoxOff('${b.id}')" style="cursor:pointer;accent-color:var(--accent)">
+          ${escHtml(b.name)}</label>`).join('')}
+      </div>`:''}
     ${ctorTab==='names'?`
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Название для упаковщика видно в задании: на картинке, в тексте и в превью. Код уходит в Google Таблицу. Пустое поле — значение по умолчанию (показано серым).</div>
       <div class="pk-ctor-row pk-ctor-label" style="${head}"><span>товар в дашборде</span><span>название для упаковщика</span><span>код в таблице</span></div>
@@ -3077,6 +3107,7 @@ function scheduleSave(){
 }
 
 let currentPeriod=28, rawData=null;
+let salesRaw=null, salesDaily=null, salesGran='day', salesMetric='qty', salesPeriodDays=0, salesCleared=false;
 
 // Единая точка перерисовки — заменяет повторяющийся вызов render(applyAdjustments(rawData)) по коду.
 function redraw(){if(rawData)render(applyAdjustments(rawData));}
@@ -3280,6 +3311,10 @@ function unarriveAdjustment(idx){
   const adjs=getAdjs();
   const a=adjs[idx];
   if(!a)return;
+  // Отправку с оформленной заявкой Ozon считает сам — вернув её, получишь то же количество
+  // дважды. Предупреждаем прямо здесь: со стороны это неочевидно.
+  const inOzon=a.ozonOrderId&&((getOzonCache().orders)||[]).some(o=>String(o.id)===String(a.ozonOrderId));
+  if(inOzon&&!confirm('Эта отправка оформлена заявкой '+a.ozonOrderId+', и Ozon считает её сам — в графе «в заявках на поставку».\n\nЕсли вернуть, количество посчитается дважды, пока не обновятся данные. Возвращать стоит только то, о чём Ozon не знает.\n\nВсё равно вернуть?'))return;
   delete a.arrived; delete a.arrivedAt;
   const row=(rawData||[]).find(r=>r.article===a.article&&r.cluster===a.cluster);
   a.baseTransit=row?row.transit+(row.requested||0):0;
@@ -4199,6 +4234,7 @@ function render(data){
       return `<button onclick="toggleHiddenGroup('${g.name}')" title="${off?'клик — включить в расчёт':'клик — скрыть из расчётов'}" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;${style}">${g.name}</button>`;
     }).join('')}
   </div>
+  ${boxesOffNoteHtml()}
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px">
     <span style="font-size:11px;color:var(--muted);font-family:var(--mono);opacity:0">кластеры:</span>
     ${[...hiddenClusters].sort().map(c=>`<button onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт" style="font-family:var(--mono);font-size:11px;padding:3px 8px 3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);opacity:0.6;text-decoration:line-through">${c} ×</button>`).join('')}
@@ -4660,7 +4696,6 @@ function salesColor(name){
   let h=0; for(let i=0;i<name.length;i++){ h=(h*31+name.charCodeAt(i))>>>0; }
   return AUTO_PALETTE[h%AUTO_PALETTE.length];
 }
-let salesRaw=null, salesDaily=null, salesGran='day', salesMetric='qty', salesPeriodDays=0, salesCleared=false;
 let salesHidden=new Set(), salesChartObj=null, showCancels=false;
 
 // Какая вкладка дашборда открыта: планирование, упаковка или отгрузка.
