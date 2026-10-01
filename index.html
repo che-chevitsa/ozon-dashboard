@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.136</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.137</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1989,16 +1989,6 @@ function toggleBoxOff(id){
   const dlg=document.getElementById('pack-ctor-dlg');
   if(dlg&&dlg.open) rerenderPackCtor();
 }
-// Видно только когда что-то выключено: сама настройка живёт в «⚙ настройки → Коробки».
-function boxesOffNoteHtml(){
-  const off=[...getBoxesOff()].map(id=>TBOX[id]).filter(Boolean);
-  if(!off.length)return '';
-  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-family:var(--mono);font-size:11px;color:var(--amber)">
-    <span>не предлагаю: ${off.map(b=>escHtml(b.name.toLowerCase())).join(', ')}</span>
-    <span style="color:var(--accent);cursor:pointer" onclick="clearBoxesOff()">вернуть</span>
-  </div>`;
-}
-function clearBoxesOff(){ localStorage.removeItem(LS_BOXES_OFF); redraw(); }
 function boxSuggestion(rules,r){
   const off=getBoxesOff();
   const opts=(rules[r.article]||[]).filter(o=>TBOX[o.box]&&!off.has(o.box)).sort((a,b)=>b.qty-a.qty);
@@ -4234,7 +4224,6 @@ function render(data){
       return `<button onclick="toggleHiddenGroup('${g.name}')" title="${off?'клик — включить в расчёт':'клик — скрыть из расчётов'}" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;${style}">${g.name}</button>`;
     }).join('')}
   </div>
-  ${boxesOffNoteHtml()}
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px">
     <span style="font-size:11px;color:var(--muted);font-family:var(--mono);opacity:0">кластеры:</span>
     ${[...hiddenClusters].sort().map(c=>`<button onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт" style="font-family:var(--mono);font-size:11px;padding:3px 8px 3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);opacity:0.6;text-decoration:line-through">${c} ×</button>`).join('')}
