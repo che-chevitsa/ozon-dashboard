@@ -176,8 +176,12 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-where{color:var(--muted);}
 .adj-spacer{margin-left:auto;}
 .adj-item .adj-qty{color:var(--green);}
-.adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0.75;font-size:14px;line-height:1;border:none;background:none;padding:0 4px;}
-.adj-item .adj-del:hover{opacity:1;}
+.adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0.8;font-size:14px;line-height:1;
+  width:28px;height:28px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);border-radius:7px;background:none;padding:0;transition:border-color .12s,background .12s,opacity .12s;}
+.adj-item .adj-del+.adj-del{margin-left:5px;}
+.adj-item .adj-del:hover{opacity:1;border-color:rgba(128,128,128,0.4);background:var(--bg2);}
+@media(max-width:760px){.adj-item .adj-del{width:32px;height:32px;font-size:15px;}}
 
 /* Desktop defaults */
 .mobile-priority-list{display:none;}
@@ -267,7 +271,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.144</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.145</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3433,15 +3437,15 @@ function adjRowsHtml(){
       </select>`;
     const hid=adjHidden(a);
     const eye=stage==='plan'
-      ?`<button class="adj-del" style="color:${hid?'var(--amber)':'var(--muted)'};font-size:12px" title="${hid?'вернуть в расчёты':'скрыть: не учитывать нигде, как будто не планировали'}" onclick="toggleAdjHidden(${i})">${hid?'◌':'◉'}</button>`:'';
+      ?`<button class="adj-del" style="color:${hid?'var(--amber)':'var(--muted)'}" title="${hid?'вернуть в расчёты':'скрыть: не учитывать нигде, как будто не планировали'}" onclick="toggleAdjHidden(${i})">${hid?'◌':'◉'}</button>`:'';
     const later=stage==='later';
     const defer=(stage==='plan'||later)
-      ?`<button class="adj-del" style="color:${later?'var(--amber)':'var(--muted)'};font-size:12px" title="${later?'вернуть в текущую партию':'перенести в следующую партию: останется в расчёте, но не попадёт в задание упаковщику'}" onclick="toggleAdjLater(${i})">${later?'←':'→'}</button>`:'';
+      ?`<button class="adj-del" style="color:${later?'var(--amber)':'var(--muted)'}" title="${later?'вернуть в текущую партию':'перенести в следующую партию: останется в расчёте, но не попадёт в задание упаковщику'}" onclick="toggleAdjLater(${i})">${later?'←':'→'}</button>`:'';
     const btns=(stage==='plan'||later)
-      ?`${eye}${defer}<button class="adj-del" style="color:var(--accent);font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
+      ?`${eye}${defer}<button class="adj-del" style="color:var(--accent)" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
       :stage==='packed'
-      ?`<button class="adj-del" style="color:var(--green);font-size:13px" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
-      :`<button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в «упаковано»" onclick="unconfirmAdjustment(${i})">↩</button>${del(i)}`;
+      ?`<button class="adj-del" style="color:var(--green)" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted)" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
+      :`<button class="adj-del" style="color:var(--muted)" title="вернуть в «упаковано»" onclick="unconfirmAdjustment(${i})">↩</button>${del(i)}`;
     // Слева — точка состояния: план серый, упаковано синее, отгружено зелёное. По ней видно
     // стадию, не читая подписей.
     const dot=stage==='plan'?'var(--muted)':stage==='later'?'var(--amber)':stage==='packed'?'var(--accent)':'var(--green)';
@@ -4512,7 +4516,7 @@ function render(data){
       <div class="mpl-main">
         <div class="mpl-top">
           <span class="mpl-name">${leftoversCollapsed?'▸':'▾'} Остатки</span>
-          <span class="mpl-qty" style="color:var(--accent);font-size:12px">${leftoversCollapsed?'развернуть':'свернуть'}</span>
+          <span class="mpl-qty" style="color:var(--accent)">${leftoversCollapsed?'развернуть':'свернуть'}</span>
         </div>
         <div class="mpl-sub"><span class="mpl-cluster">${sum?escHtml(sum):'без большой коробки · на полку'}</span></div>
       </div>
