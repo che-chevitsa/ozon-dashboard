@@ -219,7 +219,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.137</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.138</span>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
     <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
     <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
@@ -1363,6 +1363,60 @@ async function ozonLabels(orderId){
 }
 
 // Кнопки в таблице заявок: этикетки для любой заявки, повтор грузомест — для созданных из дашборда.
+// Отмена застрявшей заявки. Бывает так: заявка создана, а состав грузомест передать не успели —
+// Ozon запрещает правки меньше чем за час до слота, и заявка висит в «заполнении данных» мёртвым
+// грузом. Единственный выход — отменить её и собрать заново на другой слот.
+let ozonCancelState=null; // {orderId, busy, msg, error}
+async function ozonCancelOrder(orderId){
+  const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
+  const qty=ours.reduce((s,a)=>s+a.qty,0);
+  const inSheet=ours.some(a=>a.sheetSentAt);
+  if(!confirm('Отменить заявку '+orderId+' в Ozon?'
+    +(ours.length?'\n\nЕё '+ours.length+' '+pkPlural(ours.length,'коробка','коробки','коробок')+' ('+qty+' шт) вернутся в «упаковано, ждёт заявки» — их можно будет оформить заново на другой слот.':'')
+    +(inSheet?'\n\nСтроки этой заявки уже записаны в Google Таблицу — их нужно убрать вручную.':'')))return;
+  ozonCancelState={orderId,busy:true,msg:'отменяю заявку…',error:''};
+  redraw();
+  let ok=false, why='';
+  try{
+    const res=await ozonApi('/v1/supply-order/cancel',{supply_order_id:Number(orderId)});
+    if(res&&res.operation_id){
+      for(let i=0;i<15;i++){
+        const st=await ozonApi('/v1/supply-order/cancel/status',{operation_id:res.operation_id});
+        const s=String(st&&(st.status||st.result&&'SUCCESS')||'');
+        if(s==='SUCCESS'){ ok=true; break; }
+        if(s==='FAILED'){ why=JSON.stringify((st&&st.errors)||st||{}).slice(0,160); break; }
+        await ozonSleep(2000);
+      }
+      if(!ok&&!why) why='Ozon не ответил за 30 секунд';
+    }else if(res&&(res.result===true||res.status==='SUCCESS')) ok=true;
+    else why=JSON.stringify((res&&res.errors)||res||{}).slice(0,160);
+  }catch(e){ why=e.message; }
+  // Даже если Ozon отказал, отправки стоит освободить: иначе они останутся привязаны к мёртвой
+  // заявке и не попадут в новую. Решение оставляем за человеком.
+  if(!ok&&!confirm('Ozon не отменил заявку: '+why+'\n\nОтменить её в кабинете самому?'
+      +'\n\nВсё равно вернуть отправки в «упаковано», чтобы оформить их заново?')){
+    ozonCancelState={orderId,busy:false,msg:'',error:why};
+    redraw();
+    return;
+  }
+  const adjs=getAdjs();
+  let back=0;
+  adjs.forEach(a=>{
+    if(String(a.ozonOrderId||'')!==String(orderId))return;
+    delete a.ozonOrderId; delete a.cargoId; delete a.cargoSentAt;
+    delete a.sent; delete a.sentAt; delete a.arrived; delete a.arrivedAt;
+    delete a.sheetSentAt; delete a.sheetDateAt;   // заявки больше нет — строки учёта к ней не привязаны
+    a.packed=true;                                 // коробки собраны, ждут новой заявки
+    back++;
+  });
+  saveAdjs(adjs);
+  const c=getOzonCache();
+  c.orders=(c.orders||[]).map(o=>String(o.id)===String(orderId)?{...o,state:'ORDER_STATE_CANCELLED'}:o);
+  saveOzonCache(c);
+  ozonCancelState={orderId,busy:false,error:'',
+    msg:(ok?'✓ заявка отменена':'заявка осталась в Ozon')+(back?' · вернул в упаковано: '+back:'')};
+  redraw();
+}
 function ozonOrderActions(orderId){
   const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
@@ -1376,11 +1430,20 @@ function ozonOrderActions(orderId){
   if(cs&&cs.busy) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(cs.msg||'…')}</span>`);
   else if(mine&&cargoSent) parts.push(`<span style="${ico};color:var(--green)" title="состав коробок передан">▣</span>`);
   else if(mine) parts.push(`<button style="${ico};color:var(--red)" title="состав коробок не передан — нажми, чтобы передать" onclick="ozonSendCargoes('${String(orderId)}')">▣</button>`);
+  // Отменить можно, только пока Ozon не принял коробки: дальше это уже не наша история.
+  const ord=((getOzonCache().orders)||[]).find(o=>String(o.id)===String(orderId))||{};
+  const st=String(ord.state||'').replace(/^ORDER_STATE_/,'');
+  const cancelable=!OZON_SHIPPED.includes(st)&&st!=='CANCELLED';
+  const xs=ozonCancelState&&String(ozonCancelState.orderId)===String(orderId)?ozonCancelState:null;
+  if(xs&&xs.busy) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(xs.msg||'…')}</span>`);
+  else if(cancelable) parts.push(`<button style="${ico};color:var(--muted)" title="отменить заявку и вернуть коробки в «упаковано»" onclick="ozonCancelOrder('${String(orderId)}')">✕</button>`);
   parts.push(sheetBtnHtml(orderId));
   parts.push(ls&&ls.busy
     ?`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
     :`<button style="${btn};color:var(--accent)" onclick="ozonLabels('${String(orderId)}')">этикетки</button>`);
-  const msg=[cs&&cs.error?'<span style="color:var(--red)">'+escHtml(cs.error)+'</span>':'',
+  const msg=[xs&&xs.error?'<span style="color:var(--red)">'+escHtml(xs.error)+'</span>':'',
+             xs&&!xs.busy&&xs.msg?'<span style="color:var(--green)">'+escHtml(xs.msg)+'</span>':'',
+             cs&&cs.error?'<span style="color:var(--red)">'+escHtml(cs.error)+'</span>':'',
              cs&&!cs.busy&&cs.msg?'<span style="color:var(--green)">'+escHtml(cs.msg)+'</span>':'',
              ls&&ls.error?'<span style="color:var(--red)">'+escHtml(ls.error)+'</span>':'',
              ls&&!ls.busy&&ls.msg?'<span style="color:var(--green)">'+escHtml(ls.msg)+'</span>':''].filter(Boolean).join(' · ');
