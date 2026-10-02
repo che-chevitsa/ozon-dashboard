@@ -23,24 +23,34 @@
   --red:#d93025;--amber:#c47f00;--green:#1a8a4a;
   --red-bg:rgba(217,48,37,0.08);--amber-bg:rgba(196,127,0,0.08);--green-bg:rgba(26,138,74,0.08);
 }
-[data-theme="light"] .heatmap td.red{background:rgba(217,48,37,0.12);color:var(--red);}
-[data-theme="light"] .heatmap td.amber{background:rgba(196,127,0,0.12);color:var(--amber);}
-[data-theme="light"] .heatmap td.green{background:rgba(26,138,74,0.1);color:var(--green);}
+[data-theme="light"] .heatmap td.red{background:rgba(217,48,37,0.07);color:var(--red);}
+[data-theme="light"] .heatmap td.amber{background:rgba(196,127,0,0.08);color:var(--amber);}
+[data-theme="light"] .heatmap td.green{background:rgba(26,138,74,0.06);color:var(--green);}
 [data-theme="light"] .upload-zone{border-color:rgba(58,95,240,0.3);}
 [data-theme="light"] .upload-zone:hover{background:rgba(58,95,240,0.04);}
-.theme-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;transition:all 0.15s;flex-shrink:0;}
+.theme-btn{font-family:var(--font);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;transition:all 0.15s;flex-shrink:0;}
 .theme-btn:hover{color:var(--text);border-color:rgba(128,128,128,0.3);}
 *{box-sizing:border-box;margin:0;padding:0;}
 /* Место под полосу прокрутки держим всегда: иначе на короткой вкладке (продажи) она
    исчезает, ширина окна прыгает на 15px, и центрированный контейнер уезжает вбок. */
 html{scrollbar-gutter:stable;}
 body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;}
+/* Меню шапки: редкие действия прячем, чтобы в строке остались период и обновление */
+.hmenu{position:relative;margin-left:auto;}
+.hmenu-btn{font-size:16px;line-height:1;padding:4px 10px;}
+.hmenu-pop{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:60;min-width:230px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,0.12);}
+.hmenu-pop.open{display:block;}
+.hmenu-pop button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text);
+  font-family:var(--font);font-size:13px;padding:8px 10px;border-radius:7px;cursor:pointer;}
+.hmenu-pop button:hover{background:var(--bg3);}
+.hmenu-foot{font-family:var(--mono);font-size:11px;color:var(--muted);padding:6px 10px 2px;border-top:1px solid var(--border);margin-top:4px;}
 .container{max-width:1200px;margin:0 auto;padding:2rem 1.5rem;}
 header{display:flex;align-items:center;gap:10px;margin-bottom:2rem;border-bottom:1px solid var(--border);padding-bottom:1rem;flex-wrap:nowrap;white-space:nowrap;min-height:51px;}
 h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em;}
 .tag{font-family:var(--mono);font-size:11px;flex-shrink:0;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:3px 8px;border-radius:4px;}
 .version{font-family:var(--mono);font-size:10px;color:var(--muted);opacity:0.55;margin-left:2px;letter-spacing:0.02em;flex-shrink:0;}
-#file-info{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 12px;line-height:1.6;display:none;}
+#file-info{font-family:var(--font);font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 12px;line-height:1.6;display:none;}
 .header-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .period-tabs{display:flex;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:3px;}
 /* Подсказки по упаковке прямо в строке дефицита: кнопка на каждую укладку, клик планирует */
@@ -58,16 +68,16 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .lf-name{font-size:11px;color:var(--text);line-height:1.25;}
 .lf-qty{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px;}
 .lf-tile.on .lf-qty{color:var(--green);}
-.period-tab{font-family:var(--mono);font-size:11px;color:var(--muted);background:none;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;}
+.period-tab{font-family:var(--font);font-size:11px;color:var(--muted);background:none;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;}
 .period-tab.active{background:var(--bg2);color:var(--text);border:1px solid var(--border);}
 .main-tabs{display:flex;gap:6px;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0;}
-.main-tab{font-family:var(--mono);font-size:13px;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;padding:10px 18px;cursor:pointer;margin-bottom:-1px;}
+.main-tab{font-family:var(--font);font-size:13px;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;padding:10px 18px;cursor:pointer;margin-bottom:-1px;}
 .main-tab.active{color:var(--text);border-bottom:2px solid var(--accent);}
 .main-tab:hover{color:var(--text);}
-.sales-toggle{font-family:var(--mono);font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;}
+.sales-toggle{font-family:var(--font);font-size:12px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;}
 .sales-toggle.on{color:var(--text);background:var(--bg2);}
 .sales-toggle .dot{width:10px;height:10px;border-radius:50%;}
-.reset-btn{font-family:var(--mono);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;flex-shrink:0;}
+.reset-btn{font-family:var(--font);font-size:12px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;flex-shrink:0;}
 .reset-btn:hover{border-color:rgba(255,255,255,0.2);color:var(--text);}
 .upload-zone{border:1px dashed rgba(91,127,255,0.4);border-radius:12px;padding:4rem 2rem;text-align:center;cursor:pointer;transition:all 0.2s;position:relative;}
 .upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:rgba(91,127,255,0.04);}
@@ -76,7 +86,7 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .upload-icon svg{width:22px;height:22px;stroke:var(--accent);fill:none;}
 .upload-title{font-size:16px;font-weight:500;margin-bottom:6px;}
 .upload-sub{color:var(--muted);font-size:13px;}
-.section-label{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:12px;margin-top:2rem;}
+.section-label{font-family:var(--font);font-size:11px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:12px;margin-top:2rem;}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.25rem;}
 .card-label{font-size:12px;color:var(--muted);margin-bottom:8px;}
@@ -88,56 +98,64 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .card-days{font-size:11px;color:var(--muted);margin-top:6px;}
 .table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
 table{width:100%;border-collapse:collapse;}
-thead th{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:0.05em;text-transform:uppercase;padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);font-weight:400;}
+thead th{font-family:var(--font);font-size:11px;color:var(--muted);letter-spacing:0.05em;text-transform:uppercase;padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);font-weight:400;}
 tbody td{padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px;}
 tbody tr:last-child td{border-bottom:none;}
 tbody tr:hover{background:rgba(255,255,255,0.02);}
-.badge{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:500;padding:3px 8px;border-radius:4px;}
+.badge{display:inline-block;font-family:var(--font);font-size:11px;font-weight:500;padding:3px 8px;border-radius:4px;}
 .badge.red{background:var(--red-bg);color:var(--red);}
 .badge.amber{background:var(--amber-bg);color:var(--amber);}
 .badge.green{background:var(--green-bg);color:var(--green);}
 .item-name{font-weight:500;}.item-cluster{color:var(--muted);}.mono{font-family:var(--mono);}
 .heatmap-scroll{overflow-x:auto;background:var(--bg2);border:1px solid var(--border);border-radius:12px;}
 .heatmap{border-collapse:collapse;min-width:100%;}
-.heatmap th{font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 12px;white-space:nowrap;font-weight:400;border-bottom:1px solid var(--border);}
+.heatmap th{font-family:var(--font);font-size:10px;color:var(--muted);padding:10px 12px;white-space:nowrap;font-weight:400;border-bottom:1px solid var(--border);}
 .heatmap th.col-header{text-align:center;}
-.heatmap td{padding:8px 12px;text-align:center;border:1px solid rgba(255,255,255,0.04);font-family:var(--mono);font-size:12px;font-weight:500;min-width:80px;line-height:1.5;}
-.heatmap td.row-label{text-align:left;font-family:var(--font);font-size:12px;color:var(--text);font-weight:400;white-space:nowrap;padding:7px 16px;min-width:160px;}
-.heatmap td.red{background:rgba(255,90,90,0.15);color:var(--red);}
-.heatmap td.amber{background:rgba(255,170,59,0.15);color:var(--amber);}
-.heatmap td.green{background:rgba(61,204,122,0.12);color:var(--green);}
+.heatmap td{padding:8px 12px;text-align:center;border:1px solid rgba(255,255,255,0.04);font-family:var(--mono);font-size:12px;font-weight:400;min-width:80px;line-height:1.5;}
+.heatmap td.row-label{text-align:left;font-family:var(--font);font-size:13px;color:var(--text);font-weight:400;white-space:nowrap;padding:7px 16px;min-width:160px;}
+.heatmap td.red{background:rgba(255,90,90,0.09);color:var(--red);}
+.heatmap td.amber{background:rgba(255,170,59,0.09);color:var(--amber);}
+.heatmap td.green{background:rgba(61,204,122,0.07);color:var(--green);}
 .heatmap td.none{color:rgba(255,255,255,0.15);}
 .legend{display:flex;gap:1.5rem;align-items:center;margin-bottom:10px;}
 .legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
 .legend-dot{width:8px;height:8px;border-radius:2px;}
 .block{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-top:2rem;}
 .boxes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
-.box-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+.box-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
 .box-card>*{margin:0!important;}
 .box-card .box-actions{margin-left:auto;}
 .box-card.warn{border-color:rgba(255,170,59,0.4);}
 .box-card.danger{border-color:rgba(255,90,90,0.4);}
 .box-name{font-size:12px;color:var(--text);}
-.box-count{font-family:var(--mono);font-size:16px;font-weight:600;}
+.box-count{font-family:var(--mono);font-size:16px;font-weight:500;}
 .box-count.green{color:var(--green);}.box-count.amber{color:var(--amber);}.box-count.red{color:var(--red);}
-.box-meta{font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--mono);}
+.box-meta{font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--font);}
 .box-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
-.box-btn{font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:4px 10px;cursor:pointer;}
+.box-btn{font-family:var(--font);font-size:11px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:4px 10px;cursor:pointer;}
 .box-btn:hover{color:var(--text);border-color:rgba(255,255,255,0.2);}
 .box-input-row{display:flex;gap:6px;align-items:center;margin-top:8px;}
-.box-input-row input{width:80px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 8px;}
-.box-input-row button{font-family:var(--mono);font-size:11px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:5px;padding:4px 10px;cursor:pointer;}
+.box-input-row input{width:80px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font);font-size:12px;padding:4px 8px;}
+.box-input-row button{font-family:var(--font);font-size:11px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:5px;padding:4px 10px;cursor:pointer;}
 .adj-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;}
-.adj-form select,.adj-form input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 10px;}
+.adj-form select,.adj-form input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:6px 10px;}
 .adj-form select{flex:1;min-width:140px;}
 .adj-form input{width:80px;}
-.adj-form button{font-family:var(--mono);font-size:12px;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer;white-space:nowrap;}
+.adj-form button{font-family:var(--font);font-size:12px;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer;white-space:nowrap;}
 .adj-form button:hover{background:rgba(91,127,255,0.25);}
 .adj-list{margin-top:10px;display:flex;flex-direction:column;gap:4px;}
-.adj-item{display:flex;align-items:center;gap:8px;font-size:12px;font-family:var(--mono);color:var(--muted);}
+.adj-item{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text);
+  padding:7px 10px;border-radius:8px;border:1px solid transparent;}
+.adj-item+.adj-item{margin-top:2px;}
+.adj-item:hover{background:var(--bg3);border-color:var(--border);}
+.adj-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.adj-where{color:var(--muted);}
+.adj-spacer{margin-left:auto;}
 .adj-item .adj-qty{color:var(--green);}
-.adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0.6;font-size:14px;line-height:1;border:none;background:none;padding:0 4px;}
+.adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0;font-size:14px;line-height:1;border:none;background:none;padding:0 4px;transition:opacity .12s;}
+.adj-item:hover .adj-del{opacity:0.75;}
 .adj-item .adj-del:hover{opacity:1;}
+@media(hover:none){.adj-item .adj-del{opacity:0.75;}}
 
 /* Desktop defaults */
 .mobile-priority-list{display:none;}
@@ -152,7 +170,13 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   header{flex-wrap:wrap;white-space:normal;}
   .lf-grid{grid-template-columns:repeat(3,1fr);}
   .sug-btn{font-size:11px;padding:4px 9px;}   /* пальцем — по кнопке, а не мимо */
-  .header-right{margin-left:0;width:100%;flex-wrap:wrap;gap:6px;}
+  /* На телефоне шапка в два ряда: сверху название и меню, снизу период и обновление */
+  .header-right{margin-left:0;width:100%;flex-wrap:wrap;gap:6px;order:3;}
+  .hmenu{order:2;margin-left:auto;}
+  /* На узком экране строка отправки переносится, а выпадающий список не вылезает за край */
+  .adj-item{flex-wrap:wrap;gap:6px 8px;}
+  .adj-item select{max-width:120px;}
+  .adj-spacer{margin-left:0;}
   .period-tabs{order:-1;}
   .reset-btn{font-size:11px;padding:4px 10px;}
   #cloud-status{font-size:11px;}
@@ -190,7 +214,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .mpl-main{flex:1;min-width:0;}
   .mpl-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;}
   .mpl-name{font-size:13px;font-weight:500;color:var(--text);}
-  .mpl-qty{font-size:14px;font-weight:600;font-family:var(--mono);}
+  .mpl-qty{font-size:14px;font-weight:600;font-family:var(--font);}
   .mpl-qty.red{color:var(--red);} .mpl-qty.amber{color:var(--amber);}
   .mpl-sub{display:flex;justify-content:space-between;align-items:center;}
   .mpl-cluster{font-size:11px;color:var(--muted);}
@@ -202,11 +226,11 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .acc-group{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:6px;}
   .acc-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;}
   .acc-group-name{font-size:13px;font-weight:500;color:var(--text);}
-  .acc-pct{font-size:13px;font-weight:600;font-family:var(--mono);}
+  .acc-pct{font-size:13px;font-weight:600;font-family:var(--font);}
   .acc-body{border-top:1px solid var(--border);padding:4px 0;}
   .acc-cluster{font-size:12px;color:var(--text);min-width:110px;}
   .acc-cells{display:flex;gap:6px;flex-wrap:wrap;}
-  .acc-cell{font-size:11px;font-family:var(--mono);padding:2px 7px;border-radius:4px;white-space:nowrap;cursor:pointer;}
+  .acc-cell{font-size:11px;font-family:var(--font);padding:2px 7px;border-radius:4px;white-space:nowrap;cursor:pointer;}
   .acc-cell.red{background:rgba(255,90,90,0.15);color:var(--red);}
   .acc-cell.amber{background:rgba(255,170,59,0.15);color:var(--amber);}
   .acc-cell.green{background:rgba(61,204,122,0.12);color:var(--green);}
@@ -219,19 +243,24 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.138</span>
-    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" style="margin-left:4px">☀ светлая</button>
-    <button class="reset-btn" onclick="cloudStatusClick()" id="cloud-status" title="Синхронизация с Google Диском: нажми, чтобы проверить" style="font-family:var(--mono);font-size:11px">☁</button>
-    <button class="theme-btn" onclick="togglePackRules()" title="Коробки, варианты укладки, названия для упаковщиков">⚙ настройки</button>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.139</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
         <button class="period-tab" onclick="setPeriod(14)">14 дн</button>
         <button class="period-tab active" onclick="setPeriod(28)">28 дн</button>
       </div>
-      <span id="file-date" style="font-family:var(--mono);font-size:11px;color:var(--muted)"></span>
-      <button class="reset-btn" id="stocks-btn" onclick="ozonLoadStocks()" title="Взять остатки и продажи прямо из Ozon вместо выгрузки файла">⟳ данные Ozon</button>
-      <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку с покрытием кластеров">↑ свежий файл</button>
+      <button class="reset-btn" id="stocks-btn" onclick="ozonLoadStocks()" title="Взять остатки и продажи прямо из Ozon вместо выгрузки файла">⟳ обновить</button>
+    </div>
+    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" title="Переключить тему">☀</button>
+    <div class="hmenu">
+      <button class="theme-btn hmenu-btn" onclick="toggleHeaderMenu(event)" title="ещё">⋯</button>
+      <div class="hmenu-pop" id="hmenu-pop">
+        <button onclick="togglePackRules();closeHeaderMenu()">⚙ Коробки и укладки</button>
+        <button onclick="resetDashboard();closeHeaderMenu()">↑ Загрузить свежий файл</button>
+        <button onclick="cloudStatusClick()" title="Проверить, что состояние сохраняется на Google Диск">☁ Синхронизация<span id="cloud-status" style="display:block;font-size:11px;color:var(--muted);margin-top:2px"></span></button>
+        <div class="hmenu-foot"><span id="file-date"></span></div>
+      </div>
     </div>
   </header>
 
@@ -261,7 +290,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
       <button class="period-tab" id="upload-api-btn" onclick="ozonLoadStocks()" title="Взять остатки и продажи прямо из Ozon — файл не нужен">⟳ взять данные из Ozon</button>
     </div>
     <div id="upload-cancel" style="display:none;text-align:center;margin-top:12px">
-      <span onclick="cancelUpload()" style="cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--muted)">← вернуться к дашборду</span>
+      <span onclick="cancelUpload()" style="cursor:pointer;font-family:var(--font);font-size:12px;color:var(--muted)">← вернуться к дашборду</span>
     </div>
   </div>
 
@@ -297,7 +326,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
             <button class="period-tab speriod" onclick="setSalesPeriod(14)">14 дн</button>
             <button class="period-tab speriod" onclick="setSalesPeriod(7)">7 дн</button>
           </div>
-          <label style="display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer">
+          <label style="display:flex;align-items:center;gap:6px;font-family:var(--font);font-size:11px;color:var(--muted);cursor:pointer">
             <input type="checkbox" id="show-cancels" onchange="toggleCancels(this.checked)" style="cursor:pointer">показать отмены
           </label>
         </div>
@@ -312,7 +341,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <div id="log-section" style="display:none;margin-top:2rem">
     <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleLog()">
       <div class="section-label" style="margin-top:0;margin-bottom:0">Лог загрузок</div>
-      <span id="log-toggle-icon" style="font-family:var(--mono);font-size:12px;color:var(--muted)">▸ показать</span>
+      <span id="log-toggle-icon" style="font-family:var(--font);font-size:12px;color:var(--muted)">▸ показать</span>
     </div>
     <div id="log-list" style="display:none;flex-direction:column;gap:6px;margin-top:10px;"></div>
   </div>
@@ -413,14 +442,14 @@ function boxTypeFormHtml(){
   const existing=BOX_TYPES.map(t=>{
     const arts=(t.articles||[]).map(a=>artName(a)).join(', ')||'—';
     return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">
-      <span style="font-family:var(--mono);font-size:12px"><b>${t.name}</b> <span style="color:var(--muted)">${arts}</span></span>
+      <span style="font-family:var(--font);font-size:12px"><b>${t.name}</b> <span style="color:var(--muted)">${arts}</span></span>
       <button class="adj-del" title="удалить тип" onclick="deleteBoxType('${t.id}')">×</button>
     </div>`;
   }).join('');
   // Чекбоксы артикулов: показываем все, помечаем текущую привязку типа
   const checks=ALL_ARTICLES.map(a=>{
     const cur=BOX_TYPE[a]?` <span style="color:var(--muted)">(${(BOX_META[BOX_TYPE[a]]||{}).name||''})</span>`:'';
-    return `<label style="display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12px;margin:2px 10px 2px 0;cursor:pointer">
+    return `<label style="display:inline-flex;align-items:center;gap:5px;font-family:var(--font);font-size:12px;margin:2px 10px 2px 0;cursor:pointer">
       <input type="checkbox" class="new-box-art" value="${a}" style="accent-color:var(--accent)">${artName(a)}${cur}</label>`;
   }).join('');
   return `<div class="block" style="padding:0.75rem 1.25rem;margin-bottom:1rem">
@@ -428,7 +457,7 @@ function boxTypeFormHtml(){
     ${existing}
     <div style="margin-top:12px;font-size:12px;color:var(--muted)">Новый тип коробки:</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0">
-      <input type="text" id="new-box-name" placeholder="название (напр. Коробки для 7 см)" style="flex:1;min-width:200px;padding:5px 8px;font-family:var(--mono);font-size:12px">
+      <input type="text" id="new-box-name" placeholder="название (напр. Коробки для 7 см)" style="flex:1;min-width:200px;padding:5px 8px;font-family:var(--font);font-size:12px">
     </div>
     <div style="margin:6px 0">Что паковать в этот тип:<br>${checks}</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Отмеченные артикулы переедут в новый тип из старого (один артикул — одна коробка).</div>
@@ -952,11 +981,11 @@ async function sheetAutoSend(){
 }
 function cloudWhereHtml(){
   const drive=!!getSheetCfg();
-  const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
-  return `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  const btn='font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
+  return `<div style="font-family:var(--font);font-size:12px;color:var(--muted);margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <span>состояние дашборда: <span style="color:${drive?'var(--green)':'var(--amber)'}">${drive?'файл на Google Диске':'не синхронизируется — данные только в этом браузере'}</span></span>
     ${drive?`<button style="${btn}" onclick="checkDrive()">проверить хранилище</button>`:''}
-    <span id="drive-check" style="font-family:var(--mono);font-size:12px"></span></div>`;
+    <span id="drive-check" style="font-family:var(--font);font-size:12px"></span></div>`;
 }
 // Сохраняем и тут же читаем обратно: видно, реально ли файл на Диске обновился.
 async function checkDrive(){
@@ -984,10 +1013,10 @@ async function checkDrive(){
   }catch(e){ say('ошибка: '+e.message,'var(--red)'); }
 }
 function sheetCfgHtml(){
-  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
-  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 8px';
+  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:6px 8px';
   const cfg=getSheetCfg();
-  if(cfg) return `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+  if(cfg) return `<div style="font-family:var(--font);font-size:12px;color:var(--muted);margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span>Google Таблица: <span style="color:var(--green)">подключена</span></span>
       <button style="${btn};color:var(--muted)" onclick="forgetSheetCfg()">отключить</button></div>`;
   return `<details style="margin-top:14px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Google Таблица · учёт отгрузок (не настроена)</summary>
@@ -1001,11 +1030,11 @@ function sheetCfgHtml(){
     </div></details>`;
 }
 function sheetBtnHtml(orderId){
-  const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
+  const btn='font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   if(!getSheetCfg())return '';
   const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
   const st=sheetState&&String(sheetState.orderId)===String(orderId)?sheetState:null;
-  if(st&&st.busy)return `<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(st.msg)}</span>`;
+  if(st&&st.busy)return `<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(st.msg)}</span>`;
   const sentOrders=(getOzonCache().sheetSentOrders)||{};
   const sent=ours.length?ours.every(a=>a.sheetSentAt):!!sentOrders[String(orderId)];
   const dated=ours.length?ours.every(a=>a.sheetDateAt):false;
@@ -1418,7 +1447,7 @@ async function ozonCancelOrder(orderId){
   redraw();
 }
 function ozonOrderActions(orderId){
-  const btn='font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
+  const btn='font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
   const mine=ours.length>0;
   const cargoSent=mine&&ours.every(a=>a.cargoSentAt);
@@ -1427,7 +1456,7 @@ function ozonOrderActions(orderId){
   const ls=ozonLabelState&&String(ozonLabelState.orderId)===String(orderId)?ozonLabelState:null;
   const parts=[];
   // Грузоместа уходят сами при создании заявки: кнопка нужна, только если не дошли.
-  if(cs&&cs.busy) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(cs.msg||'…')}</span>`);
+  if(cs&&cs.busy) parts.push(`<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(cs.msg||'…')}</span>`);
   else if(mine&&cargoSent) parts.push(`<span style="${ico};color:var(--green)" title="состав коробок передан">▣</span>`);
   else if(mine) parts.push(`<button style="${ico};color:var(--red)" title="состав коробок не передан — нажми, чтобы передать" onclick="ozonSendCargoes('${String(orderId)}')">▣</button>`);
   // Отменить можно, только пока Ozon не принял коробки: дальше это уже не наша история.
@@ -1435,11 +1464,11 @@ function ozonOrderActions(orderId){
   const st=String(ord.state||'').replace(/^ORDER_STATE_/,'');
   const cancelable=!OZON_SHIPPED.includes(st)&&st!=='CANCELLED';
   const xs=ozonCancelState&&String(ozonCancelState.orderId)===String(orderId)?ozonCancelState:null;
-  if(xs&&xs.busy) parts.push(`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(xs.msg||'…')}</span>`);
+  if(xs&&xs.busy) parts.push(`<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(xs.msg||'…')}</span>`);
   else if(cancelable) parts.push(`<button style="${ico};color:var(--muted)" title="отменить заявку и вернуть коробки в «упаковано»" onclick="ozonCancelOrder('${String(orderId)}')">✕</button>`);
   parts.push(sheetBtnHtml(orderId));
   parts.push(ls&&ls.busy
-    ?`<span style="font-family:var(--mono);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
+    ?`<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
     :`<button style="${btn};color:var(--accent)" onclick="ozonLabels('${String(orderId)}')">этикетки</button>`);
   const msg=[xs&&xs.error?'<span style="color:var(--red)">'+escHtml(xs.error)+'</span>':'',
              xs&&!xs.busy&&xs.msg?'<span style="color:var(--green)">'+escHtml(xs.msg)+'</span>':'',
@@ -1447,7 +1476,7 @@ function ozonOrderActions(orderId){
              cs&&!cs.busy&&cs.msg?'<span style="color:var(--green)">'+escHtml(cs.msg)+'</span>':'',
              ls&&ls.error?'<span style="color:var(--red)">'+escHtml(ls.error)+'</span>':'',
              ls&&!ls.busy&&ls.msg?'<span style="color:var(--green)">'+escHtml(ls.msg)+'</span>':''].filter(Boolean).join(' · ');
-  return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${parts.join('')}</div>${msg?`<div style="font-family:var(--mono);font-size:11px;margin-top:4px">${msg}</div>`:''}`;
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${parts.join('')}</div>${msg?`<div style="font-family:var(--font);font-size:11px;margin-top:4px">${msg}</div>`:''}`;
 }
 
 // ===== СОЗДАНИЕ ЗАЯВОК НА ПОСТАВКУ =====
@@ -1692,31 +1721,31 @@ async function ozonCreateSupply(){
 }
 
 function ozonSupplyHtml(){
-  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
   const groups=packedByCluster();
   const d=ozonDraft, sel=ozonSelected();
   const type=ozonSupplyType(), dropoff=getOzonDropoff(), points=getOzonCache().dropoffs||[];
   const tbtn=(t,label)=>`<button style="${btn};${type===t?'color:var(--accent);border-color:var(--accent)':'color:var(--muted)'}" onclick="setOzonSupplyType('${t}')">${label}</button>`;
   const typeRow=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px">
-      <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">тип поставки:</span>
+      <span style="font-size:12px;color:var(--muted);font-family:var(--font)">тип поставки:</span>
       ${tbtn('CROSSDOCK','кросс-докинг')}${tbtn('DIRECT','напрямую на склад')}
-      ${type==='CROSSDOCK'?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-left:6px">пункт отгрузки:</span>
+      ${type==='CROSSDOCK'?`<span style="font-size:12px;color:var(--muted);font-family:var(--font);margin-left:6px">пункт отгрузки:</span>
         ${dropoff&&!ozonDropoffEdit
-          ?`<span style="font-family:var(--mono);font-size:12px;color:var(--green)">${escHtml(dropoff.name)}</span>
-            <span style="font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleDropoffEdit()">сменить</span>`
-          :`<input id="ozon-dropoff-search" value="${escHtml(ozonDropoffQuery)}" placeholder="название пункта, напр. ТАГАНРОГ_213" onkeydown="if(event.key==='Enter')ozonSearchDropoffs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:5px 8px;width:220px">
+          ?`<span style="font-family:var(--font);font-size:12px;color:var(--green)">${escHtml(dropoff.name)}</span>
+            <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleDropoffEdit()">сменить</span>`
+          :`<input id="ozon-dropoff-search" value="${escHtml(ozonDropoffQuery)}" placeholder="название пункта, напр. ТАГАНРОГ_213" onkeydown="if(event.key==='Enter')ozonSearchDropoffs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:5px 8px;width:220px">
             <button style="${btn};color:var(--accent)" onclick="ozonSearchDropoffs()">найти</button>`}`:''}
     </div>
     ${type==='CROSSDOCK'&&ozonDropoffEdit&&points.length?`<div style="margin:-4px 0 10px">
       ${points.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid var(--border)">
-        <span style="font-family:var(--mono);font-size:12px">${escHtml(p.name)} <span style="color:var(--muted)">${escHtml(p.address||'')}</span></span>
+        <span style="font-family:var(--font);font-size:12px">${escHtml(p.name)} <span style="color:var(--muted)">${escHtml(p.address||'')}</span></span>
         <button style="${btn};color:${dropoff&&String(dropoff.id)===String(p.id)?'var(--green)':'var(--accent)'}" onclick="setOzonDropoff(${p.id})">${dropoff&&String(dropoff.id)===String(p.id)?'выбран':'выбрать'}</button>
       </div>`).join('')}</div>`:''}`;
 
   const errs=d&&d.errors.length
-    ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">${d.errors.map(escHtml).join('<br>')}</div>`:'';
+    ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--font);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">${d.errors.map(escHtml).join('<br>')}</div>`:'';
   const rejected=d&&(d.rejected||[]).length
-    ?`<div style="background:var(--amber-bg);color:var(--amber);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">Ozon не принимает:<br>${d.rejected.map(r=>escHtml(r.name)+' — '+escHtml(r.reasons)).join('<br>')}</div>`:'';
+    ?`<div style="background:var(--amber-bg);color:var(--amber);font-family:var(--font);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">Ozon не принимает:<br>${d.rejected.map(r=>escHtml(r.name)+' — '+escHtml(r.reasons)).join('<br>')}</div>`:'';
 
   let wizard='';
   if(d){
@@ -1725,15 +1754,15 @@ function ozonSupplyHtml(){
         <button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button></div>`;
     let inner='';
     if(d.stage==='draft'&&d.busy){
-      inner=`<div style="font-family:var(--mono);font-size:12px;color:var(--accent)">${escHtml(d.progress||'создаю черновик')} — жду расчёт Ozon…</div>
-        ${d.clusters.length>1?`<div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px">черновик на кластер Ozon отдаёт раз в 31 секунду, поэтому ${d.clusters.length} ${pkPlural(d.clusters.length,'кластер займёт','кластера займут','кластеров займут')} около ${Math.ceil(d.clusters.length*35/60)} мин</div>`:''}`;
+      inner=`<div style="font-family:var(--font);font-size:12px;color:var(--accent)">${escHtml(d.progress||'создаю черновик')} — жду расчёт Ozon…</div>
+        ${d.clusters.length>1?`<div style="font-family:var(--font);font-size:11px;color:var(--muted);margin-top:4px">черновик на кластер Ozon отдаёт раз в 31 секунду, поэтому ${d.clusters.length} ${pkPlural(d.clusters.length,'кластер займёт','кластера займут','кластеров займут')} около ${Math.ceil(d.clusters.length*35/60)} мин</div>`:''}`;
     }else if(d.stage==='slots'){
       const dayName=iso=>{ const dt=new Date(iso+'T00:00:00'); return ['вс','пн','вт','ср','чт','пт','сб'][dt.getDay()]+', '+String(dt.getDate()).padStart(2,'0')+'.'+String(dt.getMonth()+1).padStart(2,'0'); };
       const hhmm=iso=>{ const dt=new Date(iso); return String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); };
       const total=d.clusters.length;
       inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Выбери таймслот${d.tz?' · время '+escHtml(d.tz):''} — слоты собраны по всем ${total>1?total+' кластерам':'кластеру'}. Если у какого-то кластера выбранного слота нет, он поедет в ближайший свободный. Черновик живёт 30 минут.</div>
         ${(d.days||[]).map((day,di)=>`<div style="margin-bottom:10px">
-          <div style="font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:4px">${escHtml(dayName(day.date||day.slots[0].from.slice(0,10)))}
+          <div style="font-family:var(--font);font-size:12px;color:var(--text);margin-bottom:4px">${escHtml(dayName(day.date||day.slots[0].from.slice(0,10)))}
             <span style="color:var(--muted)">· ${day.slots.length} ${pkPlural(day.slots.length,'слот','слота','слотов')}</span></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">${day.slots.map((s,si)=>{
             const n=(s.have||[]).length, all=n>=total;
@@ -1742,15 +1771,15 @@ function ozonSupplyHtml(){
           }).join('')}</div>
         </div>`).join('')||'<span style="font-size:12px;color:var(--muted)">слотов нет</span>'}`;
     }else if(d.stage==='confirm'){
-      inner=`<div style="font-family:var(--mono);font-size:12px;line-height:1.7">
+      inner=`<div style="font-family:var(--font);font-size:12px;line-height:1.7">
           слот: <b>${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}</b><br>
           заявок: <b>${d.clusters.length}</b> · ${d.clusters.map(escHtml).join(', ')}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4)" onclick="ozonCreateSupply()">создать ${d.clusters.length>1?d.clusters.length+' заявки':'заявку'} в Ozon</button>
           <button style="${btn};color:var(--muted)" onclick="ozonDraft.stage='slots';redraw()">← другой слот</button></div>`;
     }else if(d.stage==='running'||d.stage==='done'){
-      inner=`<div id="ozon-wait" style="font-family:var(--mono);font-size:12px;color:var(--accent);min-height:16px"></div>
-      <div style="font-family:var(--mono);font-size:12px;line-height:1.8">
+      inner=`<div id="ozon-wait" style="font-family:var(--font);font-size:12px;color:var(--accent);min-height:16px"></div>
+      <div style="font-family:var(--font);font-size:12px;line-height:1.8">
         ${(d.results||[]).map(r=>`<div>
           ${r.status==='ok'?'<span style="color:var(--green)">✓</span>':r.status==='err'?'<span style="color:var(--red)">✕</span>':'<span style="color:var(--accent)">…</span>'}
           <b>${escHtml(r.cluster)}</b>
@@ -1774,7 +1803,7 @@ function ozonSupplyHtml(){
     const on=sel.includes(g.cluster), cid=ozonClusterId(g.cluster);
     const items=Object.entries(g.byArticle).map(([a,q])=>escHtml(artName(a))+' '+q).join(' · ');
     return `<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer">
-      <span style="font-family:var(--mono);font-size:12px;display:flex;align-items:center;gap:8px">
+      <span style="font-family:var(--font);font-size:12px;display:flex;align-items:center;gap:8px">
         <input type="checkbox" ${on?'checked':''} onchange="ozonToggleCluster(&quot;${escHtml(g.cluster)}&quot;)" style="accent-color:var(--accent);cursor:pointer">
         <b>${escHtml(g.cluster)}</b> <span style="color:var(--green)">${g.total} шт</span>
         <span style="color:var(--muted)">${items}</span>${cid?'':'<span style="color:var(--amber)">кластер не сопоставлен</span>'}</span>
@@ -1784,7 +1813,7 @@ function ozonSupplyHtml(){
   return `<div style="font-size:12px;color:var(--muted);margin:14px 0 4px">Готово к отгрузке · упаковано и ждёт заявки</div>
     ${typeRow}
     ${wizard}
-    ${rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);padding:4px 0">нет упакованных отправок — отметь их значком 📦 в списке отправок</div>'}
+    ${rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--font);padding:4px 0">нет упакованных отправок — отметь их значком 📦 в списке отправок</div>'}
     ${groups.length&&(!d||d.stage==='done')?`<button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4);margin-top:10px" onclick="ozonStartDraft()">создать ${sel.length>1?sel.length+' заявки одним слотом':'заявку'}</button>`:''}`;
 }
 
@@ -1833,9 +1862,9 @@ function storageBlockHtml(){
   const st=storagePersisted===true?'<span style="color:var(--green)">защищено от очистки</span>'
     :storagePersisted===false?'<span style="color:var(--amber)">обычное — браузер может стереть при нехватке места</span>'
     :'<span style="color:var(--muted)">неизвестно</span>';
-  const b='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const b='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
   return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-    <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px">Хранилище браузера: ${st}</div>
+    <div style="font-family:var(--font);font-size:12px;color:var(--muted);margin-bottom:8px">Хранилище браузера: ${st}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button style="${b}" onclick="downloadBackup()" title="Ключи, отправки, коробки, настройки и загруженные данные одним файлом">скачать резервную копию</button>
       <button style="${b}" onclick="document.getElementById('backup-file').click()">восстановить из файла</button>
@@ -1849,10 +1878,10 @@ function ozonPanelHtml(){
   const keys=getOzonKeys(), cache=getOzonCache();
   const head=`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
     <span style="cursor:pointer" onclick="toggleOzonPanel()">${open?'▾':'▸'} Ozon API · заявки на поставку</span>
-    <span style="font-size:11px;font-family:var(--mono);text-transform:none;letter-spacing:0;color:${keys?'var(--green)':'var(--muted)'}">${keys?'подключено · Client-Id '+escHtml(keys.clientId):'не подключено'}${cache.updatedAt?' · обновлено '+ozonWhen(cache.updatedAt):''}</span></div>`;
+    <span style="font-size:11px;font-family:var(--font);text-transform:none;letter-spacing:0;color:${keys?'var(--green)':'var(--muted)'}">${keys?'подключено · Client-Id '+escHtml(keys.clientId):'не подключено'}${cache.updatedAt?' · обновлено '+ozonWhen(cache.updatedAt):''}</span></div>`;
   if(!open) return head;
-  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
-  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:6px 8px';
+  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:6px 8px';
   let body;
   if(!keys){
     body=`<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px">
@@ -1865,19 +1894,19 @@ function ozonPanelHtml(){
         <input id="ozon-api-key" type="password" placeholder="Api-Key" style="${inp};width:320px">
         <button style="${btn};color:var(--green)" onclick="saveOzonKeys()">подключить</button>
       </div>
-      <div id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px"></div>
+      <div id="ozon-status" style="font-family:var(--font);font-size:12px;color:var(--muted);margin-top:8px"></div>
       ${storageBlockHtml()}`;
   }else{
     const clusters=cache.clusters||[], skus=cache.skus||{}, orders=cache.orders||[];
     const dashClusters=rawData?[...new Set(rawData.map(r=>r.cluster))].sort():[];
     const clusterRows=dashClusters.map(c=>{
       const m=clusters.find(x=>ozonNorm(x.name)===ozonNorm(c));
-      return `<div style="font-family:var(--mono);font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
+      return `<div style="font-family:var(--font);font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
         ${escHtml(c)} <span style="color:${m?'var(--green)':'var(--amber)'}">${m?'→ id '+m.id+' · складов: '+m.warehouses.length:'→ не найден у Ozon'}</span></div>`;
     }).join('');
     const skuRows=ALL_ARTICLES.map(a=>{
       const s=skus[a];
-      return `<div style="font-family:var(--mono);font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
+      return `<div style="font-family:var(--font);font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">
         ${escHtml(artName(a))} <span style="color:var(--muted)">${escHtml(a)}</span>
         <span style="color:${s?'var(--green)':'var(--amber)'}">${s?'→ SKU '+s.sku+(s.barcode?' · ШК '+escHtml(s.barcode):''):'→ не найден'}</span></div>`;
     }).join('');
@@ -1923,27 +1952,27 @@ function ozonPanelHtml(){
     // срок ключа показываем, только когда он скоро кончится
     const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
     const keyWarn=keyLeft!==null&&keyLeft<30
-      ?`<div style="font-family:var(--mono);font-size:12px;color:${keyLeft<14?'var(--red)':'var(--amber)'};margin-bottom:10px">ключ Ozon действует ещё ${keyLeft} дн — пора перевыпустить в кабинете</div>`:'';
+      ?`<div style="font-family:var(--font);font-size:12px;color:${keyLeft<14?'var(--red)':'var(--amber)'};margin-bottom:10px">ключ Ozon действует ещё ${keyLeft} дн — пора перевыпустить в кабинете</div>`:'';
     const errs=(cache.errors||[]).length
-      ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.5">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
+      ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--font);font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.5">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
     body=`${errs}${keyWarn}
       ${ozonSupplyHtml()}
       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin:16px 0 4px">
         <span style="font-size:12px;color:var(--muted)">${ordersAll?'Все заявки в Ozon · '+orders.length
           :'Готовы к отгрузке · '+shownOrders.length+(filling?` <span style="color:var(--amber)">· ещё ${filling} в заполнении</span>`:'')}</span>
-        <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleAllOrders()">${ordersAll?'только готовые':'показать все ('+orders.length+')'}</span></div>
+        <span style="font-size:11px;font-family:var(--font);color:var(--accent);cursor:pointer" onclick="toggleAllOrders()">${ordersAll?'только готовые':'показать все ('+orders.length+')'}</span></div>
       ${pickedIds.length?`<div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(pickedIds))})">⬇ этикетки одним PDF · ${pickedIds.length} ${pkPlural(pickedIds.length,'заявка','заявки','заявок')}</button>
-        <span id="labels-all" style="font-family:var(--mono);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
+        <span id="labels-all" style="font-family:var(--font);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
       <div class="table-wrap" style="margin-bottom:14px"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedIds.length===shownIds.length&&shownIds.length?'checked':''} title="выбрать все" onchange="ozonToggleAllPicked(${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th>Кластер</th><th>Что внутри</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       ${sheetCfgHtml()}${cloudWhereHtml()}
       <details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Подключение и справочники</summary>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0">
           <button style="${btn};color:var(--accent)" onclick="ozonRefresh()">⟳ обновить данные</button>
           <button style="${btn};color:var(--muted)" onclick="forgetOzonKeys()">отключить ключ</button>
-          <span id="ozon-status" style="font-family:var(--mono);font-size:12px;color:var(--muted)">${cache.updatedAt?'обновлено '+ozonWhen(cache.updatedAt):'данные ещё не загружены'}</span>
+          <span id="ozon-status" style="font-family:var(--font);font-size:12px;color:var(--muted)">${cache.updatedAt?'обновлено '+ozonWhen(cache.updatedAt):'данные ещё не загружены'}</span>
         </div>
-        <div style="font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:8px">роли ключа: ${(cache.roles||[]).length?(cache.roles||[]).map(r=>escHtml(r.name)).join(', '):'—'}${cache.keyExpiresAt?' · действует до '+ozonWhen(cache.keyExpiresAt):''}</div>
+        <div style="font-family:var(--font);font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:8px">роли ключа: ${(cache.roles||[]).length?(cache.roles||[]).map(r=>escHtml(r.name)).join(', '):'—'}${cache.keyExpiresAt?' · действует до '+ozonWhen(cache.keyExpiresAt):''}</div>
         <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Кластеры дашборда ↔ кластеры Ozon (у Ozon: ${clusters.length})</summary><div style="margin-top:6px">${clusterRows||'<span style="font-size:12px;color:var(--muted)">нет данных файла</span>'}</div></details>
         <details><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Товары ↔ SKU Ozon (найдено ${Object.keys(skus).length} из ${ALL_ARTICLES.length})</summary><div style="margin-top:6px">${skuRows}</div></details>
         ${storageBlockHtml()}
@@ -2092,9 +2121,9 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   const total=clusters.length;
   if(!total)return '';
   const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span style="font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
+      <span style="font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
         <span style="color:var(--muted)">· ${period} дней · все товары</span></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
+      <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
     </div>`;
   const stat=art=>{
     const rows=data.filter(r=>r.article===art&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)&&r.cluster!==LEFTOVER_CLUSTER);
@@ -2119,16 +2148,20 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   if(ringsCollapsed){
     const holes=ALL_ARTICLES.filter(a=>stat(a).miss.length).length;
     return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
-      <div style="font-family:var(--mono);font-size:12px;margin-top:6px;color:${holes?'var(--amber)':'var(--green)'}">${holes?`есть не во всех кластерах: ${holes} ${pkPlural(holes,'товар','товара','товаров')}`:'везде всё есть'}</div></div>`;
+      <div style="font-family:var(--font);font-size:12px;margin-top:6px;color:${holes?'var(--amber)':'var(--green)'}">${holes?`есть не во всех кластерах: ${holes} ${pkPlural(holes,'товар','товара','товаров')}`:'везде всё есть'}</div></div>`;
   }
   const R=17, C=2*Math.PI*R;
-  const tiles=ALL_ARTICLES.map(art=>{
+  // Товар, которого нет в выгрузке, не продаётся и не лежит на складе: тревожиться не о чем,
+  // поэтому он серый и спрятан под «показать ещё», а не кричит красным наравне с дырами.
+  const hasData=art=>{ const s=stat(art); return s.sales>0||s.fbo>0||s.transit>0||s.have.length||s.coming.length; };
+  const tile=art=>{
     const s=stat(art);
     // Товар без продаж процентом не описывается: показываем прочерк, но если его нет нигде —
     // это как раз то, что нужно заметить, и кольцо краснеет.
+    // Красный бережём для настоящей дыры: товар продаётся, а запаса нет.
     const empty=!s.have.length&&!s.coming.length;
     const pct=s.pct;
-    const col=pct===null?(empty?'var(--red)':'var(--muted)'):`var(--${pctClass(pct)})`;
+    const col=pct===null?(empty&&s.sales>0?'var(--red)':'var(--muted)'):`var(--${pctClass(pct)})`;
     const label=pct===null?(empty?'нет':'—'):Math.round(pct)+'%';
     const arc=pct===null?0:C*Math.min(100,pct)/100;                       // вся дуга — с учётом плана
     const arcNow=s.pctNow===null?0:C*Math.min(100,s.pctNow)/100;          // плотная часть — что уже на складе
@@ -2144,7 +2177,8 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
         <text x="23" y="27" text-anchor="middle" font-size="${label.length>3?10:12}" font-family="var(--mono)" fill="${col}">${label}</text>
       </svg>
       <div class="lf-name" style="margin-top:4px;${focus?'':'color:var(--muted)'}">${artName(art)}</div>
-      <div class="lf-qty" style="color:${s.miss.length?'var(--amber)':'var(--muted)'}">${s.have.length}${s.coming.length?`<span style="opacity:0.55">+${s.coming.length}</span>`:''}/${total}</div>
+      <div class="lf-qty" style="color:var(--muted)">${s.need>0?`${s.covered} из ${s.need} шт`:'нет продаж'}</div>
+      ${s.miss.length?`<div style="font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:1px">нет в ${s.miss.length} ${pkPlural(s.miss.length,'кластере','кластерах','кластерах')}</div>`:''}
       ${open?`<div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.45;text-align:left">
         ${s.sales>0?`${s.sales.toFixed(1)} шт/день · покрыто ${s.covered} из ${s.need}<br>`:''}
         ${s.fbo} на складе · ${s.transit} в пути и в плане
@@ -2152,20 +2186,25 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
         ${s.coming.length?`<br><span style="color:var(--green)">закрыто отправкой: ${s.coming.map(escHtml).join(', ')}</span>`:''}
       </div>`:''}
     </div>`;
-  }).join('');
+  };
+  const withData=ALL_ARTICLES.filter(hasData), noData=ALL_ARTICLES.filter(a=>!hasData(a));
   return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
-    <div class="lf-grid">${tiles}</div></div>`;
+    <div class="lf-grid">${withData.map(tile).join('')}</div>
+    ${noData.length?`<details style="margin-top:10px">
+      <summary style="cursor:pointer;font-size:11px;color:var(--muted)">ещё ${noData.length} ${pkPlural(noData.length,'товар','товара','товаров')} без данных</summary>
+      <div class="lf-grid" style="opacity:0.6">${noData.map(tile).join('')}</div>
+    </details>`:''}</div>`;
 }
 function leftoversTilesHtml(){
   const sum=leftoversSummary();
   const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span style="font-family:var(--mono);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleLeftovers()">${leftoversCollapsed?'▸':'▾'} Остатки
+      <span style="font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleLeftovers()">${leftoversCollapsed?'▸':'▾'} Остатки
         <span style="color:var(--muted)">· без большой коробки, на полку</span></span>
-      <span style="font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleLeftovers()">${leftoversCollapsed?'развернуть':'свернуть'}</span>
+      <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleLeftovers()">${leftoversCollapsed?'развернуть':'свернуть'}</span>
     </div>`;
   if(leftoversCollapsed){
     return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
-      <div style="font-family:var(--mono);font-size:12px;margin-top:6px">${sum?`<span style="color:var(--green)">${escHtml(sum)}</span>`:'<span style="color:var(--muted)">не запланированы</span>'}</div></div>`;
+      <div style="font-family:var(--font);font-size:12px;margin-top:6px">${sum?`<span style="color:var(--green)">${escHtml(sum)}</span>`:'<span style="color:var(--muted)">не запланированы</span>'}</div></div>`;
   }
   const tiles=ALL_ARTICLES.map(art=>{
     const planned=plannedLeftover(art), fid=`${art.replace(/\W/g,'_')}_ostatki`;
@@ -2173,8 +2212,8 @@ function leftoversTilesHtml(){
       <div class="lf-name">${artName(art)}</div>
       <div class="lf-qty">${planned?planned+' шт':'+'}</div>
       <div id="mpl-form-${fid}" data-article="${art}" data-cluster="${LEFTOVER_CLUSTER}" onclick="event.stopPropagation()" style="display:none;margin-top:6px;gap:4px;align-items:center;justify-content:center">
-        <input type="number" placeholder="шт" min="1" style="width:52px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 6px">
-        <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:4px 8px;cursor:pointer">✓</button>
+        <input type="number" placeholder="шт" min="1" style="width:52px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:4px 6px">
+        <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--font);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:4px 8px;cursor:pointer">✓</button>
       </div>
     </div>`;
   }).join('');
@@ -2650,7 +2689,7 @@ function packRulesHtml(){
   const d=packDraft;
   const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:6px 8px;min-width:0;width:100%';
   const del='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:14px;padding:4px 0;width:100%';
-  const head='font-size:11px;color:var(--muted);font-family:var(--mono)';
+  const head='font-size:11px;color:var(--muted);font-family:var(--font)';
   const opt=(v,cur,t)=>`<option value="${escHtml(v)}"${v===cur?' selected':''}>${escHtml(t)}</option>`;
   const boxRows=d.boxes.map((b,i)=>`<div class="pk-ctor-row pk-ctor-box">
       <input style="${inp}" value="${escHtml(b.name)}" placeholder="название" oninput="pdSet('boxes',${i},'name',this.value)">
@@ -2668,11 +2707,11 @@ function packRulesHtml(){
       <button style="${del}" title="удалить вариант" onclick="pdDel('rules',${i})">×</button>
     </div>`).join('');
   const labelRows=(d.labels||[]).map((l,i)=>`<div class="pk-ctor-row pk-ctor-label">
-      <span style="font-family:var(--mono);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis">${escHtml(artName(l.article))}</span>
+      <span style="font-family:var(--font);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis">${escHtml(artName(l.article))}</span>
       <input style="${inp}" value="${escHtml(l.name)}" placeholder="${escHtml(PACK_NAMES[l.article]||artName(l.article))}" oninput="pdSet('labels',${i},'name',this.value)">
       <input style="${inp}" value="${escHtml(l.code||'')}" placeholder="${escHtml(DEFAULT_SHEET_CODES[l.article]||'')}" title="код для Google Таблицы" oninput="pdSet('labels',${i},'code',this.value)">
     </div>`).join('');
-  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 12px;cursor:pointer';
+  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 12px;cursor:pointer';
   const msgColor=packDraftMsg.startsWith('✓')?'var(--green)':'var(--red)';
   const tab=(id,label)=>`<button style="${btn};${ctorTab===id?'color:var(--accent);border-color:var(--accent)':'color:var(--muted)'}" onclick="setCtorTab('${id}')">${label}</button>`;
   return `<div>
@@ -2694,7 +2733,7 @@ function packRulesHtml(){
       <button style="${btn};margin-top:8px" onclick="pdAddBox()">＋ коробка</button>
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Чего сейчас нет под рукой. Снятая галочка убирает коробку из подсказок в списке приоритетов — на сами укладки и задание упаковщику это не влияет. Применяется сразу, отдельно от «Сохранить», и только в этом браузере.</div>
-        ${TRANSPORT_BOXES.map(b=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0;font-family:var(--mono);font-size:12px;cursor:pointer;color:${getBoxesOff().has(b.id)?'var(--muted)':'var(--text)'}">
+        ${TRANSPORT_BOXES.map(b=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0;font-family:var(--font);font-size:12px;cursor:pointer;color:${getBoxesOff().has(b.id)?'var(--muted)':'var(--text)'}">
           <input type="checkbox" ${getBoxesOff().has(b.id)?'':'checked'} onchange="toggleBoxOff('${b.id}')" style="cursor:pointer;accent-color:var(--accent)">
           ${escHtml(b.name)}</label>`).join('')}
       </div>`:''}
@@ -2744,10 +2783,10 @@ const PACK_SHEET_CSS=`<style>
 function packTaskHtml(){
   const task=buildPackTask();
   const notes=getPackNotes();
-  const btn='font-family:var(--mono);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
+  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
   let body;
   if(!task.items.length){
-    body=`<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">пока нечего паковать — запланированных отправок нет</div>`;
+    body=`<div style="font-size:12px;color:var(--muted);font-family:var(--font)">пока нечего паковать — запланированных отправок нет</div>`;
   }else{
     // Превью — живые блоки (перетаскиваются, комментарий правится прямо в блоке); PNG рисуется из тех же данных.
     const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
@@ -2767,12 +2806,12 @@ function packTaskHtml(){
           <option value="+">+ добавить…</option>
         </select>
         ${pageCount>1
-          ?`<span style="font-size:12px;color:var(--muted);font-family:var(--mono);align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button style="${btn}" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
+          ?`<span style="font-size:12px;color:var(--muted);font-family:var(--font);align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button style="${btn}" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
           :`<button style="${btn}" onclick="copyPackImage(0,this)">🖼 копировать картинку</button>`}
         <button style="${btn}" onclick="downloadPackImage()">⬇ скачать PNG${pageCount>1?` (${pageCount} шт)`:''}</button>
         <button id="pack-copy-txt" style="${btn}" onclick="copyPackText()">📋 копировать текст</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--font);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
       <div id="pack-sheet">
         <div class="pk-h1">Что пакуем</div>
         <div class="pk-sub">${packSubtitle(task,new Date())}</div>
@@ -2782,7 +2821,7 @@ function packTaskHtml(){
   }
   return `<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
       <span>📦 Упаковка</span>
-      <span style="display:flex;gap:16px;text-transform:none;letter-spacing:0;font-size:11px;font-family:var(--mono)">
+      <span style="display:flex;gap:16px;text-transform:none;letter-spacing:0;font-size:11px;font-family:var(--font)">
         <span style="color:var(--accent);cursor:pointer" onclick="togglePackRules()">⚙ коробки и укладки</span></span></div>
     <div class="block" style="padding:0.75rem 1.25rem;margin-top:0">${body}</div>`;
 }
@@ -2815,15 +2854,6 @@ const CLUSTER_GROUPS=[
   {name:'СНГ',           clusters:['Беларусь','Алматы','Астана','Азербайджан','Армения']},
 ];
 // Наценка за продажу вне локального кластера (% сверх базовой цены). Влияет на маржу: 12% > 8% > 0%.
-const CLUSTER_MARKUP={
-  'Москва, МО и Дальние регионы':8,'Ярославль':8,'Тверь':8,'Воронеж':8,'Саратов':8,
-  'Санкт-Петербург и СЗО':8,'Калининград':8,
-  'Ростов':8,'Краснодар':8,'Невинномысск':8,'Махачкала':8,
-  'Казань':8,'Уфа':8,'Самара':12,'Оренбург':12,'Пермь':12,'Екатеринбург':8,'Тюмень':8,
-  'Новосибирск':8,'Красноярск':0,'Омск':12,
-  'Дальний Восток':8,
-  'Беларусь':6,'Алматы':6,'Астана':6,'Азербайджан':0,'Армения':0,
-};
 const LS_ADJ='ozon_adjustments',LS_PREV='ozon_prev_transit',LS_LOG='ozon_load_log',LS_BOXES='ozon_boxes_log',LS_HIDDEN_GROUPS='ozon_hidden_groups',LS_HIDDEN_CLUSTERS='ozon_hidden_clusters';
 // ЛОКАЛЬНОЕ ХРАНИЛИЩЕ ГЛАВНЫХ ДАННЫХ (первый уровень, не зависит от облака/VPN).
 // Раньше rawData и salesDaily жили только в памяти + облаке — при обновлении страницы
@@ -2851,7 +2881,7 @@ function saveWarn(msg){
     el=document.createElement('div');
     el.id='save-warn';
     el.style.cssText='position:sticky;top:0;z-index:99;padding:8px 14px;background:rgba(230,169,64,0.15);'
-      +'border-bottom:1px solid rgba(230,169,64,0.4);color:var(--amber);font-family:var(--mono);font-size:12px;line-height:1.4';
+      +'border-bottom:1px solid rgba(230,169,64,0.4);color:var(--amber);font-family:var(--font);font-size:12px;line-height:1.4';
     document.body.prepend(el);
   }
   el.textContent='⚠ '+msg;
@@ -2953,22 +2983,22 @@ async function cloudStatusClick(){
   if(!getSheetCfg()){ switchView('ship'); return; }
   const back=s?s.textContent:'';
   try{
-    if(s){ s.textContent='☁ проверяю…'; s.style.color='var(--accent)'; }
+    if(s){ s.textContent='проверяю…'; s.style.color='var(--accent)'; }
     await saveToCloud();
     const read=await driveState('get');
     const size=read.data?JSON.stringify(read.data).length:0;
-    if(s){ s.textContent='☁ Диск ✓ '+(size/1024).toFixed(0)+' КБ'; s.style.color='var(--green)'; }
+    if(s){ s.textContent='сохранено ✓ '+(size/1024).toFixed(0)+' КБ'; s.style.color='var(--green)'; }
     setTimeout(()=>{ if(s){ s.textContent=back; s.style.color='var(--muted)'; } },4000);
   }catch(e){
-    if(s){ s.textContent='☁ ошибка'; s.style.color='var(--red)'; }
+    if(s){ s.textContent='ошибка записи'; s.style.color='var(--red)'; }
     alert('Синхронизация: '+e.message);
   }
 }
 function cloudStatusText(){
   const s=document.getElementById('cloud-status');
   if(!s)return;
-  if(getSheetCfg()){ s.textContent='☁ Диск'; s.style.color='var(--muted)'; }
-  else { s.textContent='☁ настроить'; s.style.color='var(--amber)'; }
+  if(getSheetCfg()){ s.textContent='на Google Диске'; s.style.color='var(--muted)'; }
+  else { s.textContent='не настроена'; s.style.color='var(--amber)'; }
 }
 
 async function saveToCloud(){
@@ -3016,13 +3046,13 @@ async function saveToCloud(){
     catch(e){ resp={ok:false,status:'Диск',text:async()=>e.message}; }
     const s=document.getElementById('cloud-status');
     if(resp.ok){
-      if(s){s.textContent='☁ Диск ✓';s.style.color='var(--green)';}
+      if(s){s.textContent='сохранено ✓';s.style.color='var(--green)';}
       localStorage.setItem('ozon_local_saved_at',record.savedAt); // локал и облако теперь в синхроне
       let msg=`Сохранено в облако: ${sizeKB} КБ | поставки: ${record.rawDataC?record.rawDataC.length+' строк':'нет'} | продажи: ${record.salesDailyC?Object.keys(record.salesDailyC).length+' дней':'нет'}`;
       cloudDiag(msg);
     }else{
       const txt=await resp.text().catch(()=>'');
-      if(s){s.textContent=`☁ ошибка ${resp.status}`;s.style.color='var(--red)';}
+      if(s){s.textContent=`ошибка ${resp.status}`;s.style.color='var(--red)';}
       cloudDiag(`ОШИБКА сохранения: HTTP ${resp.status}, размер ${sizeKB} КБ. ${txt.slice(0,120)}`);
     }
   }catch(e){ cloudDiag('ОШИБКА сети при сохранении: '+e.message); console.log('Ошибка сохранения:',e.message);}
@@ -3139,7 +3169,7 @@ function cloudDiag(msg){
   if(!el){
     el=document.createElement('div');
     el.id='cloud-diag';
-    el.style.cssText='font-family:var(--mono);font-size:11px;color:var(--red);padding:6px 12px;margin:8px 0;background:var(--red-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer';
+    el.style.cssText='font-family:var(--font);font-size:11px;color:var(--red);padding:6px 12px;margin:8px 0;background:var(--red-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer';
     el.title='нажми, чтобы скрыть';
     el.onclick=()=>el.remove();
     const tabs=document.getElementById('main-tabs');
@@ -3316,13 +3346,13 @@ function adjRowsHtml(){
   // Списанные («приехало на склад») раньше исчезали совсем, и проверить их было нельзя.
   // Теперь они свёрнуты внизу, и любую можно вернуть в учёт одной кнопкой.
   const goneHtml=gone.length?`<details style="margin-top:10px">
-    <summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--muted)">приехало на склад · ${gone.length} — списаны из учёта</summary>
+    <summary style="cursor:pointer;font-family:var(--font);font-size:11px;color:var(--muted)">приехало на склад · ${gone.length} — списаны из учёта</summary>
     <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
-      ${gone.slice().reverse().map(a=>`<div style="display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;color:var(--muted)">
+      ${gone.slice().reverse().map(a=>`<div style="display:flex;align-items:center;gap:10px;font-family:var(--font);font-size:12px;color:var(--muted)">
         <span>${escHtml(artName(a.article))} → ${escHtml(a.cluster)} · ${a.qty} шт</span>
         <span style="font-size:10px">${a.arrivedAt?ozonWhen(a.arrivedAt):''}</span>
         <button onclick="unarriveAdjustment(${a.origIdx})" title="вернуть в учёт покрытия"
-          style="font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);color:var(--accent);border-radius:4px;padding:2px 8px;cursor:pointer">вернуть</button>
+          style="font-family:var(--font);font-size:11px;background:none;border:1px solid var(--border);color:var(--accent);border-radius:4px;padding:2px 8px;cursor:pointer">вернуть</button>
       </div>`).join('')}
     </div></details>`:'';
   if(!adjs.length) return goneHtml;
@@ -3332,9 +3362,9 @@ function adjRowsHtml(){
     const textStyle=(stage==='sent'?'text-decoration:line-through;opacity:0.45':'')+dim;
     const qtyStyle=stage==='sent'?'text-decoration:line-through;opacity:0.45':'color:var(--green)';
     const badge=stage==='packed'
-      ?`<span style="font-size:10px;font-family:var(--mono);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
-      :stage==='sent'?`<span style="font-size:10px;font-family:var(--mono);color:var(--muted)">${a.arrived?'приехало на склад':'отгружено'}</span>`:'';
-    const who=stage==='plan'?'':`<select title="кто паковал" onchange="setAdjPacker(${i},this.value)" style="font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:${a.packedBy?'var(--text)':'var(--muted)'};padding:1px 4px;cursor:pointer">
+      ?`<span style="font-size:10px;font-family:var(--font);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
+      :stage==='sent'?`<span style="font-size:10px;font-family:var(--font);color:var(--muted)">${a.arrived?'приехало на склад':'отгружено'}</span>`:'';
+    const who=stage==='plan'?'':`<select title="кто паковал" onchange="setAdjPacker(${i},this.value)" style="font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:${a.packedBy?'var(--text)':'var(--muted)'};padding:1px 4px;cursor:pointer">
         <option value="" ${!a.packedBy?'selected':''}>— кто паковал</option>
         ${getPackers().map(p=>`<option value="${escHtml(p)}" ${a.packedBy===p?'selected':''}>${escHtml(p)}</option>`).join('')}
       </select>`;
@@ -3342,16 +3372,21 @@ function adjRowsHtml(){
     const eye=stage==='plan'
       ?`<button class="adj-del" style="color:${hid?'var(--amber)':'var(--muted)'};font-size:12px" title="${hid?'вернуть в расчёты':'скрыть: не учитывать нигде, как будто не планировали'}" onclick="toggleAdjHidden(${i})">${hid?'◌':'◉'}</button>`:'';
     const btns=stage==='plan'
-      ?`${eye}<button class="adj-del" style="color:var(--accent);opacity:0.8;font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
+      ?`${eye}<button class="adj-del" style="color:var(--accent);font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
       :stage==='packed'
-      ?`<button class="adj-del" style="color:var(--green);opacity:0.7;font-size:13px" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
+      ?`<button class="adj-del" style="color:var(--green);font-size:13px" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
       :`<button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в «упаковано»" onclick="unconfirmAdjustment(${i})">↩</button>${del(i)}`;
+    // Слева — точка состояния: план серый, упаковано синее, отгружено зелёное. По ней видно
+    // стадию, не читая подписей.
+    const dot=stage==='plan'?'var(--muted)':stage==='packed'?'var(--accent)':'var(--green)';
     return `<div class="adj-item">
-      <span style="${textStyle}">${NAMES[a.article]||a.article}</span>
-      <span style="color:var(--text);${textStyle}">→ ${a.cluster}</span>
-      <span style="font-family:var(--mono);font-size:12px;${qtyStyle};${dim}">+${a.qty} шт</span>
-      ${adjHidden(a)?`<span style="font-size:10px;font-family:var(--mono);color:var(--amber)">скрыто</span>`:''}
+      <span class="adj-dot" style="background:${dot};${dim}"></span>
+      <span style="font-weight:500;${textStyle}">${NAMES[a.article]||a.article}</span>
+      <span class="adj-where" style="${textStyle}">${a.cluster}</span>
+      <span style="font-family:var(--mono);font-size:13px;${qtyStyle};${dim}">${a.qty} шт</span>
+      ${adjHidden(a)?`<span style="font-size:11px;color:var(--amber)">скрыто</span>`:''}
       ${badge}
+      <span class="adj-spacer"></span>
       ${who}
       ${btns}
     </div>`;
@@ -3379,7 +3414,7 @@ function renderAdjList(){
   const list=document.getElementById('adj-list');
   if(!list)return;
   const rows=adjRowsHtml();
-  list.innerHTML=rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--mono)">нет поправок</div>';
+  list.innerHTML=rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--font)">нет поправок</div>';
 }
 
 // Сумма запланированных (ещё не отправленных) форм: sent !== true. Для оценки масштаба упаковки.
@@ -3396,32 +3431,8 @@ function plannedUnits(){
   return {total,byArticle};
 }
 
-// Временные исключения — в указанный период наценка заменяется на другую.
-// Когда срок истечёт — автоматически вернётся к CLUSTER_MARKUP.
-const MARKUP_EXCEPTIONS=[
-  {cluster:'Дальний Восток', markup:0, from:'2026-04-18', to:'2026-06-18'},
-  {cluster:'Воронеж',        markup:0, from:'2026-06-03', to:'2026-06-30'},
-];
-function getMarkup(cluster){
-  const today=new Date().toISOString().slice(0,10);
-  for(const ex of MARKUP_EXCEPTIONS){
-    if(ex.cluster===cluster && today>=ex.from && today<=ex.to) return ex.markup;
-  }
-  return CLUSTER_MARKUP[cluster]??null;
-}
 
 // Бейдж наценки за нелокальную доставку. 12% зелёный (маржинальнее), 0% жёлтый (без наценки).
-function markupBadge(cluster){
-  const m=getMarkup(cluster);
-  if(m===null||m===undefined)return '';
-  const isTemp=MARKUP_EXCEPTIONS.some(e=>{
-    const today=new Date().toISOString().slice(0,10);
-    return e.cluster===cluster&&today>=e.from&&today<=e.to;
-  });
-  const color=m>=12?'var(--green)':m===0?'var(--amber)':'var(--muted)';
-  const label=isTemp?`+${m}%*`:` +${m}%`;
-  return `<span style="font-size:9px;font-family:var(--mono);color:${color};margin-left:4px;opacity:0.8" title="${isTemp?'Временная акция':''}">${label}</span>`;
-}
 
 // ===== СКРЫТЫЕ ГРУППЫ И ОТДЕЛЬНЫЕ КЛАСТЕРЫ =====
 // Скрытый кластер (или вся его группа) исключается из карточек покрытия, приоритетов и тепловой карты.
@@ -3605,10 +3616,10 @@ function showInlineSend(article,cluster){
   const tr=document.createElement('tr');tr.id=safeId;
   tr.innerHTML=`<td colspan="9" style="padding:6px 16px;background:rgba(91,127,255,0.05)">
     <div style="display:flex;gap:8px;align-items:center">
-      <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">${cluster===LEFTOVER_CLUSTER?'в остатки:':'отправил:'}</span>
-      <input type="number" id="qty-${safeId}" placeholder="шт" min="1" style="width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 8px">
-      <button onclick="confirmInlineSend('${article}','${cluster}','qty-${safeId}')" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:4px 12px;cursor:pointer">сохранить</button>
-      <button onclick="document.getElementById('${safeId}').remove()" style="font-family:var(--mono);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">отмена</button>
+      <span style="font-size:12px;color:var(--muted);font-family:var(--font)">${cluster===LEFTOVER_CLUSTER?'в остатки:':'отправил:'}</span>
+      <input type="number" id="qty-${safeId}" placeholder="шт" min="1" style="width:80px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:4px 8px">
+      <button onclick="confirmInlineSend('${article}','${cluster}','qty-${safeId}')" style="font-family:var(--font);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:4px 12px;cursor:pointer">сохранить</button>
+      <button onclick="document.getElementById('${safeId}').remove()" style="font-family:var(--font);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">отмена</button>
     </div>
   </td>`;
   row.after(tr);
@@ -3705,6 +3716,10 @@ function confirmHeatmapSend(article,cluster,inputId,safeId){
 let priorityFilters = { articles: new Set(FOCUS), sortBy: 'score' };
 
 // Товары включаются только галочками «Товары в расчёте» — отдельного фильтра больше нет.
+function toggleFiltersOpen(){
+  localStorage.setItem('ozon_filters_open',JSON.stringify(lsGet('ozon_filters_open',false)!==true));
+  redraw();
+}
 function toggleArtsPanel(){
   localStorage.setItem('ozon_arts_open',JSON.stringify(lsGet('ozon_arts_open',true)===false));
   redraw();
@@ -3778,7 +3793,7 @@ function renderLog(){
         </div>`;
       }).join('');
     }
-    return `<div style="font-family:var(--mono);font-size:11px;padding:10px 14px;background:var(--bg2);border:1px solid ${border};border-radius:8px;line-height:2;color:var(--muted)">
+    return `<div style="font-family:var(--font);font-size:11px;padding:10px 14px;background:var(--bg2);border:1px solid ${border};border-radius:8px;line-height:2;color:var(--muted)">
       <div style="display:flex;gap:8px;margin-bottom:4px;border-bottom:1px solid var(--border);padding-bottom:6px">
         <span style="color:${dateCol}">файл от ${entry.reportDate||'?'}</span>
         <span style="opacity:0.5;font-size:10px">загружен ${entry.loadedAt}</span>
@@ -3901,7 +3916,7 @@ function renderBoxes(){
         return `<div class="adj-item" style="margin-top:4px;padding:6px 8px;background:rgba(91,127,255,0.08);border-radius:6px;border:1px solid rgba(91,127,255,0.2)">
           <span style="font-size:10px;color:var(--muted)">${ds}</span>
           <span style="color:var(--accent)">в пути: ${e.remaining} шт</span>
-          <button onclick="showReceiveInput(${e.ts},'${type}')" style="font-family:var(--mono);font-size:11px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:auto">пришло</button>
+          <button onclick="showReceiveInput(${e.ts},'${type}')" style="font-family:var(--font);font-size:11px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:auto">пришло</button>
           <button class="adj-del" onclick="cancelOrder(${e.ts})">×</button>
         </div>
         <div id="receive-input-${e.ts}" style="display:none">
@@ -4219,11 +4234,11 @@ function render(data){
     const pl=plannedUnits();
     const breakdown=Object.entries(pl.byArticle).map(([art,q])=>`${NAMES[art]||art}: ${q}`).join(' · ');
     const pk=packedUnits();
-    const counter=`${pl.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--green);font-weight:500;text-transform:none;letter-spacing:0">${pl.total} шт к упаковке</span>${breakdown?`<span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:8px">${breakdown}</span>`:''}`:''}${pk.total>0?`<span style="font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0;margin-left:12px">${pk.total} шт упаковано, ждёт заявки</span>`:''}`;
+    const counter=`${pl.total>0?`<span style="font-family:var(--font);font-size:12px;color:var(--green);font-weight:500;text-transform:none;letter-spacing:0">${pl.total} шт к упаковке</span>${breakdown?`<span style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-left:8px">${breakdown}</span>`:''}`:''}${pk.total>0?`<span style="font-family:var(--font);font-size:12px;color:var(--accent);font-weight:500;text-transform:none;letter-spacing:0;margin-left:12px">${pk.total} шт упаковано, ждёт заявки</span>`:''}`;
     // Скрытие нужно, когда планы уже набросаны, но смотреть хочется на «чистую» картину.
     const plans=getAdjs().filter(a=>a.sent!==true&&a.packed!==true);
     const hiddenCount=plans.filter(adjHidden).length;
-    const lnk='font-family:var(--mono);font-size:11px;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0';
+    const lnk='font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0';
     const tools=plans.length?`<span style="display:flex;gap:10px;align-items:baseline">
         ${hiddenCount<plans.length?`<span style="${lnk}" onclick="setAllAdjHidden(true)">скрыть все</span>`:''}
         ${hiddenCount?`<span style="${lnk}" onclick="setAllAdjHidden(false)">показать все (${hiddenCount})</span>`:''}
@@ -4242,20 +4257,22 @@ function render(data){
   const artsOpen=lsGet('ozon_arts_open',true)!==false;
   const chk=art=>{
     const on=!hiddenArts.has(art), noData=!artsWithData.has(art);
-    return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:12px;color:${on?'var(--text)':'var(--muted)'};opacity:${noData?0.55:1}" title="${noData?'нет данных в текущем файле':art}">
-      <input type="checkbox" ${on?'checked':''} onchange="toggleHiddenArticle('${art}')" style="cursor:pointer;accent-color:var(--accent)">
-      ${artName(art)}</label>`;
+    const style=on
+      ?'border:1px solid var(--accent);background:rgba(91,127,255,0.12);color:var(--accent)'
+      :'border:1px solid var(--border);background:none;color:var(--muted);text-decoration:line-through';
+    return `<button onclick="toggleHiddenArticle('${art}')" title="${noData?'нет данных в текущем файле':art}"
+      style="font-size:12px;padding:3px 10px;border-radius:14px;cursor:pointer;opacity:${noData?0.5:1};${style}">${artName(art)}</button>`;
   };
   const withData=ALL_ARTICLES.filter(a=>artsWithData.has(a));
   const noData=ALL_ARTICLES.filter(a=>!artsWithData.has(a));
-  html+=`<div class="section-label" style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
-    <span style="cursor:pointer" onclick="toggleArtsPanel()">${artsOpen?'▾':'▸'} Товары в расчёте</span>
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:none;letter-spacing:0">выбрано ${FOCUS.length} · с данными в файле ${withData.length}${artsOpen?'':' · '+FOCUS.map(a=>artName(a)).join(', ')}</span></div>
-  ${artsOpen?`<div class="block" style="padding:0.75rem 1.25rem;margin-bottom:1rem">
-    <div style="display:flex;gap:14px;flex-wrap:wrap">${withData.map(chk).join('')}</div>
-    ${noData.length?`<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);font-family:var(--mono)">ещё ${noData.length} без данных в файле</summary>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">${noData.map(chk).join('')}</div></details>`:''}
-  </div>`:''}`;
+  // Раньше это был отдельный блок с галочками на всю ширину. Теперь — строка чипов:
+  // смысл тот же, а места занимает одну строку, как фильтры кластеров.
+  html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 14px">
+    <span style="font-size:12px;color:var(--muted);margin-right:2px">Товары:</span>
+    ${withData.map(chk).join('')}
+    ${artsOpen&&noData.length?noData.map(chk).join(''):''}
+    ${noData.length?`<button onclick="toggleArtsPanel()" style="font-size:12px;padding:3px 10px;border-radius:14px;cursor:pointer;border:1px dashed var(--border);background:none;color:var(--muted)">${artsOpen?'скрыть':'ещё '+noData.length+' без данных'}</button>`:''}
+  </div>`;
 
   // Cards
   // Карточки процентов и кольца заполненности показывали одно и то же разными способами —
@@ -4270,31 +4287,35 @@ function render(data){
     {key:'days', label:'дней'},
   ];
 
-  const filterBar = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">сортировка:</span>
+  const clustersOff=hiddenGroups.size+hiddenClusters.size;
+  const filtersOpen=lsGet('ozon_filters_open',false)===true;
+  const filterBar = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:${filtersOpen?'10px':'14px'}">
+    <span style="font-size:12px;color:var(--muted)">сортировка:</span>
     ${sortOptions.map(o=>{
       const active=priorityFilters.sortBy===o.key;
-      return `<button onclick="setSortBy('${o.key}')" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(91,127,255,0.15)':'none'};color:${active?'var(--accent)':'var(--muted)'}">${o.label}</button>`;
+      return `<button onclick="setSortBy('${o.key}')" style="font-family:var(--font);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(91,127,255,0.15)':'none'};color:${active?'var(--accent)':'var(--muted)'}">${o.label}</button>`;
     }).join('')}
+    <button onclick="toggleFiltersOpen()" style="font-size:12px;padding:3px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:none;color:${clustersOff?'var(--amber)':'var(--muted)'};margin-left:4px">
+      ${filtersOpen?'скрыть настройку кластеров':'кластеры'+(clustersOff?': выключено '+clustersOff:'')}</button>
   </div>
-  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono)">кластеры:</span>
+  ${filtersOpen?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+    <span style="font-size:12px;color:var(--muted)">группы:</span>
     ${CLUSTER_GROUPS.map(g=>{
       const off=hiddenGroups.has(g.name);
       const style=off
         ?'border:1px solid var(--border);background:none;color:var(--muted);opacity:0.55;text-decoration:line-through'
         :'border:1px solid var(--accent);background:rgba(91,127,255,0.15);color:var(--accent)';
-      return `<button onclick="toggleHiddenGroup('${g.name}')" title="${off?'клик — включить в расчёт':'клик — скрыть из расчётов'}" style="font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;${style}">${g.name}</button>`;
+      return `<button onclick="toggleHiddenGroup('${g.name}')" title="${off?'клик — включить в расчёт':'клик — скрыть из расчётов'}" style="font-family:var(--font);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;${style}">${g.name}</button>`;
     }).join('')}
   </div>
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-    <span style="font-size:11px;color:var(--muted);font-family:var(--mono);opacity:0">кластеры:</span>
-    ${[...hiddenClusters].sort().map(c=>`<button onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт" style="font-family:var(--mono);font-size:11px;padding:3px 8px 3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);opacity:0.6;text-decoration:line-through">${c} ×</button>`).join('')}
-    <select onchange="hideCluster(this.value); this.value='';" style="font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer">
+    <span style="font-size:12px;color:var(--muted)">кластеры:</span>
+    ${[...hiddenClusters].sort().map(c=>`<button onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт" style="font-family:var(--font);font-size:11px;padding:3px 8px 3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);opacity:0.6;text-decoration:line-through">${c} ×</button>`).join('')}
+    <select onchange="hideCluster(this.value); this.value='';" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer">
       <option value="">+ скрыть кластер</option>
       ${[...new Set(data.map(r=>r.cluster))].sort().filter(c=>!hiddenClusters.has(c)&&!isClusterHidden(c,hiddenGroups,new Set())).map(c=>`<option value="${c}">${c}</option>`).join('')}
     </select>
-  </div>`;
+  </div>`:''}`;
 
   // Применяем фильтр и сортировку к сгруппированным данным
   const filteredGrouped = {};
@@ -4334,7 +4355,7 @@ function render(data){
         ? 'font-weight:600;color:var(--text)'
         : 'color:var(--muted)';
       const groupCell = idx === 0
-        ? `<td rowspan="${rows.length}" style="font-family:var(--mono);font-size:11px;color:var(--muted);vertical-align:top;padding:12px 16px 12px 16px;white-space:nowrap;border-right:1px solid var(--border);min-width:110px">
+        ? `<td rowspan="${rows.length}" style="font-family:var(--font);font-size:11px;color:var(--muted);vertical-align:top;padding:12px 16px 12px 16px;white-space:nowrap;border-right:1px solid var(--border);min-width:110px">
             <div style="margin-bottom:8px">${groupName}</div>
             <div style="font-size:18px;font-weight:600;color:${groupPctCls};line-height:1">${groupPct}%</div>
             <div style="height:3px;background:var(--bg3);border-radius:2px;margin-top:6px;width:72px">
@@ -4345,13 +4366,13 @@ function render(data){
       html+=`<tr data-adj="${r.article}|${r.cluster}">
         ${groupCell}
         <td class="item-name" style="${isTop?'':'opacity:0.7'}">${NAMES[r.article]||r.article}${isTop?' <span style="font-size:10px;color:var(--accent)">★</span>':''}</td>
-        <td style="${clusterStyle}">${r.cluster}${markupBadge(r.cluster)}</td>
+        <td style="${clusterStyle}">${r.cluster}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.sales.toFixed(1)}${r.fromProfile?'<span style="font-size:9px;color:var(--amber);margin-left:3px" title="историческое">~</span>':''}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт${sugBtnHtml(r)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
-        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}"${r.requested?` title="в пути ${Math.round(r.transit)} · в заявках на поставку ${Math.round(r.requested)}"`:''}>${Math.round(r.transit+(r.requested||0))}${r.requested?`<span style="font-size:9px;opacity:0.7"> из них ${Math.round(r.requested)} в заявках</span>`:''}</td>
+        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}">${Math.round(r.transit+(r.requested||0))}${r.requested?`<span style="display:block;font-size:10px;margin-top:2px;opacity:0.75">${Math.round(r.requested)} в заявках</span>`:''}</td>
         <td><span class="badge ${dc}">${daysLabel}</span></td>
-        <td><button onclick="showInlineSend('${r.article}','${r.cluster}')" style="font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:2px 8px;cursor:pointer">отправил</button></td>
+        <td><button onclick="showInlineSend('${r.article}','${r.cluster}')" title="записать отправку в этот кластер" style="font-size:15px;line-height:1;background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:26px;height:26px;cursor:pointer">+</button></td>
       </tr>`;
     });
   });
@@ -4378,7 +4399,7 @@ function render(data){
           <div class="mpl-dot ${dc}"></div>
           <div class="mpl-main">
             <div class="mpl-top">
-              <span class="mpl-name">${NAMES[r.article]||r.article}${isTop?' ★':''} · ${r.cluster}${markupBadge(r.cluster)}</span>
+              <span class="mpl-name">${NAMES[r.article]||r.article}${isTop?' ★':''} · ${r.cluster}</span>
               <span class="mpl-qty ${dc}">${r.needed} шт</span>
             </div>
             ${sugBtnHtml(r)?`<div style="margin-top:6px">${sugBtnHtml(r)}</div>`:''}
@@ -4387,9 +4408,9 @@ function render(data){
               <span class="mpl-badge ${dc}">${daysLabel}</span>
             </div>
             <div id="mpl-form-${r.article.replace(/\W/g,'_')}_${r.cluster.replace(/\W/g,'_')}" data-article="${r.article}" data-cluster="${r.cluster}" style="display:none;margin-top:8px;gap:6px;align-items:center">
-              <input type="number" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:5px 8px">
-              <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
-              <button onclick="this.parentElement.style.display='none'" style="font-family:var(--mono);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
+              <input type="number" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:5px 8px">
+              <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--font);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
+              <button onclick="this.parentElement.style.display='none'" style="font-family:var(--font);font-size:12px;background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
             </div>
           </div>
           <button class="mpl-btn" onclick="toggleMplForm('${r.article.replace(/\W/g,'_')}_${r.cluster.replace(/\W/g,'_')}')">+</button>
@@ -4447,7 +4468,7 @@ function render(data){
   }).join('');
   html+=`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
     <span>Остаток коробок</span>
-    <span style="font-size:11px;font-family:var(--mono);color:var(--accent);cursor:pointer" onclick="toggleBoxTypeForm()">＋ тип коробки</span></div>
+    <span style="font-size:11px;font-family:var(--font);color:var(--accent);cursor:pointer" onclick="toggleBoxTypeForm()">＋ тип коробки</span></div>
   <div id="box-type-form" style="display:none"></div>
   <div class="boxes-grid">${boxCardsHtml}</div>`;
   html+=transportBoxesHtml();
@@ -4466,7 +4487,7 @@ function render(data){
   FOCUS.forEach(art=>{html+=`<th class="col-header">${artName(art)}</th>`;});
   html+='</tr></thead><tbody>';
   allClusters.forEach(cluster=>{
-    html+=`<tr><td class="row-label">${cluster}${markupBadge(cluster)}</td>`;
+    html+=`<tr><td class="row-label">${cluster}</td>`;
     FOCUS.forEach(art=>{
       const row=data.find(r=>r.article===art&&r.cluster===cluster);
       if(!row||row.sales===0){html+=`<td class="none">—</td>`;}
@@ -4478,10 +4499,10 @@ function render(data){
           ${label}<br>
           <span style="font-size:11px;font-weight:400;opacity:0.8">${fbo}</span><span style="font-size:11px;font-weight:400;opacity:0.5"> · ${transit}</span>
           <div id="${safeId}" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg2);border:1px solid var(--accent);border-radius:4px;z-index:10;padding:4px;display:none;align-items:center;gap:4px;flex-direction:column;justify-content:center" onclick="event.stopPropagation()">
-            <input type="number" id="inp-${safeId}" placeholder="шт" min="1" style="width:60px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:11px;padding:3px 6px;text-align:center">
+            <input type="number" id="inp-${safeId}" placeholder="шт" min="1" style="width:60px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font);font-size:11px;padding:3px 6px;text-align:center">
             <div style="display:flex;gap:4px">
-              <button onclick="confirmHeatmapSend('${art}','${cluster}','inp-${safeId}','${safeId}')" style="font-family:var(--mono);font-size:10px;background:rgba(61,204,122,0.2);border:1px solid rgba(61,204,122,0.4);color:var(--green);border-radius:3px;padding:2px 6px;cursor:pointer">✓</button>
-              <button onclick="closeHeatmapSend('${safeId}')" style="font-family:var(--mono);font-size:10px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:3px;padding:2px 6px;cursor:pointer">×</button>
+              <button onclick="confirmHeatmapSend('${art}','${cluster}','inp-${safeId}','${safeId}')" style="font-family:var(--font);font-size:10px;background:rgba(61,204,122,0.2);border:1px solid rgba(61,204,122,0.4);color:var(--green);border-radius:3px;padding:2px 6px;cursor:pointer">✓</button>
+              <button onclick="closeHeatmapSend('${safeId}')" style="font-family:var(--font);font-size:10px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:3px;padding:2px 6px;cursor:pointer">×</button>
             </div>
           </div>
         </td>`;
@@ -4514,7 +4535,7 @@ function render(data){
     groupClusters.forEach(cluster=>{
       html+=`<div style="border-bottom:1px solid rgba(255,255,255,0.04)">
         <div style="display:flex;align-items:center;padding:7px 14px;gap:8px">
-          <span class="acc-cluster">${cluster}${markupBadge(cluster)}</span>
+          <span class="acc-cluster">${cluster}</span>
           <div class="acc-cells">`;
       FOCUS.forEach(art=>{
         const row=data.find(r=>r.article===art&&r.cluster===cluster);
@@ -4526,9 +4547,9 @@ function render(data){
           const dc=dayClass(row.days),label=row.days>=99?'∞':Math.round(row.days)+' дн';
           html+=`<span class="acc-cell ${dc}" style="cursor:pointer" onclick="toggleAccForm('${formId}')">${shortName} ${label}</span>
           <div id="${formId}" data-article="${art}" data-cluster="${cluster}" class="acc-inline-form" style="display:none;width:100%;padding:8px 0 4px 0;gap:8px;align-items:center;flex-wrap:wrap">
-            <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">${shortName} → ${cluster}:</span>
-            <input type="number" id="${formId}_inp" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:5px 8px">
-            <button onclick="confirmAccFormById('${formId}')" style="font-family:var(--mono);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
+            <span style="font-size:12px;color:var(--muted);font-family:var(--font)">${shortName} → ${cluster}:</span>
+            <input type="number" id="${formId}_inp" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:5px 8px">
+            <button onclick="confirmAccFormById('${formId}')" style="font-family:var(--font);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
             <button onclick="document.getElementById('${formId}').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1">×</button>
           </div>`;
         }
@@ -4693,12 +4714,21 @@ function buildSnapshot(){
 
 // THEME
 const LS_THEME='ozon_theme';
+function toggleHeaderMenu(e){
+  e.stopPropagation();
+  const p=document.getElementById('hmenu-pop');
+  if(p) p.classList.toggle('open');
+}
+function closeHeaderMenu(){ const p=document.getElementById('hmenu-pop'); if(p) p.classList.remove('open'); }
+document.addEventListener('click',e=>{ const p=document.getElementById('hmenu-pop');
+  if(p&&p.classList.contains('open')&&!p.contains(e.target)) p.classList.remove('open'); });
 function toggleTheme(){
   const isLight=document.documentElement.getAttribute('data-theme')==='light';
   const newTheme=isLight?'dark':'light';
   document.documentElement.setAttribute('data-theme',newTheme==='dark'?'':newTheme);
   localStorage.setItem(LS_THEME,newTheme);
-  document.getElementById('theme-btn').textContent=newTheme==='light'?'☾ тёмная':'☀ светлая';
+  const tb=document.getElementById('theme-btn');
+  if(tb){ tb.textContent=newTheme==='light'?'☾':'☀'; tb.title=newTheme==='light'?'Включить тёмную тему':'Включить светлую тему'; }
 }
 (()=>{
   const saved=localStorage.getItem(LS_THEME);
@@ -4707,10 +4737,10 @@ function toggleTheme(){
   if(theme==='light'){
     document.documentElement.setAttribute('data-theme','light');
     const btn=document.getElementById('theme-btn');
-    if(btn)btn.textContent='☾ тёмная';
+    if(btn){ btn.textContent='☾'; btn.title='Включить тёмную тему'; }
   }else{
     const btn=document.getElementById('theme-btn');
-    if(btn)btn.textContent='☀ светлая';
+    if(btn){ btn.textContent='☀'; btn.title='Включить светлую тему'; }
   }
 })();
 const dz=document.getElementById('dropzone');
@@ -5120,7 +5150,7 @@ function renderSalesChart(){
   if(typeof Chart==='undefined'){
     const c=document.getElementById('salesChart');
     if(c&&c.parentElement){
-      c.parentElement.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted);font-size:12px;font-family:var(--mono)">График недоступен — не загрузилась библиотека Chart.js (нужен доступ к CDN / VPN).<br>Данные продаж сохранены и в безопасности, таблицы и поставки работают.</div>';
+      c.parentElement.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted);font-size:12px;font-family:var(--font)">График недоступен — не загрузилась библиотека Chart.js (нужен доступ к CDN / VPN).<br>Данные продаж сохранены и в безопасности, таблицы и поставки работают.</div>';
     }
     return;
   }
