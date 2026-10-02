@@ -155,13 +155,13 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-col-head .adj-sep-qty{margin-left:auto;}
 .adj-empty{font-size:12px;color:var(--muted);opacity:0.7;padding:10px;border:1px dashed var(--border);border-radius:8px;line-height:1.45;}
 /* Тумблер: видно состояние, а не только подпись */
-.tgl{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;}
+.tgl{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;line-height:1;vertical-align:middle;}
 .tgl input{position:absolute;opacity:0;width:0;height:0;}
-.tgl-track{width:34px;height:20px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);
-  position:relative;transition:background .15s,border-color .15s;flex-shrink:0;}
-.tgl-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:left .15s,background .15s;}
+.tgl-track{width:36px;height:20px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);
+  position:relative;transition:background .15s,border-color .15s;flex-shrink:0;display:block;box-sizing:border-box;}
+.tgl-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:left .15s,background .15s;box-sizing:border-box;}
 .tgl input:checked + .tgl-track{background:rgba(91,127,255,0.25);border-color:var(--accent);}
-.tgl input:checked + .tgl-track .tgl-knob{left:16px;background:var(--accent);}
+.tgl input:checked + .tgl-track .tgl-knob{left:18px;background:var(--accent);}
 .tgl-text{font-size:12px;color:var(--muted);text-transform:none;letter-spacing:0;}
 .tgl input:checked ~ .tgl-text{color:var(--text);}
 .adj-sep{display:flex;align-items:baseline;gap:10px;margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);
@@ -267,7 +267,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.143</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.144</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3436,7 +3436,7 @@ function adjRowsHtml(){
       ?`<button class="adj-del" style="color:${hid?'var(--amber)':'var(--muted)'};font-size:12px" title="${hid?'вернуть в расчёты':'скрыть: не учитывать нигде, как будто не планировали'}" onclick="toggleAdjHidden(${i})">${hid?'◌':'◉'}</button>`:'';
     const later=stage==='later';
     const defer=(stage==='plan'||later)
-      ?`<button class="adj-del" style="color:${later?'var(--amber)':'var(--muted)'};font-size:12px" title="${later?'вернуть в текущую партию':'перенести в следующую партию: останется в расчёте, но не попадёт в задание упаковщику'}" onclick="toggleAdjLater(${i})">${later?'↑':'↓'}</button>`:'';
+      ?`<button class="adj-del" style="color:${later?'var(--amber)':'var(--muted)'};font-size:12px" title="${later?'вернуть в текущую партию':'перенести в следующую партию: останется в расчёте, но не попадёт в задание упаковщику'}" onclick="toggleAdjLater(${i})">${later?'←':'→'}</button>`:'';
     const btns=(stage==='plan'||later)
       ?`${eye}${defer}<button class="adj-del" style="color:var(--accent);font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
       :stage==='packed'
@@ -3470,7 +3470,7 @@ function adjRowsHtml(){
   };
   const board=`<div class="adj-board">
     ${col('plan','пусто — запланируй отправку плюсом в таблице приоритетов')}
-    ${col('later','пусто — сюда уходят отправки по стрелке ↓, они не попадают в задание упаковщику')}
+    ${col('later','пусто — сюда уходят отправки по стрелке →, они не попадают в задание упаковщику')}
   </div>`;
   const rest=['packed','sent'].map((st,i)=>{
     const rows=sorted.filter(x=>adjStage(x)===st);
@@ -4336,7 +4336,7 @@ function render(data){
         ${plans.length&&hiddenCount<plans.length?`<span style="${lnk}" onclick="setAllAdjHidden(true)">скрыть все</span>`:''}
         ${hiddenCount?`<span style="${lnk}" onclick="setAllAdjHidden(false)">показать все (${hiddenCount})</span>`:''}
       </span>`;
-    adjLogHtml=id=>`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">${counter}${tools}</span></div>
+    adjLogHtml=id=>`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">${counter}${tools}</span></div>
     <div class="block" style="padding:0.75rem 1.25rem">
       <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
   }
