@@ -62,7 +62,9 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .sug-btn.short{border-color:rgba(230,169,64,0.45);color:var(--amber);}
 /* Плитки остатков: по товару на плитку, шесть в ряд (на телефоне три — в медиазапросе ниже) */
 .lf-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px;}
-.lf-tile{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:border-color 0.15s;}
+.lf-tile{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:border-color 0.15s;}
+.lf-tile.off{opacity:0.45;}
+.lf-check{position:absolute;top:6px;left:6px;cursor:pointer;accent-color:var(--accent);margin:0;}
 .lf-tile:hover{border-color:rgba(128,128,128,0.35);}
 .lf-tile.on{border-color:rgba(61,204,122,0.45);}
 .lf-name{font-size:11px;color:var(--text);line-height:1.25;}
@@ -144,6 +146,10 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-form button{font-family:var(--font);font-size:12px;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer;white-space:nowrap;}
 .adj-form button:hover{background:rgba(91,127,255,0.25);}
 .adj-list{margin-top:10px;display:flex;flex-direction:column;gap:4px;}
+.adj-sep{display:flex;align-items:baseline;gap:10px;margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);
+  font-size:12px;color:var(--muted);}
+.adj-sep.first{margin-top:2px;padding-top:0;border-top:none;}
+.adj-sep-qty{margin-left:auto;font-family:var(--mono);font-size:11px;}
 .adj-item{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text);
   padding:7px 10px;border-radius:8px;border:1px solid transparent;}
 .adj-item+.adj-item{margin-top:2px;}
@@ -243,7 +249,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.140</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.142</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -2167,7 +2173,10 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
     const arcNow=s.pctNow===null?0:C*Math.min(100,s.pctNow)/100;          // плотная часть — что уже на складе
     const open=ringOpen===art;
     const focus=FOCUS.includes(art);
-    return `<div class="lf-tile${open?' on':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}${s.coming.length?' с учётом запланированного':''}, есть в ${s.have.length} из ${total} кластеров${s.coming.length?`, едет ещё в ${s.coming.length}`:''}">
+    const off=getHiddenArticles().has(art);
+    return `<div class="lf-tile${open?' on':''}${off?' off':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}${s.coming.length?' с учётом запланированного':''}, есть в ${s.have.length} из ${total} кластеров${s.coming.length?`, едет ещё в ${s.coming.length}`:''}">
+      <input type="checkbox" class="lf-check" ${off?'':'checked'} onclick="event.stopPropagation();toggleHiddenArticle('${art}')"
+        title="${off?'вернуть товар в расчёты':'убрать товар из приоритетов и карты'}">
       <svg width="46" height="46" viewBox="0 0 46 46" style="display:block;margin:0 auto">
         <circle cx="23" cy="23" r="${R}" fill="none" stroke="${arc?'var(--bg2)':col}" stroke-opacity="${arc?1:0.25}" stroke-width="5"/>
         ${arc?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="5"
@@ -2224,7 +2233,7 @@ function buildPackTask(){
   const rules=getPackRules();
   const byArt={};
   getPackAdjs().forEach(a=>{
-    if(a.sent===true||a.packed===true||adjHidden(a))return; // упакованное и скрытое не пакуем
+    if(a.sent===true||a.packed===true||a.later===true||adjHidden(a))return; // упакованное, отложенное и скрытое не пакуем
     const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,unknown:{},loose:0});
     t.total+=a.qty;
     if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; return; }
@@ -3219,7 +3228,9 @@ function addAdjustmentInline(article,cluster,qty){
   // Сколько Ozon показывал в пути в этот кластер на момент планирования. Дальше по росту
   // этого числа понимаем, что наша коробка доехала до его учёта, а не путаем её с чужой.
   const row=(rawData||[]).find(r=>r.article===article&&r.cluster===cluster);
-  adjs.push({article,cluster,qty,ts:Date.now(),baseTransit:row?row.transit+(row.requested||0):0});
+  const rec={article,cluster,qty,ts:Date.now(),baseTransit:row?row.transit+(row.requested||0):0};
+  if(planToNext()) rec.later=true;      // текущая партия закрыта — новая отправка идёт в следующую
+  adjs.push(rec);
   saveAdjs(adjs);
   spendBoxes(article,qty);
   renderAdjList();
@@ -3256,7 +3267,28 @@ function removeAdjustment(idx){
 
 // Состояния отправки: «план» (ещё пакуют) → «упаковано» (лежит на складе, можно оформлять
 // заявку в Ozon) → «отгружено». Задание упаковщику строится только по плану.
-function adjStage(a){ return a.sent===true?'sent':a.packed===true?'packed':'plan'; }
+function adjStage(a){ return a.sent===true?'sent':a.packed===true?'packed':a.later===true?'later':'plan'; }
+// «Отложить на потом»: отправка остаётся в расчёте покрытия (она всё равно поедет),
+// но из задания упаковщику и счётчика «к упаковке» уходит — чтобы план на завтра
+// не смешивался с прикидками на послезавтра.
+// Когда партия добрана, удобнее один раз сказать «дальше прикидываю следующую», чем помечать
+// каждую строку. Тумблер меняет только то, куда попадают НОВЫЕ отправки.
+const LS_PLAN_NEXT='ozon_plan_next';
+function planToNext(){ return lsGet(LS_PLAN_NEXT,false)===true; }
+function togglePlanNext(){
+  localStorage.setItem(LS_PLAN_NEXT,JSON.stringify(!planToNext()));
+  renderAdjList();
+  redraw();
+}
+function toggleAdjLater(idx){
+  const adjs=getAdjs();
+  const a=adjs[idx];
+  if(!a||a.sent===true||a.packed===true)return;
+  if(a.later) delete a.later; else a.later=true;
+  saveAdjs(adjs);
+  renderAdjList();
+  redraw();
+}
 // Скрытая плановая отправка не участвует ни в одном расчёте — как будто её не планировали.
 // Скрывать можно только план: упакованное и отгруженное уже существует физически.
 function adjHidden(a){ return a.hidden===true&&a.sent!==true&&a.packed!==true; }
@@ -3340,7 +3372,7 @@ function adjRowsHtml(){
   const adjs=all.filter(a=>!a.arrived);
   const gone=all.filter(a=>a.arrived);
   if(!adjs.length&&!gone.length)return '';
-  const rank={plan:0,packed:1,sent:2};
+  const rank={plan:0,later:1,packed:2,sent:3};
   const sorted=[...adjs].sort((a,b)=>rank[adjStage(a)]-rank[adjStage(b)]);
   const del=i=>`<button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
   // Списанные («приехало на склад») раньше исчезали совсем, и проверить их было нельзя.
@@ -3356,6 +3388,18 @@ function adjRowsHtml(){
       </div>`).join('')}
     </div></details>`:'';
   if(!adjs.length) return goneHtml;
+  // Стадии разделены линией с подписью и суммой: цветной точки мало, чтобы с одного взгляда
+  // понять, где кончается план на сейчас и начинается отложенное и уже упакованное.
+  const titles={plan:'В плане',later:'Следующая партия',packed:'Упаковано, ждёт заявки',sent:'Отгружено'};
+  let lastStage=null;
+  const headRow=st=>{
+    const rows=sorted.filter(x=>adjStage(x)===st);
+    const qty=rows.reduce((s,x)=>s+x.qty,0);
+    return `<div class="adj-sep${lastStage===null?' first':''}">
+      <span>${titles[st]}</span>
+      <span class="adj-sep-qty">${rows.length} ${pkPlural(rows.length,'коробка','коробки','коробок')} · ${qty} шт</span>
+    </div>`;
+  };
   return sorted.map(a=>{
     const i=a.origIdx, stage=adjStage(a);
     const dim=adjHidden(a)?'opacity:0.35':'';
@@ -3371,15 +3415,21 @@ function adjRowsHtml(){
     const hid=adjHidden(a);
     const eye=stage==='plan'
       ?`<button class="adj-del" style="color:${hid?'var(--amber)':'var(--muted)'};font-size:12px" title="${hid?'вернуть в расчёты':'скрыть: не учитывать нигде, как будто не планировали'}" onclick="toggleAdjHidden(${i})">${hid?'◌':'◉'}</button>`:'';
-    const btns=stage==='plan'
-      ?`${eye}<button class="adj-del" style="color:var(--accent);font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
+    const later=stage==='later';
+    const defer=(stage==='plan'||later)
+      ?`<button class="adj-del" style="color:${later?'var(--amber)':'var(--muted)'};font-size:12px" title="${later?'вернуть в текущую партию':'перенести в следующую партию: останется в расчёте, но не попадёт в задание упаковщику'}" onclick="toggleAdjLater(${i})">${later?'↑':'↓'}</button>`:'';
+    const btns=(stage==='plan'||later)
+      ?`${eye}${defer}<button class="adj-del" style="color:var(--accent);font-size:12px" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
       :stage==='packed'
       ?`<button class="adj-del" style="color:var(--green);font-size:13px" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
       :`<button class="adj-del" style="color:var(--muted);font-size:12px" title="вернуть в «упаковано»" onclick="unconfirmAdjustment(${i})">↩</button>${del(i)}`;
     // Слева — точка состояния: план серый, упаковано синее, отгружено зелёное. По ней видно
     // стадию, не читая подписей.
-    const dot=stage==='plan'?'var(--muted)':stage==='packed'?'var(--accent)':'var(--green)';
-    return `<div class="adj-item">
+    const dot=stage==='plan'?'var(--muted)':stage==='later'?'var(--amber)':stage==='packed'?'var(--accent)':'var(--green)';
+    const st=adjStage(a);
+    const sep=st!==lastStage?headRow(st):'';
+    lastStage=st;
+    return `${sep}<div class="adj-item">
       <span class="adj-dot" style="background:${dot};${dim}"></span>
       <span style="font-weight:500;${textStyle}">${NAMES[a.article]||a.article}</span>
       <span class="adj-where" style="${textStyle}">${a.cluster}</span>
@@ -3424,6 +3474,7 @@ function plannedUnits(){
   let total=0;
   adjs.forEach(a=>{
     if(a.sent===true||a.packed===true)return; // упакованное и отгруженное не пакуем
+    if(a.later===true)return;                 // отложенное на потом сейчас не пакуем
     if(adjHidden(a))return;                   // скрытое не считаем нигде
     total+=a.qty;
     byArticle[a.article]=(byArticle[a.article]||0)+a.qty;
@@ -4239,10 +4290,12 @@ function render(data){
     const plans=getAdjs().filter(a=>a.sent!==true&&a.packed!==true);
     const hiddenCount=plans.filter(adjHidden).length;
     const lnk='font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0';
-    const tools=plans.length?`<span style="display:flex;gap:10px;align-items:baseline">
-        ${hiddenCount<plans.length?`<span style="${lnk}" onclick="setAllAdjHidden(true)">скрыть все</span>`:''}
+    const next=planToNext();
+    const tools=`<span style="display:flex;gap:10px;align-items:baseline">
+        <span style="${lnk};color:${next?'var(--amber)':'var(--muted)'}" title="${next?'новые отправки попадают в следующую партию — нажми, чтобы снова планировать в текущую':'текущая партия добрана? нажми — и новые отправки пойдут в следующую, не попадая в задание упаковщику'}" onclick="togglePlanNext()">${next?'● новые → в следующую партию':'○ новые → в текущую'}</span>
+        ${plans.length&&hiddenCount<plans.length?`<span style="${lnk}" onclick="setAllAdjHidden(true)">скрыть все</span>`:''}
         ${hiddenCount?`<span style="${lnk}" onclick="setAllAdjHidden(false)">показать все (${hiddenCount})</span>`:''}
-      </span>`:'';
+      </span>`;
     adjLogHtml=id=>`<div class="section-label" style="margin-top:2rem;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap"><span>Отправки (не отображены в файле)</span><span style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">${counter}${tools}</span></div>
     <div class="block" style="padding:0.75rem 1.25rem">
       <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
@@ -4265,14 +4318,8 @@ function render(data){
   };
   const withData=ALL_ARTICLES.filter(a=>artsWithData.has(a));
   const noData=ALL_ARTICLES.filter(a=>!artsWithData.has(a));
-  // Раньше это был отдельный блок с галочками на всю ширину. Теперь — строка чипов:
-  // смысл тот же, а места занимает одну строку, как фильтры кластеров.
-  html+=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 14px">
-    <span style="font-size:12px;color:var(--muted);margin-right:2px">Товары:</span>
-    ${withData.map(chk).join('')}
-    ${artsOpen&&noData.length?noData.map(chk).join(''):''}
-    ${noData.length?`<button onclick="toggleArtsPanel()" style="font-size:12px;padding:3px 10px;border-radius:14px;cursor:pointer;border:1px dashed var(--border);background:none;color:var(--muted)">${artsOpen?'скрыть':'ещё '+noData.length+' без данных'}</button>`:''}
-  </div>`;
+  // Отдельной строки с товарами больше нет: галочка включения стоит прямо в кольце покрытия,
+  // там же, где смотришь на сам товар.
 
   // Cards
   // Карточки процентов и кольца заполненности показывали одно и то же разными способами —
