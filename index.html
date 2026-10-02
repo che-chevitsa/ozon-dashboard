@@ -36,7 +36,7 @@
 html{scrollbar-gutter:stable;}
 body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;}
 /* Меню шапки: редкие действия прячем, чтобы в строке остались период и обновление */
-.hmenu{position:relative;margin-left:auto;}
+.hmenu{position:relative;}
 .hmenu-btn{font-size:16px;line-height:1;padding:4px 10px;}
 .hmenu-pop{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:60;min-width:230px;
   background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,0.12);}
@@ -243,7 +243,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.139</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.140</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -251,13 +251,13 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
         <button class="period-tab active" onclick="setPeriod(28)">28 дн</button>
       </div>
       <button class="reset-btn" id="stocks-btn" onclick="ozonLoadStocks()" title="Взять остатки и продажи прямо из Ozon вместо выгрузки файла">⟳ обновить</button>
+      <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку: Аналитика → Планирование поставок → Доступность товаров">↑ файл</button>
     </div>
     <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" title="Переключить тему">☀</button>
     <div class="hmenu">
       <button class="theme-btn hmenu-btn" onclick="toggleHeaderMenu(event)" title="ещё">⋯</button>
       <div class="hmenu-pop" id="hmenu-pop">
         <button onclick="togglePackRules();closeHeaderMenu()">⚙ Коробки и укладки</button>
-        <button onclick="resetDashboard();closeHeaderMenu()">↑ Загрузить свежий файл</button>
         <button onclick="cloudStatusClick()" title="Проверить, что состояние сохраняется на Google Диск">☁ Синхронизация<span id="cloud-status" style="display:block;font-size:11px;color:var(--muted);margin-top:2px"></span></button>
         <div class="hmenu-foot"><span id="file-date"></span></div>
       </div>
