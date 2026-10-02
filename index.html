@@ -64,7 +64,8 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .lf-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px;}
 .lf-tile{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:border-color 0.15s;}
 .lf-tile.off{opacity:0.45;}
-.lf-check{position:absolute;top:6px;left:6px;cursor:pointer;accent-color:var(--accent);margin:0;}
+.lf-check-wrap{position:absolute;top:0;left:0;padding:7px 9px 9px 7px;cursor:pointer;line-height:0;}
+.lf-check{width:17px;height:17px;cursor:pointer;accent-color:var(--accent);margin:0;}
 .lf-tile:hover{border-color:rgba(128,128,128,0.35);}
 .lf-tile.on{border-color:rgba(61,204,122,0.45);}
 .lf-name{font-size:11px;color:var(--text);line-height:1.25;}
@@ -146,6 +147,23 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-form button{font-family:var(--font);font-size:12px;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer;white-space:nowrap;}
 .adj-form button:hover{background:rgba(91,127,255,0.25);}
 .adj-list{margin-top:10px;display:flex;flex-direction:column;gap:4px;}
+/* Две колонки планирования: текущая партия и следующая */
+.adj-board{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.adj-col{min-width:0;}
+.adj-col+.adj-col{border-left:1px solid var(--border);padding-left:14px;}
+.adj-col-head{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;font-size:12px;color:var(--muted);}
+.adj-col-head .adj-sep-qty{margin-left:auto;}
+.adj-empty{font-size:12px;color:var(--muted);opacity:0.7;padding:10px;border:1px dashed var(--border);border-radius:8px;line-height:1.45;}
+/* Тумблер: видно состояние, а не только подпись */
+.tgl{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;}
+.tgl input{position:absolute;opacity:0;width:0;height:0;}
+.tgl-track{width:34px;height:20px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);
+  position:relative;transition:background .15s,border-color .15s;flex-shrink:0;}
+.tgl-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:left .15s,background .15s;}
+.tgl input:checked + .tgl-track{background:rgba(91,127,255,0.25);border-color:var(--accent);}
+.tgl input:checked + .tgl-track .tgl-knob{left:16px;background:var(--accent);}
+.tgl-text{font-size:12px;color:var(--muted);text-transform:none;letter-spacing:0;}
+.tgl input:checked ~ .tgl-text{color:var(--text);}
 .adj-sep{display:flex;align-items:baseline;gap:10px;margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);
   font-size:12px;color:var(--muted);}
 .adj-sep.first{margin-top:2px;padding-top:0;border-top:none;}
@@ -158,10 +176,8 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-where{color:var(--muted);}
 .adj-spacer{margin-left:auto;}
 .adj-item .adj-qty{color:var(--green);}
-.adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0;font-size:14px;line-height:1;border:none;background:none;padding:0 4px;transition:opacity .12s;}
-.adj-item:hover .adj-del{opacity:0.75;}
+.adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0.75;font-size:14px;line-height:1;border:none;background:none;padding:0 4px;}
 .adj-item .adj-del:hover{opacity:1;}
-@media(hover:none){.adj-item .adj-del{opacity:0.75;}}
 
 /* Desktop defaults */
 .mobile-priority-list{display:none;}
@@ -180,6 +196,8 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .header-right{margin-left:0;width:100%;flex-wrap:wrap;gap:6px;order:3;}
   .hmenu{order:2;margin-left:auto;}
   /* На узком экране строка отправки переносится, а выпадающий список не вылезает за край */
+  .adj-board{grid-template-columns:1fr;gap:10px;}
+  .adj-col+.adj-col{border-left:none;padding-left:0;border-top:1px solid var(--border);padding-top:10px;}
   .adj-item{flex-wrap:wrap;gap:6px 8px;}
   .adj-item select{max-width:120px;}
   .adj-spacer{margin-left:0;}
@@ -249,7 +267,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.142</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.143</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -2175,8 +2193,9 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
     const focus=FOCUS.includes(art);
     const off=getHiddenArticles().has(art);
     return `<div class="lf-tile${open?' on':''}${off?' off':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}${s.coming.length?' с учётом запланированного':''}, есть в ${s.have.length} из ${total} кластеров${s.coming.length?`, едет ещё в ${s.coming.length}`:''}">
-      <input type="checkbox" class="lf-check" ${off?'':'checked'} onclick="event.stopPropagation();toggleHiddenArticle('${art}')"
-        title="${off?'вернуть товар в расчёты':'убрать товар из приоритетов и карты'}">
+      <span class="lf-check-wrap" onclick="event.stopPropagation()" title="${off?'вернуть товар в расчёты':'убрать товар из приоритетов и карты'}">
+        <input type="checkbox" class="lf-check" ${off?'':'checked'} onchange="toggleHiddenArticle('${art}')">
+      </span>
       <svg width="46" height="46" viewBox="0 0 46 46" style="display:block;margin:0 auto">
         <circle cx="23" cy="23" r="${R}" fill="none" stroke="${arc?'var(--bg2)':col}" stroke-opacity="${arc?1:0.25}" stroke-width="5"/>
         ${arc?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="5"
@@ -3391,16 +3410,15 @@ function adjRowsHtml(){
   // Стадии разделены линией с подписью и суммой: цветной точки мало, чтобы с одного взгляда
   // понять, где кончается план на сейчас и начинается отложенное и уже упакованное.
   const titles={plan:'В плане',later:'Следующая партия',packed:'Упаковано, ждёт заявки',sent:'Отгружено'};
-  let lastStage=null;
-  const headRow=st=>{
+  const headRow=(st,first)=>{
     const rows=sorted.filter(x=>adjStage(x)===st);
     const qty=rows.reduce((s,x)=>s+x.qty,0);
-    return `<div class="adj-sep${lastStage===null?' first':''}">
+    return `<div class="adj-sep${first?' first':''}">
       <span>${titles[st]}</span>
       <span class="adj-sep-qty">${rows.length} ${pkPlural(rows.length,'коробка','коробки','коробок')} · ${qty} шт</span>
     </div>`;
   };
-  return sorted.map(a=>{
+  const rowHtml=a=>{
     const i=a.origIdx, stage=adjStage(a);
     const dim=adjHidden(a)?'opacity:0.35':'';
     const textStyle=(stage==='sent'?'text-decoration:line-through;opacity:0.45':'')+dim;
@@ -3408,7 +3426,8 @@ function adjRowsHtml(){
     const badge=stage==='packed'
       ?`<span style="font-size:10px;font-family:var(--font);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
       :stage==='sent'?`<span style="font-size:10px;font-family:var(--font);color:var(--muted)">${a.arrived?'приехало на склад':'отгружено'}</span>`:'';
-    const who=stage==='plan'?'':`<select title="кто паковал" onchange="setAdjPacker(${i},this.value)" style="font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:${a.packedBy?'var(--text)':'var(--muted)'};padding:1px 4px;cursor:pointer">
+    // «Кто паковал» нужен только там, где уже паковали: в плане и в следующей партии его нет.
+    const who=(stage!=='packed'&&stage!=='sent')?'':`<select title="кто паковал" onchange="setAdjPacker(${i},this.value)" style="font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:${a.packedBy?'var(--text)':'var(--muted)'};padding:1px 4px;cursor:pointer">
         <option value="" ${!a.packedBy?'selected':''}>— кто паковал</option>
         ${getPackers().map(p=>`<option value="${escHtml(p)}" ${a.packedBy===p?'selected':''}>${escHtml(p)}</option>`).join('')}
       </select>`;
@@ -3426,10 +3445,7 @@ function adjRowsHtml(){
     // Слева — точка состояния: план серый, упаковано синее, отгружено зелёное. По ней видно
     // стадию, не читая подписей.
     const dot=stage==='plan'?'var(--muted)':stage==='later'?'var(--amber)':stage==='packed'?'var(--accent)':'var(--green)';
-    const st=adjStage(a);
-    const sep=st!==lastStage?headRow(st):'';
-    lastStage=st;
-    return `${sep}<div class="adj-item">
+    return `<div class="adj-item">
       <span class="adj-dot" style="background:${dot};${dim}"></span>
       <span style="font-weight:500;${textStyle}">${NAMES[a.article]||a.article}</span>
       <span class="adj-where" style="${textStyle}">${a.cluster}</span>
@@ -3440,7 +3456,27 @@ function adjRowsHtml(){
       ${who}
       ${btns}
     </div>`;
-  }).join('')+goneHtml;
+  };
+  // План и следующая партия стоят рядом двумя колонками: видно обе сразу, а стрелка «вправо»
+  // буквально переносит коробку в соседнюю. Упакованное и отгруженное — ниже, во всю ширину.
+  const col=(st,hint)=>{
+    const rows=sorted.filter(x=>adjStage(x)===st);
+    const qty=rows.reduce((s,x)=>s+x.qty,0);
+    return `<div class="adj-col">
+      <div class="adj-col-head"><span>${titles[st]}</span>
+        <span class="adj-sep-qty">${rows.length?rows.length+' '+pkPlural(rows.length,'коробка','коробки','коробок')+' · '+qty+' шт':''}</span></div>
+      ${rows.length?rows.map(rowHtml).join(''):`<div class="adj-empty">${hint}</div>`}
+    </div>`;
+  };
+  const board=`<div class="adj-board">
+    ${col('plan','пусто — запланируй отправку плюсом в таблице приоритетов')}
+    ${col('later','пусто — сюда уходят отправки по стрелке ↓, они не попадают в задание упаковщику')}
+  </div>`;
+  const rest=['packed','sent'].map((st,i)=>{
+    const rows=sorted.filter(x=>adjStage(x)===st);
+    return rows.length?headRow(st,false)+rows.map(rowHtml).join(''):'';
+  }).join('');
+  return board+rest+goneHtml;
 }
 
 // Вернуть списанную отправку в учёт: база пути обновляется на текущую, иначе правило
@@ -4291,8 +4327,12 @@ function render(data){
     const hiddenCount=plans.filter(adjHidden).length;
     const lnk='font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;text-transform:none;letter-spacing:0';
     const next=planToNext();
-    const tools=`<span style="display:flex;gap:10px;align-items:baseline">
-        <span style="${lnk};color:${next?'var(--amber)':'var(--muted)'}" title="${next?'новые отправки попадают в следующую партию — нажми, чтобы снова планировать в текущую':'текущая партия добрана? нажми — и новые отправки пойдут в следующую, не попадая в задание упаковщику'}" onclick="togglePlanNext()">${next?'● новые → в следующую партию':'○ новые → в текущую'}</span>
+    const tools=`<span style="display:flex;gap:12px;align-items:center">
+        <label class="tgl" title="${next?'новые отправки попадают в следующую партию':'текущая партия добрана? включи — и новые отправки пойдут в следующую, не попадая в задание упаковщику'}">
+          <input type="checkbox" ${next?'checked':''} onchange="togglePlanNext()">
+          <span class="tgl-track"><span class="tgl-knob"></span></span>
+          <span class="tgl-text">новые — в следующую партию</span>
+        </label>
         ${plans.length&&hiddenCount<plans.length?`<span style="${lnk}" onclick="setAllAdjHidden(true)">скрыть все</span>`:''}
         ${hiddenCount?`<span style="${lnk}" onclick="setAllAdjHidden(false)">показать все (${hiddenCount})</span>`:''}
       </span>`;
