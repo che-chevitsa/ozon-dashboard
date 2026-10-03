@@ -271,7 +271,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.145</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.146</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -899,7 +899,9 @@ async function sheetRows(orderId){
   const state=String(order.state||'').replace(/^ORDER_STATE_/,'');
   const shippedAt=order.acceptedAt||(OZON_SHIPPED.includes(state)?order.stateAt:'');
   const by={};
-  let sentAt=''; // отметка «отгружено» точнее слота: слот — бронь, а везём когда везём
+  // Только отметка «отгружено» (ручная) — дата оформления заявки сюда не годится:
+  // вечером оформил, утром увёз, а в таблице стояло бы вчерашнее число.
+  let sentAt='';
   getAdjs().forEach(a=>{
     if(String(a.ozonOrderId||'')!==String(orderId))return;
     if(a.sentAt&&(!sentAt||a.sentAt<sentAt)) sentAt=a.sentAt;
@@ -1461,7 +1463,7 @@ async function ozonCancelOrder(orderId){
   adjs.forEach(a=>{
     if(String(a.ozonOrderId||'')!==String(orderId))return;
     delete a.ozonOrderId; delete a.cargoId; delete a.cargoSentAt;
-    delete a.sent; delete a.sentAt; delete a.arrived; delete a.arrivedAt;
+    delete a.sent; delete a.sentAt; delete a.orderedAt; delete a.arrived; delete a.arrivedAt;
     delete a.sheetSentAt; delete a.sheetDateAt;   // заявки больше нет — строки учёта к ней не привязаны
     a.packed=true;                                 // коробки собраны, ждут новой заявки
     back++;
@@ -1729,7 +1731,7 @@ async function ozonCreateSupply(){
       const adjs=getAdjs();
       draft.idx.forEach(i=>{ if(adjs[i]){
         adjs[i].packed=true; adjs[i].sent=true; adjs[i].ozonOrderId=st.order_id;
-        if(!adjs[i].sentAt) adjs[i].sentAt=new Date().toISOString();   // от этой даты считаем, «свежая» ли отправка
+        if(!adjs[i].orderedAt) adjs[i].orderedAt=new Date().toISOString(); // когда оформили заявку — от неё считаем «свежесть»
       } });
       saveAdjs(adjs);
       // Строки учёта — сразу при оформлении, без даты: так упакованное видно в таблице
@@ -3573,7 +3575,7 @@ function undoEarlyArrivals(){
   let back=0;
   adjs.forEach(a=>{
     if(a.arrived!==true||!a.arrivedAt)return;
-    const sent=Date.parse(a.sentAt||'')||a.ts||0;
+    const sent=Date.parse(a.sentAt||a.orderedAt||'')||a.ts||0;
     const when=Date.parse(a.arrivedAt||'')||0;
     if(!sent||!when)return;
     if(when-sent<ARRIVE_GRACE_MS){ delete a.arrived; delete a.arrivedAt; back++; }
@@ -3666,7 +3668,7 @@ function autoCleanAdjs(newData){
       // пустым, хотя поставка туда уже едет.
       for(const a of sorted){
         if(!orderHandedOver(a))continue;                               // заявка ещё у нас на руках
-        const when=Date.parse(a.sentAt||'')||a.ts||0;
+        const when=Date.parse(a.sentAt||a.orderedAt||'')||a.ts||0;
         if(when&&Date.now()-when<ARRIVE_GRACE_MS)continue;             // свежую не трогаем
         toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty}`);
       }
