@@ -176,12 +176,16 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-where{color:var(--muted);}
 .adj-spacer{margin-left:auto;}
 .adj-item .adj-qty{color:var(--green);}
-.adj-item .adj-del{cursor:pointer;color:var(--red);opacity:0.8;font-size:14px;line-height:1;
+/* Иконка-действие: один размер и одна рамка во всём дашборде — в списке отправок,
+   в таблице приоритетов, в заявках и в настройках коробок. */
+.ibtn,.adj-item .adj-del{cursor:pointer;opacity:0.8;font-size:14px;line-height:1;
   width:28px;height:28px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
-  border:1px solid var(--border);border-radius:7px;background:none;padding:0;transition:border-color .12s,background .12s,opacity .12s;}
-.adj-item .adj-del+.adj-del{margin-left:5px;}
-.adj-item .adj-del:hover{opacity:1;border-color:rgba(128,128,128,0.4);background:var(--bg2);}
-@media(max-width:760px){.adj-item .adj-del{width:32px;height:32px;font-size:15px;}}
+  border:1px solid var(--border);border-radius:7px;background:none;color:var(--muted);padding:0;
+  transition:border-color .12s,background .12s,opacity .12s;}
+.adj-item .adj-del{color:var(--red);}
+.ibtn+.ibtn,.adj-item .adj-del+.adj-del{margin-left:5px;}
+.ibtn:hover,.adj-item .adj-del:hover{opacity:1;border-color:rgba(128,128,128,0.4);background:var(--bg2);}
+@media(max-width:760px){.ibtn,.adj-item .adj-del{width:32px;height:32px;font-size:15px;}}
 
 /* Desktop defaults */
 .mobile-priority-list{display:none;}
@@ -249,7 +253,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   .mpl-badge{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:500;}
   .mpl-badge.red{background:var(--red-bg);color:var(--red);}
   .mpl-badge.amber{background:var(--amber-bg);color:var(--amber);}
-  .mpl-btn{width:30px;height:30px;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;}
+  .mpl-btn{width:32px;height:32px;border:1px solid var(--border);border-radius:7px;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;}
   /* Аккордеон тепловой карты */
   .acc-group{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:6px;}
   .acc-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;cursor:pointer;}
@@ -271,7 +275,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.147</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.148</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -471,7 +475,7 @@ function boxTypeFormHtml(){
     const arts=(t.articles||[]).map(a=>artName(a)).join(', ')||'—';
     return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border)">
       <span style="font-family:var(--font);font-size:12px"><b>${t.name}</b> <span style="color:var(--muted)">${arts}</span></span>
-      <button class="adj-del" title="удалить тип" onclick="deleteBoxType('${t.id}')">×</button>
+      <button class="adj-del" title="удалить тип" onclick="deleteBoxType('${t.id}')">✕</button>
     </div>`;
   }).join('');
   // Чекбоксы артикулов: показываем все, помечаем текущую привязку типа
@@ -1092,8 +1096,8 @@ function sheetBtnHtml(orderId){
     :dated?'строки записаны, дата отгрузки проставлена'
     :sent?'строки в таблице без даты — она проставится сама, когда Ozon отметит отгрузку или ты отметишь «отгружено»'
     :'записать строки в Google Таблицу';
-  const ico='font-size:14px;line-height:1;background:none;border:1px solid var(--border);border-radius:7px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer';
-  return `<button style="${ico};color:${color}" title="${hint}" onclick="sheetSend('${String(orderId)}')">▤</button>`;
+  const ico='';   // размер и рамку задаёт класс ibtn
+  return `<button class="ibtn" style="color:${color}" title="${hint}" onclick="sheetSend('${String(orderId)}')">▤</button>`;
 }
 
 // ===== ГРУЗОМЕСТА И ЭТИКЕТКИ =====
@@ -1494,21 +1498,21 @@ function ozonOrderActions(orderId){
   const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
   const mine=ours.length>0;
   const cargoSent=mine&&ours.every(a=>a.cargoSentAt);
-  const ico='font-size:14px;line-height:1;background:none;border:1px solid var(--border);border-radius:7px;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer';
+  const ico='';   // размер и рамку задаёт класс ibtn
   const cs=ozonCargoState&&String(ozonCargoState.orderId)===String(orderId)?ozonCargoState:null;
   const ls=ozonLabelState&&String(ozonLabelState.orderId)===String(orderId)?ozonLabelState:null;
   const parts=[];
   // Грузоместа уходят сами при создании заявки: кнопка нужна, только если не дошли.
   if(cs&&cs.busy) parts.push(`<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(cs.msg||'…')}</span>`);
-  else if(mine&&cargoSent) parts.push(`<span style="${ico};color:var(--green)" title="состав коробок передан">▣</span>`);
-  else if(mine) parts.push(`<button style="${ico};color:var(--red)" title="состав коробок не передан — нажми, чтобы передать" onclick="ozonSendCargoes('${String(orderId)}')">▣</button>`);
+  else if(mine&&cargoSent) parts.push(`<span class="ibtn" style="color:var(--green)" title="состав коробок передан">▣</span>`);
+  else if(mine) parts.push(`<button class="ibtn" style="color:var(--red)" title="состав коробок не передан — нажми, чтобы передать" onclick="ozonSendCargoes('${String(orderId)}')">▣</button>`);
   // Отменить можно, только пока Ozon не принял коробки: дальше это уже не наша история.
   const ord=((getOzonCache().orders)||[]).find(o=>String(o.id)===String(orderId))||{};
   const st=String(ord.state||'').replace(/^ORDER_STATE_/,'');
   const cancelable=!OZON_SHIPPED.includes(st)&&st!=='CANCELLED';
   const xs=ozonCancelState&&String(ozonCancelState.orderId)===String(orderId)?ozonCancelState:null;
   if(xs&&xs.busy) parts.push(`<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(xs.msg||'…')}</span>`);
-  else if(cancelable) parts.push(`<button style="${ico};color:var(--muted)" title="отменить заявку и вернуть коробки в «упаковано»" onclick="ozonCancelOrder('${String(orderId)}')">✕</button>`);
+  else if(cancelable) parts.push(`<button class="ibtn" style="color:var(--muted)" title="отменить заявку и вернуть коробки в «упаковано»" onclick="ozonCancelOrder('${String(orderId)}')">✕</button>`);
   parts.push(sheetBtnHtml(orderId));
   parts.push(ls&&ls.busy
     ?`<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
@@ -2756,14 +2760,14 @@ function packRulesHtml(){
       <input style="${inp}" type="number" min="1" value="${b.d}" title="ширина (глубина), см" oninput="pdSet('boxes',${i},'d',this.value)">
       <input style="${inp}" type="number" min="1" value="${b.h}" title="высота, см" oninput="pdSet('boxes',${i},'h',this.value)">
       <select style="${inp}" onchange="pdSet('boxes',${i},'color',this.value)">${Object.entries(BOX_PALETTE).map(([k,p])=>opt(k,b.color,p.name)).join('')}</select>
-      <button style="${del}" title="удалить коробку" onclick="pdDel('boxes',${i})">×</button>
+      <button style="${del}" title="удалить коробку" onclick="pdDel('boxes',${i})">✕</button>
     </div>`).join('');
   const ruleRows=d.rules.map((r,i)=>`<div class="pk-ctor-row pk-ctor-rule">
       <select style="${inp}" onchange="pdSet('rules',${i},'article',this.value)">${ALL_ARTICLES.map(a=>opt(a,r.article,artName(a))).join('')}</select>
       <select style="${inp}" onchange="pdSet('rules',${i},'box',this.value)">${d.boxes.map(b=>opt(b.id,r.box,b.name||'(без названия)')).join('')}</select>
       <input style="${inp}" value="${escHtml(r.label)}" placeholder="авто: полная / неполная" oninput="pdSet('rules',${i},'label',this.value)">
       <input style="${inp}" type="number" min="1" value="${r.qty}" placeholder="шт" oninput="pdSet('rules',${i},'qty',this.value)">
-      <button style="${del}" title="удалить вариант" onclick="pdDel('rules',${i})">×</button>
+      <button style="${del}" title="удалить вариант" onclick="pdDel('rules',${i})">✕</button>
     </div>`).join('');
   const labelRows=(d.labels||[]).map((l,i)=>`<div class="pk-ctor-row pk-ctor-label">
       <span style="font-family:var(--font);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis">${escHtml(artName(l.article))}</span>
@@ -3424,7 +3428,7 @@ function adjRowsHtml(){
   if(!adjs.length&&!gone.length)return '';
   const rank={plan:0,later:1,packed:2,sent:3};
   const sorted=[...adjs].sort((a,b)=>rank[adjStage(a)]-rank[adjStage(b)]);
-  const del=i=>`<button class="adj-del" onclick="removeAdjustment(${i})">×</button>`;
+  const del=i=>`<button class="adj-del" onclick="removeAdjustment(${i})">✕</button>`;
   // Списанные («приехало на склад») раньше исчезали совсем, и проверить их было нельзя.
   // Теперь они свёрнуты внизу, и любую можно вернуть в учёт одной кнопкой.
   const goneHtml=gone.length?`<details style="margin-top:10px">
@@ -4035,7 +4039,7 @@ function renderBoxes(){
           <span style="font-size:10px;color:var(--muted)">${ds}</span>
           <span style="color:var(--accent)">в пути: ${e.remaining} шт</span>
           <button onclick="showReceiveInput(${e.ts},'${type}')" style="font-family:var(--font);font-size:11px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:4px;padding:2px 8px;cursor:pointer;margin-left:auto">пришло</button>
-          <button class="adj-del" onclick="cancelOrder(${e.ts})">×</button>
+          <button class="adj-del" onclick="cancelOrder(${e.ts})">✕</button>
         </div>
         <div id="receive-input-${e.ts}" style="display:none">
           <div class="box-input-row">
@@ -4490,7 +4494,7 @@ function render(data){
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
         <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}">${Math.round(r.transit+(r.requested||0))}${r.requested?`<span style="display:block;font-size:10px;margin-top:2px;opacity:0.75">${Math.round(r.requested)} в заявках</span>`:''}</td>
         <td><span class="badge ${dc}">${daysLabel}</span></td>
-        <td><button onclick="showInlineSend('${r.article}','${r.cluster}')" title="записать отправку в этот кластер" style="font-size:15px;line-height:1;background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:26px;height:26px;cursor:pointer">+</button></td>
+        <td><button class="ibtn" onclick="showInlineSend('${r.article}','${r.cluster}')" title="записать отправку в этот кластер">+</button></td>
       </tr>`;
     });
   });
@@ -4620,7 +4624,7 @@ function render(data){
             <input type="number" id="inp-${safeId}" placeholder="шт" min="1" style="width:60px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font);font-size:11px;padding:3px 6px;text-align:center">
             <div style="display:flex;gap:4px">
               <button onclick="confirmHeatmapSend('${art}','${cluster}','inp-${safeId}','${safeId}')" style="font-family:var(--font);font-size:10px;background:rgba(61,204,122,0.2);border:1px solid rgba(61,204,122,0.4);color:var(--green);border-radius:3px;padding:2px 6px;cursor:pointer">✓</button>
-              <button onclick="closeHeatmapSend('${safeId}')" style="font-family:var(--font);font-size:10px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:3px;padding:2px 6px;cursor:pointer">×</button>
+              <button onclick="closeHeatmapSend('${safeId}')" style="font-family:var(--font);font-size:10px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:3px;padding:2px 6px;cursor:pointer">✕</button>
             </div>
           </div>
         </td>`;
@@ -4668,7 +4672,7 @@ function render(data){
             <span style="font-size:12px;color:var(--muted);font-family:var(--font)">${shortName} → ${cluster}:</span>
             <input type="number" id="${formId}_inp" placeholder="шт" min="1" style="width:70px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:5px 8px">
             <button onclick="confirmAccFormById('${formId}')" style="font-family:var(--font);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 12px;cursor:pointer">✓</button>
-            <button onclick="document.getElementById('${formId}').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1">×</button>
+            <button onclick="document.getElementById('${formId}').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;line-height:1">✕</button>
           </div>`;
         }
       });
