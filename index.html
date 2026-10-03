@@ -275,7 +275,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.148</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.149</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1402,11 +1402,12 @@ async function ozonLabelsMerged(ids){
     const d=new Date();
     downloadBlob(await ozonLabelsPdf(parts),
       'этикетки_'+String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'.pdf');
+    markLabelsTaken(ids);
     ozonMergeState.msg='✓ один файл: '+ids.length+' '+pkPlural(ids.length,'заявка','заявки','заявок')+' · '+boxes+' '+pkPlural(boxes,'коробка','коробки','коробок')
       +(plain?' · без подписи: '+plain:'');
   }catch(e){
     // склейка не вышла — отдаём файлы по одному, чтобы работа не встала
-    if(parts.length){ parts.forEach((p,i)=>downloadBlob(p.blob,'этикетки_'+(i+1)+'.pdf')); ozonMergeState.msg='⚠ склейка не вышла, скачал '+parts.length+' файлами без подписей: '+e.message; }
+    if(parts.length){ parts.forEach((p,i)=>downloadBlob(p.blob,'этикетки_'+(i+1)+'.pdf')); markLabelsTaken(ids); ozonMergeState.msg='⚠ склейка не вышла, скачал '+parts.length+' файлами без подписей: '+e.message; }
     else { ozonMergeState.error=e.message; ozonMergeState.msg=''; }
   }
   ozonMergeState.busy=false;
@@ -1425,12 +1426,14 @@ async function ozonLabels(orderId){
     catch(e){ why=e.message; if(parts.length===1) blob=parts[0].blob; }   // без подписей, но файл будет
     if(blob){
       downloadBlob(blob,'этикетки_'+orderId+'.pdf');
+      markLabelsTaken(orderId);
       ozonLabelState.msg=why
         ?'⚠ один файл, но без подписей: '+why
         :'✓ этикетки скачаны ('+count+' '+pkPlural(count,'коробка','коробки','коробок')+(plain?', без подписи: '+plain:'')+')';
     }else{
       // Склейка не вышла — отдаём коробки по одной, чтобы работа не встала.
       parts.forEach((p,i)=>downloadBlob(p.blob,'этикетки_'+orderId+'_'+(i+1)+'.pdf'));
+      markLabelsTaken(orderId);
       ozonLabelState.msg='⚠ скачал '+parts.length+' отдельными файлами без подписей: '+why;
     }
   }catch(e){ ozonLabelState.error=e.message; ozonLabelState.msg=''; }
@@ -1492,6 +1495,16 @@ async function ozonCancelOrder(orderId){
   ozonCancelState={orderId,busy:false,error:'',
     msg:(ok?'✓ заявка отменена':'заявка осталась в Ozon')+(back?' · вернул в упаковано: '+back:'')};
   redraw();
+}
+// Этикетки скачаны? Ozon в кабинете помечает такие заявки точкой — повторяем: точка горит,
+// пока PDF по заявке не скачан, и гаснет после первого скачивания.
+function labelsTaken(orderId){ return !!((getOzonCache().labelsAt||{})[String(orderId)]); }
+function markLabelsTaken(ids){
+  const c=getOzonCache();
+  const at={...(c.labelsAt||{})};
+  (Array.isArray(ids)?ids:[ids]).forEach(id=>{ at[String(id)]=new Date().toISOString(); });
+  c.labelsAt=at;
+  saveOzonCache(c);
 }
 function ozonOrderActions(orderId){
   const btn='font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
@@ -1975,9 +1988,11 @@ function ozonPanelHtml(){
     // Считаем именно по слоту: у заявки без слота дата создания всегда в прошлом,
     // и она бы прыгнула в начало списка, хотя везти её пока некуда.
     const soon=o=>(o.timeslot&&o.timeslot.from?new Date(o.timeslot.from).getTime():0)||8.64e15;
-    const sorted=ordersAll
-      ? [...orders].sort((a,b)=>when(b)-when(a))            // полный список — это история, свежие сверху
-      : [...orders].sort((a,b)=>ready(a)-ready(b)||soon(a)-soon(b));
+    // Сортируем по дате создания, свежие сверху: только что созданную заявку ищут глазами
+    // первой — за этикеткой. Раньше список строился по готовности и слоту, и новая заявка
+    // могла встать в середину.
+    const born=o=>(o.created?new Date(o.created).getTime():0)||when(o)||0;
+    const sorted=[...orders].sort((a,b)=>born(b)-born(a));
     const shownOrders=ordersAll?sorted:sorted.filter(o=>ACTIVE.includes(String(o.state||'').replace(/^ORDER_STATE_/,'')));
     const itemsCell=o=>{
       const items=ozonOrderItems(o.id);
@@ -1991,7 +2006,7 @@ function ozonPanelHtml(){
     const pickedIds=shownIds.filter(id=>ozonOrderChecked(id));
     const orderRows=shownOrders.length?shownOrders.map(o=>`<tr>
         <td><input type="checkbox" ${ozonOrderChecked(o.id)?'checked':''} onchange="ozonToggleOrder('${String(o.id)}',${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></td>
-        <td class="mono">${escHtml(o.number||o.id)}</td>
+        <td class="mono">${labelsTaken(o.id)?'':'<span title="этикетка ещё не скачана" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:middle"></span>'}${escHtml(o.number||o.id)}</td>
         <td>${ozonStateBadge(o.state)}</td>
         <td class="mono">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>
         <td style="font-size:12px">${escHtml(ozonOrderClusters(o.id))||'<span style="color:var(--muted)">—</span>'}</td>
@@ -3495,7 +3510,8 @@ function adjRowsHtml(){
   // План и следующая партия стоят рядом двумя колонками: видно обе сразу, а стрелка «вправо»
   // буквально переносит коробку в соседнюю. Упакованное и отгруженное — ниже, во всю ширину.
   const col=(st,hint)=>{
-    const rows=sorted.filter(x=>adjStage(x)===st);
+    const rows=sorted.filter(x=>adjStage(x)===st)
+      .sort((p,q)=>artName(p.article).localeCompare(artName(q.article),'ru')||(p.ts||0)-(q.ts||0));
     const qty=rows.reduce((s,x)=>s+x.qty,0);
     return `<div class="adj-col">
       <div class="adj-col-head"><span>${titles[st]}</span>
