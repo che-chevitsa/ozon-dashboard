@@ -275,7 +275,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.152</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.153</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1474,21 +1474,6 @@ function ozonOrderBoxes(orderId){
     .filter(a=>String(a.ozonOrderId||'')===String(orderId))
     .map(a=>({cargoId:a.cargoId?String(a.cargoId):'', article:a.article, cluster:a.cluster, qty:a.qty}));
 }
-// Этикетка на одну коробку: тот же метод кабинета, но с единственным грузоместом.
-let ozonBoxLabelState=null; // {cargoId, busy, msg, error}
-async function ozonBoxLabel(orderId,cargoId){
-  ozonBoxLabelState={cargoId,busy:true,msg:'готовлю…',error:''};
-  redraw();
-  try{
-    const {supplyId}=await ozonSupplyIdOf(orderId);
-    if(!supplyId) throw new Error('не нашёл поставку внутри заявки');
-    const blob=await ozonLabelFile(supplyId,[cargoId]);
-    downloadBlob(blob,'этикетка_'+cargoId+'.pdf');
-    markLabelsTaken(orderId);
-    ozonBoxLabelState={cargoId,busy:false,msg:'✓ скачана',error:''};
-  }catch(e){ ozonBoxLabelState={cargoId,busy:false,msg:'',error:e.message}; }
-  redraw();
-}
 async function ozonLabels(orderId){
   ozonLabelState={orderId,busy:true,msg:'готовлю этикетки…',error:''};
   redraw();
@@ -2080,14 +2065,6 @@ function ozonPanelHtml(){
     // Заявка — это несколько коробок под одним номером. Показываем каждую отдельной строкой,
     // а принадлежность к заявке — объединёнными ячейками: так видно, что они едут вместе
     // и в пункт выдачи должны уехать одной партией.
-    const boxCell=(o,b)=>{
-      if(!b) return '';
-      const st=ozonBoxLabelState&&ozonBoxLabelState.cargoId===b.cargoId?ozonBoxLabelState:null;
-      if(st&&st.busy) return `<span style="color:var(--accent);font-size:11px">${escHtml(st.msg)}</span>`;
-      if(st&&st.error) return `<span style="color:var(--red);font-size:11px" title="${escHtml(st.error)}">ошибка</span>`;
-      if(!b.cargoId) return `<span style="color:var(--muted);font-size:11px" title="грузоместо не передавалось из дашборда — этикетку можно взять только на всю заявку">—</span>`;
-      return `<button class="ibtn" title="этикетка только на эту коробку" onclick="ozonBoxLabel('${String(o.id)}','${escHtml(b.cargoId)}')">⬇</button>`;
-    };
     // Ключи всех видимых коробок: по ним считается «выбрано всё» и собирается PDF.
     const orderKeys=o=>{
       const boxes=ozonOrderBoxes(o.id);
@@ -2117,10 +2094,9 @@ function ozonPanelHtml(){
           return `<input type="checkbox" ${ozonBoxChecked(k,shownKeys)?'checked':''} title="${b&&!b.cargoId?'этикетку на эту коробку отдельно не взять — только вместе с заявкой':'эта коробка'}" onchange="ozonTogglePick('${escHtml(k)}',${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)">`;})()}</td>
         <td style="font-size:12px;${i===0?edge:''}">${b?escHtml(b.cluster):(escHtml(ozonOrderClusters(o.id))||'<span style="color:var(--muted)">—</span>')}</td>
         <td class="mono" style="font-size:11px;line-height:1.5;${i===0?edge:''}">${b?escHtml(artName(b.article))+' '+b.qty+' шт':itemsCell(o)}</td>
-        <td style="${i===0?edge:''}">${boxCell(o,b)}</td>
         ${i===0?`<td class="mono" rowspan="${span}" style="${edge};color:var(--muted);vertical-align:top">${ozonOrderActions(o.id)}</td>`:''}
       </tr>`).join('');
-    }).join(''):`<tr><td colspan="9" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'готовых к отгрузке заявок нет'}</td></tr>`;
+    }).join(''):`<tr><td colspan="8" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'готовых к отгрузке заявок нет'}</td></tr>`;
     // срок ключа показываем, только когда он скоро кончится
     const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
     const keyWarn=keyLeft!==null&&keyLeft<30
@@ -2141,7 +2117,7 @@ function ozonPanelHtml(){
       ${pickedBoxes?`<div style="margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button style="${btn};color:var(--accent);border-color:rgba(91,127,255,0.4)" onclick="ozonLabelsPicked(${escHtml(JSON.stringify(picks))})">⬇ этикетки одним PDF · ${pickedBoxes} ${pkPlural(pickedBoxes,'коробка','коробки','коробок')}</button>
         <span id="labels-all" style="font-family:var(--font);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
-      <div class="table-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedBoxes===shownKeys.length&&shownKeys.length?'checked':''} title="выбрать все коробки" onchange="ozonToggleAllPicks(${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th style="width:26px"></th><th>Кластер</th><th>Что внутри</th><th style="width:36px"></th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedBoxes===shownKeys.length&&shownKeys.length?'checked':''} title="выбрать все коробки" onchange="ozonToggleAllPicks(${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th style="width:26px"></th><th>Кластер</th><th>Что внутри</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       </div>
       <div class="section-label" style="margin-top:1.4rem">Настройки отгрузки</div>
       <div class="block" style="padding:0.9rem 1.25rem">
