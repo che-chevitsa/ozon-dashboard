@@ -275,7 +275,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.149</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.150</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1414,6 +1414,36 @@ async function ozonLabelsMerged(ids){
   redraw();
 }
 // Этикетки одной заявки: PDF скачивается файлом.
+// Какие коробки в заявке и что в каждой. Берём из своих записей — они точные: при создании
+// грузомест дашборд запомнил, какой коробке какой номер выдал Ozon.
+function ozonOrderBoxes(orderId){
+  return getAdjs()
+    .map((a,i)=>({...a,idx:i}))
+    .filter(a=>String(a.ozonOrderId||'')===String(orderId))
+    .map(a=>({cargoId:a.cargoId?String(a.cargoId):'', article:a.article, cluster:a.cluster, qty:a.qty}));
+}
+// Развёрнутые заявки: показываем коробки по клику, чтобы не раздувать таблицу.
+let ozonOpenOrders=new Set();
+function toggleOrderBoxes(orderId){
+  const id=String(orderId);
+  ozonOpenOrders.has(id)?ozonOpenOrders.delete(id):ozonOpenOrders.add(id);
+  redraw();
+}
+// Этикетка на одну коробку: тот же метод кабинета, но с единственным грузоместом.
+let ozonBoxLabelState=null; // {cargoId, busy, msg, error}
+async function ozonBoxLabel(orderId,cargoId){
+  ozonBoxLabelState={cargoId,busy:true,msg:'готовлю…',error:''};
+  redraw();
+  try{
+    const {supplyId}=await ozonSupplyIdOf(orderId);
+    if(!supplyId) throw new Error('не нашёл поставку внутри заявки');
+    const blob=await ozonLabelFile(supplyId,[cargoId]);
+    downloadBlob(blob,'этикетка_'+cargoId+'.pdf');
+    markLabelsTaken(orderId);
+    ozonBoxLabelState={cargoId,busy:false,msg:'✓ скачана',error:''};
+  }catch(e){ ozonBoxLabelState={cargoId,busy:false,msg:'',error:e.message}; }
+  redraw();
+}
 async function ozonLabels(orderId){
   ozonLabelState={orderId,busy:true,msg:'готовлю этикетки…',error:''};
   redraw();
@@ -2002,17 +2032,48 @@ function ozonPanelHtml(){
         ?`<span style="color:var(--muted)">${escHtml(ozonItemsBusy.msg)}</span>`
         :`<span style="color:var(--accent);cursor:pointer" onclick="ozonAskItems('${String(o.id)}')" title="спросить состав у Ozon">узнать</span>`;
     };
+    // Заявка — это несколько коробок под одним номером. Разворот показывает их по отдельности,
+    // чтобы можно было перепечатать этикетку на одну, а не на всю заявку.
+    const boxesToggle=o=>{
+      const boxes=ozonOrderBoxes(o.id);
+      if(boxes.length<2)return '';
+      const open=ozonOpenOrders.has(String(o.id));
+      return `<div style="margin-top:4px"><span style="color:var(--accent);cursor:pointer;font-size:11px"
+        onclick="toggleOrderBoxes('${String(o.id)}')">${open?'свернуть коробки':boxes.length+' '+pkPlural(boxes.length,'коробка','коробки','коробок')+' по отдельности'}</span></div>`;
+    };
+    const boxesRow=o=>{
+      if(!ozonOpenOrders.has(String(o.id)))return '';
+      const boxes=ozonOrderBoxes(o.id);
+      const rows=boxes.map((b,i)=>{
+        const st=ozonBoxLabelState&&ozonBoxLabelState.cargoId===b.cargoId?ozonBoxLabelState:null;
+        const btn=!b.cargoId
+          ?`<span style="color:var(--muted);font-size:11px" title="грузоместо не передавалось из дашборда — этикетку можно взять только на всю заявку">нет номера коробки</span>`
+          :st&&st.busy?`<span style="color:var(--accent);font-size:11px">${escHtml(st.msg)}</span>`
+          :`<button class="ibtn" title="этикетка только на эту коробку" onclick="ozonBoxLabel('${String(o.id)}','${escHtml(b.cargoId)}')">⬇</button>`;
+        const msg=st&&!st.busy?(st.error
+          ?`<span style="color:var(--red);font-size:11px">${escHtml(st.error)}</span>`
+          :`<span style="color:var(--green);font-size:11px">${escHtml(st.msg)}</span>`):'';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:4px 0">
+          <span style="width:22px;color:var(--muted);font-size:11px">${i+1}</span>
+          <span>${escHtml(artName(b.article))}</span>
+          <span style="color:var(--muted)">${escHtml(b.cluster)}</span>
+          <span class="mono">${b.qty} шт</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:8px">${msg}${btn}</span>
+        </div>`;
+      }).join('');
+      return `<tr><td colspan="7" style="background:var(--bg3);padding:8px 16px">${rows}</td></tr>`;
+    };
     const shownIds=shownOrders.map(o=>String(o.id));
     const pickedIds=shownIds.filter(id=>ozonOrderChecked(id));
     const orderRows=shownOrders.length?shownOrders.map(o=>`<tr>
         <td><input type="checkbox" ${ozonOrderChecked(o.id)?'checked':''} onchange="ozonToggleOrder('${String(o.id)}',${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></td>
-        <td class="mono">${labelsTaken(o.id)?'':'<span title="этикетка ещё не скачана" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:middle"></span>'}${escHtml(o.number||o.id)}</td>
+        <td class="mono">${labelsTaken(o.id)?'':'<span title="этикетка ещё не скачана" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:middle"></span>'}<a href="${escHtml((getSheetCfg()&&getSheetCfg().link||'https://seller.ozon.ru/app/supply/orders/{id}').replace('{id}',String(o.id)))}" target="_blank" rel="noopener" title="открыть заявку в кабинете Ozon" style="color:inherit">${escHtml(o.number||o.id)}</a></td>
         <td>${ozonStateBadge(o.state)}</td>
         <td class="mono">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>
         <td style="font-size:12px">${escHtml(ozonOrderClusters(o.id))||'<span style="color:var(--muted)">—</span>'}</td>
-        <td class="mono" style="font-size:11px;line-height:1.5">${itemsCell(o)}</td>
+        <td class="mono" style="font-size:11px;line-height:1.5">${itemsCell(o)}${boxesToggle(o)}</td>
         <td class="mono" style="color:var(--muted)">${ozonOrderActions(o.id)}</td>
-      </tr>`).join(''):`<tr><td colspan="7" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'готовых к отгрузке заявок нет'}</td></tr>`;
+      </tr>${boxesRow(o)}`).join(''):`<tr><td colspan="7" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'готовых к отгрузке заявок нет'}</td></tr>`;
     // срок ключа показываем, только когда он скоро кончится
     const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
     const keyWarn=keyLeft!==null&&keyLeft<30
