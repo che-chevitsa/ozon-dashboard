@@ -275,7 +275,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.151</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.152</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1106,18 +1106,26 @@ function sheetBtnHtml(orderId){
 let ozonCargoState=null; // {orderId, busy, msg, error, cargoIds, problems}
 let ozonSessionOrders=[]; // заявки, созданные в этом сеансе — для кнопки «этикетки»
 // Отмеченные заявки: null — отмечены все видимые.
-let ozonPickedOrders=null;
-function ozonOrderChecked(id){ return !ozonPickedOrders||ozonPickedOrders.has(String(id)); }
-function ozonToggleOrder(id,shown){
-  if(!ozonPickedOrders) ozonPickedOrders=new Set(shown.map(String));
-  const k=String(id);
-  if(ozonPickedOrders.has(k)) ozonPickedOrders.delete(k); else ozonPickedOrders.add(k);
+// Отмеченные коробки. Ключ — «заявка|грузоместо»; для заявки, у которой состав неизвестен,
+// грузоместо пустое и отмечается заявка целиком. null означает «отмечено всё видимое».
+let ozonPickedBoxSet=null;
+const pickKey=(orderId,cargoId)=>String(orderId)+'|'+(cargoId||'');
+function ozonBoxChecked(key,shownKeys){ return !ozonPickedBoxSet||ozonPickedBoxSet.has(key); }
+function ozonTogglePick(key,shownKeys){
+  if(!ozonPickedBoxSet) ozonPickedBoxSet=new Set(shownKeys);
+  ozonPickedBoxSet.has(key)?ozonPickedBoxSet.delete(key):ozonPickedBoxSet.add(key);
   redraw();
 }
-function ozonToggleAllPicked(shown){
-  const all=shown.map(String);
-  const now=all.filter(id=>ozonOrderChecked(id));
-  ozonPickedOrders=now.length===all.length?new Set():new Set(all);
+// Галочка у заявки включает и выключает все её коробки разом.
+function ozonToggleOrderPicks(keys,shownKeys){
+  if(!ozonPickedBoxSet) ozonPickedBoxSet=new Set(shownKeys);
+  const all=keys.every(k=>ozonPickedBoxSet.has(k));
+  keys.forEach(k=>all?ozonPickedBoxSet.delete(k):ozonPickedBoxSet.add(k));
+  redraw();
+}
+function ozonToggleAllPicks(shownKeys){
+  const picked=shownKeys.filter(k=>ozonBoxChecked(k,shownKeys));
+  ozonPickedBoxSet=picked.length===shownKeys.length?new Set():new Set(shownKeys);
   redraw();
 }
 let ozonLabelState=null; // {orderId, busy, msg, error} — этикетки одной заявки
@@ -1298,6 +1306,21 @@ async function ozonLabelsPdf(parts){
 }
 // Этикетки заявки кусками: [{blob,text,count}]. Когда коробки разные, просим этикетку
 // отдельно на каждую — тогда страница и её содержимое связаны по построению, а не по порядку.
+/** Этикетки по выбранным коробкам: заявки те же, но грузоместа — только отмеченные. */
+async function ozonLabelPartsFor(orderId,cargoIds,say){
+  if(!cargoIds||!cargoIds.length) return ozonLabelParts(orderId,say);
+  const {supplyId}=await ozonSupplyIdOf(orderId);
+  if(!supplyId) throw new Error('не нашёл поставку внутри заявки');
+  const texts=await ozonCargoTexts(orderId,cargoIds,supplyId);
+  const same=texts.every(t=>t===texts[0]);
+  if(same) return [{blob:await ozonLabelFile(supplyId,cargoIds),text:texts[0]||'',count:cargoIds.length}];
+  const parts=[];
+  for(let i=0;i<cargoIds.length;i++){
+    if(say) say('коробка '+(i+1)+' из '+cargoIds.length+'…');
+    parts.push({blob:await ozonLabelFile(supplyId,[cargoIds[i]]),text:texts[i],count:1});
+  }
+  return parts;
+}
 async function ozonLabelParts(orderId,say){
   const {supplyId}=await ozonSupplyIdOf(orderId);
   if(!supplyId) throw new Error('не нашёл поставку внутри заявки');
@@ -1388,6 +1411,35 @@ function loadPdfLib(){
   return pdfLibLoading;
 }
 // Все этикетки сеанса одним файлом.
+/** Собрать один PDF по отмеченным коробкам. picks: [{orderId, cargoIds}] — пустой список
+ *  грузомест означает «вся заявка», так бывает у заявок с неизвестным составом. */
+async function ozonLabelsPicked(picks){
+  ozonMergeState={busy:true,msg:'собираю этикетки…',error:''};
+  const say=t=>{ ozonMergeState.msg=t; const el=document.getElementById('labels-all'); if(el){ el.textContent=t; el.style.color='var(--accent)'; } };
+  redraw();
+  const parts=[]; let boxes=0, plain=0;
+  const orderIds=picks.map(p=>p.orderId);
+  try{
+    for(let i=0;i<picks.length;i++){
+      say('заявка '+(i+1)+' из '+picks.length+'…');
+      const got=await ozonLabelPartsFor(picks[i].orderId,picks[i].cargoIds,t=>say('заявка '+(i+1)+' из '+picks.length+': '+t));
+      got.forEach(p=>{ parts.push(p); boxes+=p.count; if(!p.text) plain+=p.count; });
+    }
+    const d=new Date();
+    downloadBlob(await ozonLabelsPdf(parts),
+      'этикетки_'+String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'.pdf');
+    markLabelsTaken(orderIds);
+    ozonMergeState.msg='✓ один файл: '+boxes+' '+pkPlural(boxes,'коробка','коробки','коробок')
+      +' из '+picks.length+' '+pkPlural(picks.length,'заявки','заявок','заявок')
+      +(plain?' · без подписи: '+plain:'');
+  }catch(e){
+    if(parts.length){ parts.forEach((p,i)=>downloadBlob(p.blob,'этикетки_'+(i+1)+'.pdf')); markLabelsTaken(orderIds);
+      ozonMergeState.msg='⚠ склейка не вышла, скачал '+parts.length+' файлами без подписей: '+e.message; }
+    else { ozonMergeState.error=e.message; ozonMergeState.msg=''; }
+  }
+  ozonMergeState.busy=false;
+  redraw();
+}
 async function ozonLabelsMerged(ids){
   ozonMergeState={busy:true,msg:'собираю этикетки…',error:''};
   const say=t=>{ ozonMergeState.msg=t; const el=document.getElementById('labels-all'); if(el){ el.textContent=t; el.style.color='var(--accent)'; } };
@@ -2036,24 +2088,39 @@ function ozonPanelHtml(){
       if(!b.cargoId) return `<span style="color:var(--muted);font-size:11px" title="грузоместо не передавалось из дашборда — этикетку можно взять только на всю заявку">—</span>`;
       return `<button class="ibtn" title="этикетка только на эту коробку" onclick="ozonBoxLabel('${String(o.id)}','${escHtml(b.cargoId)}')">⬇</button>`;
     };
-    const shownIds=shownOrders.map(o=>String(o.id));
-    const pickedIds=shownIds.filter(id=>ozonOrderChecked(id));
+    // Ключи всех видимых коробок: по ним считается «выбрано всё» и собирается PDF.
+    const orderKeys=o=>{
+      const boxes=ozonOrderBoxes(o.id);
+      return boxes.length?boxes.map(b=>pickKey(o.id,b.cargoId)):[pickKey(o.id,'')];
+    };
+    const shownKeys=shownOrders.flatMap(orderKeys);
+    const pickedKeys=shownKeys.filter(k=>ozonBoxChecked(k,shownKeys));
+    // Для скачивания группируем обратно по заявкам.
+    const picks=shownOrders.map(o=>{
+      const chosen=orderKeys(o).filter(k=>pickedKeys.includes(k));
+      if(!chosen.length)return null;
+      const cargoIds=chosen.map(k=>k.split('|')[1]).filter(Boolean);
+      return {orderId:String(o.id),cargoIds};
+    }).filter(Boolean);
+    const pickedBoxes=pickedKeys.length;
     const orderRows=shownOrders.length?shownOrders.map(o=>{
       const boxes=ozonOrderBoxes(o.id);
       const lines=boxes.length?boxes:[null];
       const span=lines.length;
       const edge='border-top:2px solid var(--border)';
       return lines.map((b,i)=>`<tr>
-        ${i===0?`<td rowspan="${span}" style="${edge}"><input type="checkbox" ${ozonOrderChecked(o.id)?'checked':''} onchange="ozonToggleOrder('${String(o.id)}',${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></td>
+        ${i===0?`<td rowspan="${span}" style="${edge};vertical-align:top"><input type="checkbox" ${orderKeys(o).every(k=>ozonBoxChecked(k,shownKeys))?'checked':''} title="вся заявка" onchange="ozonToggleOrderPicks(${escHtml(JSON.stringify(orderKeys(o)))},${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)"></td>
         <td class="mono" rowspan="${span}" style="${edge};vertical-align:top">${labelsTaken(o.id)?'':'<span title="этикетка ещё не скачана" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:7px;vertical-align:middle"></span>'}<a href="${escHtml((getSheetCfg()&&getSheetCfg().link||'https://seller.ozon.ru/app/supply/orders/{id}').replace('{id}',String(o.id)))}" target="_blank" rel="noopener" title="открыть заявку в кабинете Ozon" style="color:inherit">${escHtml(o.number||o.id)}</a>${span>1?`<div style="font-size:11px;color:var(--muted);margin-top:4px">${span} ${pkPlural(span,'коробка','коробки','коробок')} одной отгрузкой</div>`:''}</td>
         <td rowspan="${span}" style="${edge};vertical-align:top">${ozonStateBadge(o.state)}</td>
         <td class="mono" rowspan="${span}" style="${edge};vertical-align:top">${o.timeslot?ozonWhen(o.timeslot.from):'—'}</td>`:''}
+        <td style="${i===0?edge:''};width:26px">${(()=>{const k=pickKey(o.id,b?b.cargoId:'');
+          return `<input type="checkbox" ${ozonBoxChecked(k,shownKeys)?'checked':''} title="${b&&!b.cargoId?'этикетку на эту коробку отдельно не взять — только вместе с заявкой':'эта коробка'}" onchange="ozonTogglePick('${escHtml(k)}',${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)">`;})()}</td>
         <td style="font-size:12px;${i===0?edge:''}">${b?escHtml(b.cluster):(escHtml(ozonOrderClusters(o.id))||'<span style="color:var(--muted)">—</span>')}</td>
         <td class="mono" style="font-size:11px;line-height:1.5;${i===0?edge:''}">${b?escHtml(artName(b.article))+' '+b.qty+' шт':itemsCell(o)}</td>
         <td style="${i===0?edge:''}">${boxCell(o,b)}</td>
         ${i===0?`<td class="mono" rowspan="${span}" style="${edge};color:var(--muted);vertical-align:top">${ozonOrderActions(o.id)}</td>`:''}
       </tr>`).join('');
-    }).join(''):`<tr><td colspan="8" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'готовых к отгрузке заявок нет'}</td></tr>`;
+    }).join(''):`<tr><td colspan="9" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'готовых к отгрузке заявок нет'}</td></tr>`;
     // срок ключа показываем, только когда он скоро кончится
     const keyLeft=cache.keyExpiresAt?Math.round((new Date(cache.keyExpiresAt)-Date.now())/86400000):null;
     const keyWarn=keyLeft!==null&&keyLeft<30
@@ -2071,10 +2138,10 @@ function ozonPanelHtml(){
           :'готовы к отгрузке · '+shownOrders.length+(filling?` <span style="color:var(--amber)">· ещё ${filling} в заполнении</span>`:'')}
           <span style="color:var(--accent);cursor:pointer;margin-left:8px" onclick="toggleAllOrders()">${ordersAll?'только готовые':'показать все'}</span></span></div>
       <div class="block" style="padding:0.9rem 1.25rem">
-      ${pickedIds.length?`<div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button style="${btn};color:var(--accent)" onclick="ozonLabelsMerged(${escHtml(JSON.stringify(pickedIds))})">⬇ этикетки одним PDF · ${pickedIds.length} ${pkPlural(pickedIds.length,'заявка','заявки','заявок')}</button>
+      ${pickedBoxes?`<div style="margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button style="${btn};color:var(--accent);border-color:rgba(91,127,255,0.4)" onclick="ozonLabelsPicked(${escHtml(JSON.stringify(picks))})">⬇ этикетки одним PDF · ${pickedBoxes} ${pkPlural(pickedBoxes,'коробка','коробки','коробок')}</button>
         <span id="labels-all" style="font-family:var(--font);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
-      <div class="table-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedIds.length===shownIds.length&&shownIds.length?'checked':''} title="выбрать все" onchange="ozonToggleAllPicked(${escHtml(JSON.stringify(shownIds))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th>Кластер</th><th>Что внутри</th><th style="width:36px"></th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedBoxes===shownKeys.length&&shownKeys.length?'checked':''} title="выбрать все коробки" onchange="ozonToggleAllPicks(${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th style="width:26px"></th><th>Кластер</th><th>Что внутри</th><th style="width:36px"></th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       </div>
       <div class="section-label" style="margin-top:1.4rem">Настройки отгрузки</div>
       <div class="block" style="padding:0.9rem 1.25rem">
