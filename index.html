@@ -124,6 +124,54 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
 .legend-dot{width:8px;height:8px;border-radius:2px;}
 .block{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-top:2rem;}
+/* Кнопка-действие: одна во всём дашборде. Раньше каждый экран собирал свою строкой
+   инлайновых стилей, и отступы с размерами расходились от экрана к экрану. */
+.btn{font-family:var(--font);font-size:12px;line-height:1.2;color:var(--text);background:var(--bg3);
+  border:1px solid var(--border);border-radius:7px;padding:7px 12px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  transition:border-color .12s,background .12s,color .12s;}
+.btn:hover{border-color:rgba(128,128,128,0.35);}
+.btn.sm{font-size:11px;padding:5px 10px;border-radius:6px;}
+.btn.muted{color:var(--muted);}
+.btn.accent{color:var(--accent);}
+.btn.green{color:var(--green);border-color:rgba(61,204,122,0.35);}
+.btn.amber{color:var(--amber);}
+.btn.red{color:var(--red);}
+.btn.on{color:var(--accent);border-color:var(--accent);}      /* выбранный вариант в группе */
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500;}
+.btn.primary:hover{border-color:var(--accent);filter:brightness(1.06);}
+.btn[disabled]{opacity:0.5;cursor:default;}
+/* Поле ввода — пара к .btn: та же высота, рамка и скругление. */
+.fld{font-family:var(--font);font-size:12px;color:var(--text);background:var(--bg3);
+  border:1px solid var(--border);border-radius:7px;padding:7px 10px;}
+.fld:focus{outline:none;border-color:var(--accent);}
+/* Строка списка с выбором (кластеры к отгрузке, пункты выдачи) — тот же вид, что у .adj-item
+   на экране упаковки: прежние строки были плотнее и с подчёркиванием. */
+.pick-row{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text);
+  padding:7px 10px;border-radius:8px;border:1px solid transparent;cursor:pointer;}
+.pick-row+.pick-row{margin-top:2px;}
+.pick-row:hover{background:var(--bg3);border-color:var(--border);}
+.pick-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;margin:0;}
+.pick-row .pick-sub{color:var(--muted);font-size:12px;}
+.pick-row .pick-qty{color:var(--green);}
+/* Заголовок блока внутри карточки. */
+.blk-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 12px;}
+.blk-head b{font-size:14px;font-weight:600;}
+.blk-head .blk-sub{font-size:12px;color:var(--muted);}
+.hint{font-size:12px;color:var(--muted);line-height:1.5;}
+/* Маленький переключатель-«фишка»: сортировка приоритетов, группы и кластеры в фильтрах.
+   Раньше каждый из них рисовался своей строкой стилей с чуть разными отступами. */
+.chip{font-family:var(--font);font-size:11px;line-height:1.2;padding:5px 10px;border-radius:6px;
+  cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);
+  transition:border-color .12s,background .12s,color .12s;}
+.chip:hover{border-color:rgba(128,128,128,0.35);color:var(--text);}
+.chip.on{border-color:var(--accent);background:rgba(91,127,255,0.15);color:var(--accent);}
+.chip.off{opacity:0.55;text-decoration:line-through;}
+.chip.warn{color:var(--amber);}
+/* Плашка с сообщением: ошибки Ozon, предупреждения. Одна рамка и один отступ везде. */
+.alert{font-size:12px;line-height:1.5;padding:9px 11px;border-radius:8px;margin:10px 0;}
+.alert.red{background:var(--red-bg);color:var(--red);}
+.alert.amber{background:var(--amber-bg);color:var(--amber);}
 .boxes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
 .box-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
 .box-card>*{margin:0!important;}
@@ -135,16 +183,16 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .box-count.green{color:var(--green);}.box-count.amber{color:var(--amber);}.box-count.red{color:var(--red);}
 .box-meta{font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--font);}
 .box-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
-.box-btn{font-family:var(--font);font-size:11px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:4px 10px;cursor:pointer;}
+.box-btn{font-family:var(--font);font-size:11px;line-height:1.2;background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 10px;cursor:pointer;}
 .box-btn:hover{color:var(--text);border-color:rgba(255,255,255,0.2);}
 .box-input-row{display:flex;gap:6px;align-items:center;margin-top:8px;}
-.box-input-row input{width:80px;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font);font-size:12px;padding:4px 8px;}
-.box-input-row button{font-family:var(--font);font-size:11px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:5px;padding:4px 10px;cursor:pointer;}
+.box-input-row input{width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:5px 8px;}
+.box-input-row button{font-family:var(--font);font-size:11px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:5px 10px;cursor:pointer;}
 .adj-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;}
-.adj-form select,.adj-form input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:6px 10px;}
+.adj-form select,.adj-form input{background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--font);font-size:12px;padding:7px 10px;}
 .adj-form select{flex:1;min-width:140px;}
 .adj-form input{width:80px;}
-.adj-form button{font-family:var(--font);font-size:12px;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:6px;padding:6px 14px;cursor:pointer;white-space:nowrap;}
+.adj-form button{font-family:var(--font);font-size:12px;line-height:1.2;background:rgba(91,127,255,0.15);border:1px solid rgba(91,127,255,0.3);color:var(--accent);border-radius:7px;padding:7px 14px;cursor:pointer;white-space:nowrap;}
 .adj-form button:hover{background:rgba(91,127,255,0.25);}
 .adj-list{margin-top:10px;display:flex;flex-direction:column;gap:4px;}
 /* Две колонки планирования: текущая партия и следующая */
@@ -275,7 +323,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.153</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.154</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1028,10 +1076,9 @@ async function sheetAutoSend(){
 }
 function cloudWhereHtml(){
   const drive=!!getSheetCfg();
-  const btn='font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   return `<div style="font-family:var(--font);font-size:12px;color:var(--muted);margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <span>состояние дашборда: <span style="color:${drive?'var(--green)':'var(--amber)'}">${drive?'файл на Google Диске':'не синхронизируется — данные только в этом браузере'}</span></span>
-    ${drive?`<button style="${btn}" onclick="checkDrive()">проверить хранилище</button>`:''}
+    ${drive?`<button class="btn sm" onclick="checkDrive()">проверить хранилище</button>`:''}
     <span id="drive-check" style="font-family:var(--font);font-size:12px"></span></div>`;
 }
 // Сохраняем и тут же читаем обратно: видно, реально ли файл на Диске обновился.
@@ -1060,24 +1107,21 @@ async function checkDrive(){
   }catch(e){ say('ошибка: '+e.message,'var(--red)'); }
 }
 function sheetCfgHtml(){
-  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
-  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:6px 8px';
   const cfg=getSheetCfg();
   if(cfg) return `<div style="font-family:var(--font);font-size:12px;color:var(--muted);margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span>Google Таблица: <span style="color:var(--green)">подключена</span></span>
-      <button style="${btn};color:var(--muted)" onclick="forgetSheetCfg()">отключить</button></div>`;
+      <button class="btn muted" onclick="forgetSheetCfg()">отключить</button></div>`;
   return `<details style="margin-top:14px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Google Таблица · учёт отгрузок (не настроена)</summary>
     <div style="font-size:12px;color:var(--muted);line-height:1.6;margin:8px 0">В таблице: Расширения → Apps Script, вставь код (я дам), затем Развернуть → Веб-приложение,
       доступ «Все, у кого есть ссылка». Полученную ссылку вида .../exec вставь сюда. Секрет — любое слово, оно же в коде скрипта.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="sheet-url" placeholder="https://script.google.com/macros/s/.../exec" style="${inp};width:340px">
-      <input id="sheet-secret" placeholder="секрет" style="${inp};width:140px">
-      <input id="sheet-link" placeholder="ссылка на заявку: .../{id}" value="https://seller.ozon.ru/app/supply/orders/{id}" style="${inp};width:280px">
-      <button style="${btn};color:var(--green)" onclick="saveSheetCfg()">подключить</button>
+      <input id="sheet-url" placeholder="https://script.google.com/macros/s/.../exec" class="fld" style="width:340px">
+      <input id="sheet-secret" placeholder="секрет" class="fld" style="width:140px">
+      <input id="sheet-link" placeholder="ссылка на заявку: .../{id}" value="https://seller.ozon.ru/app/supply/orders/{id}" class="fld" style="width:280px">
+      <button class="btn green" onclick="saveSheetCfg()">подключить</button>
     </div></details>`;
 }
 function sheetBtnHtml(orderId){
-  const btn='font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   if(!getSheetCfg())return '';
   const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
   const st=sheetState&&String(sheetState.orderId)===String(orderId)?sheetState:null;
@@ -1567,7 +1611,6 @@ function markLabelsTaken(ids){
   saveOzonCache(c);
 }
 function ozonOrderActions(orderId){
-  const btn='font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer';
   const ours=getAdjs().filter(a=>String(a.ozonOrderId||'')===String(orderId));
   const mine=ours.length>0;
   const cargoSent=mine&&ours.every(a=>a.cargoSentAt);
@@ -1589,7 +1632,7 @@ function ozonOrderActions(orderId){
   parts.push(sheetBtnHtml(orderId));
   parts.push(ls&&ls.busy
     ?`<span style="font-family:var(--font);font-size:11px;color:var(--accent)">${escHtml(ls.msg||'…')}</span>`
-    :`<button style="${btn};color:var(--accent)" onclick="ozonLabels('${String(orderId)}')">этикетки</button>`);
+    :`<button class="btn sm accent" onclick="ozonLabels('${String(orderId)}')">этикетки</button>`);
   const msg=[xs&&xs.error?'<span style="color:var(--red)">'+escHtml(xs.error)+'</span>':'',
              xs&&!xs.busy&&xs.msg?'<span style="color:var(--green)">'+escHtml(xs.msg)+'</span>':'',
              cs&&cs.error?'<span style="color:var(--red)">'+escHtml(cs.error)+'</span>':'',
@@ -1841,65 +1884,64 @@ async function ozonCreateSupply(){
 }
 
 function ozonSupplyHtml(){
-  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
   const groups=packedByCluster();
   const d=ozonDraft, sel=ozonSelected();
   const type=ozonSupplyType(), dropoff=getOzonDropoff(), points=getOzonCache().dropoffs||[];
-  const tbtn=(t,label)=>`<button style="${btn};${type===t?'color:var(--accent);border-color:var(--accent)':'color:var(--muted)'}" onclick="setOzonSupplyType('${t}')">${label}</button>`;
-  const typeRow=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 10px">
-      <span style="font-size:12px;color:var(--muted);font-family:var(--font)">тип поставки:</span>
+  const tbtn=(t,label)=>`<button class="btn ${type===t?'on':'muted'}" onclick="setOzonSupplyType('${t}')">${label}</button>`;
+  const typeRow=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px">
+      <span class="hint">тип поставки:</span>
       ${tbtn('CROSSDOCK','кросс-докинг')}${tbtn('DIRECT','напрямую на склад')}
-      ${type==='CROSSDOCK'?`<span style="font-size:12px;color:var(--muted);font-family:var(--font);margin-left:6px">пункт отгрузки:</span>
+      ${type==='CROSSDOCK'?`<span class="hint" style="margin-left:6px">пункт отгрузки:</span>
         ${dropoff&&!ozonDropoffEdit
-          ?`<span style="font-family:var(--font);font-size:12px;color:var(--green)">${escHtml(dropoff.name)}</span>
-            <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleDropoffEdit()">сменить</span>`
-          :`<input id="ozon-dropoff-search" value="${escHtml(ozonDropoffQuery)}" placeholder="название пункта, напр. ТАГАНРОГ_213" onkeydown="if(event.key==='Enter')ozonSearchDropoffs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:5px 8px;width:220px">
-            <button style="${btn};color:var(--accent)" onclick="ozonSearchDropoffs()">найти</button>`}`:''}
+          ?`<span style="font-size:12px;color:var(--green)">${escHtml(dropoff.name)}</span>
+            <span style="font-size:12px;color:var(--accent);cursor:pointer" onclick="toggleDropoffEdit()">сменить</span>`
+          :`<input id="ozon-dropoff-search" class="fld" value="${escHtml(ozonDropoffQuery)}" placeholder="название пункта, напр. ТАГАНРОГ_213" onkeydown="if(event.key==='Enter')ozonSearchDropoffs()" style="width:240px">
+            <button class="btn accent" onclick="ozonSearchDropoffs()">найти</button>`}`:''}
     </div>
-    ${type==='CROSSDOCK'&&ozonDropoffEdit&&points.length?`<div style="margin:-4px 0 10px">
-      ${points.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid var(--border)">
-        <span style="font-family:var(--font);font-size:12px">${escHtml(p.name)} <span style="color:var(--muted)">${escHtml(p.address||'')}</span></span>
-        <button style="${btn};color:${dropoff&&String(dropoff.id)===String(p.id)?'var(--green)':'var(--accent)'}" onclick="setOzonDropoff(${p.id})">${dropoff&&String(dropoff.id)===String(p.id)?'выбран':'выбрать'}</button>
+    ${type==='CROSSDOCK'&&ozonDropoffEdit&&points.length?`<div style="margin:-4px 0 12px">
+      ${points.map(p=>`<div class="pick-row" style="cursor:default">
+        <span style="font-size:13px">${escHtml(p.name)} <span class="pick-sub">${escHtml(p.address||'')}</span></span>
+        <button class="btn sm ${dropoff&&String(dropoff.id)===String(p.id)?'green':'accent'}" style="margin-left:auto" onclick="setOzonDropoff(${p.id})">${dropoff&&String(dropoff.id)===String(p.id)?'выбран':'выбрать'}</button>
       </div>`).join('')}</div>`:''}`;
 
   const errs=d&&d.errors.length
-    ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--font);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">${d.errors.map(escHtml).join('<br>')}</div>`:'';
+    ?`<div class="alert red">${d.errors.map(escHtml).join('<br>')}</div>`:'';
   const rejected=d&&(d.rejected||[]).length
-    ?`<div style="background:var(--amber-bg);color:var(--amber);font-family:var(--font);font-size:12px;padding:8px 10px;border-radius:6px;margin:8px 0;line-height:1.5">Ozon не принимает:<br>${d.rejected.map(r=>escHtml(r.name)+' — '+escHtml(r.reasons)).join('<br>')}</div>`:'';
+    ?`<div class="alert amber">Ozon не принимает:<br>${d.rejected.map(r=>escHtml(r.name)+' — '+escHtml(r.reasons)).join('<br>')}</div>`:'';
 
   let wizard='';
   if(d){
     const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px">
         <b style="font-size:13px">${d.clusters.length>1?'Заявки · '+d.clusters.map(escHtml).join(' · '):'Заявка · '+escHtml(d.clusters[0])}</b>
-        <button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button></div>`;
+        <button class="btn sm muted" onclick="ozonCancelDraft()">закрыть</button></div>`;
     let inner='';
     if(d.stage==='draft'&&d.busy){
-      inner=`<div style="font-family:var(--font);font-size:12px;color:var(--accent)">${escHtml(d.progress||'создаю черновик')} — жду расчёт Ozon…</div>
-        ${d.clusters.length>1?`<div style="font-family:var(--font);font-size:11px;color:var(--muted);margin-top:4px">черновик на кластер Ozon отдаёт раз в 31 секунду, поэтому ${d.clusters.length} ${pkPlural(d.clusters.length,'кластер займёт','кластера займут','кластеров займут')} около ${Math.ceil(d.clusters.length*35/60)} мин</div>`:''}`;
+      inner=`<div style="font-size:12px;color:var(--accent)">${escHtml(d.progress||'создаю черновик')} — жду расчёт Ozon…</div>
+        ${d.clusters.length>1?`<div class="hint" style="margin-top:4px">черновик на кластер Ozon отдаёт раз в 31 секунду, поэтому ${d.clusters.length} ${pkPlural(d.clusters.length,'кластер займёт','кластера займут','кластеров займут')} около ${Math.ceil(d.clusters.length*35/60)} мин</div>`:''}`;
     }else if(d.stage==='slots'){
       const dayName=iso=>{ const dt=new Date(iso+'T00:00:00'); return ['вс','пн','вт','ср','чт','пт','сб'][dt.getDay()]+', '+String(dt.getDate()).padStart(2,'0')+'.'+String(dt.getMonth()+1).padStart(2,'0'); };
       const hhmm=iso=>{ const dt=new Date(iso); return String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0'); };
       const total=d.clusters.length;
-      inner=`<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Выбери таймслот${d.tz?' · время '+escHtml(d.tz):''} — слоты собраны по всем ${total>1?total+' кластерам':'кластеру'}. Если у какого-то кластера выбранного слота нет, он поедет в ближайший свободный. Черновик живёт 30 минут.</div>
+      inner=`<div class="hint" style="margin-bottom:10px">Выбери таймслот${d.tz?' · время '+escHtml(d.tz):''} — слоты собраны по всем ${total>1?total+' кластерам':'кластеру'}. Если у какого-то кластера выбранного слота нет, он поедет в ближайший свободный. Черновик живёт 30 минут.</div>
         ${(d.days||[]).map((day,di)=>`<div style="margin-bottom:10px">
-          <div style="font-family:var(--font);font-size:12px;color:var(--text);margin-bottom:4px">${escHtml(dayName(day.date||day.slots[0].from.slice(0,10)))}
+          <div style="font-size:12px;color:var(--text);margin-bottom:6px">${escHtml(dayName(day.date||day.slots[0].from.slice(0,10)))}
             <span style="color:var(--muted)">· ${day.slots.length} ${pkPlural(day.slots.length,'слот','слота','слотов')}</span></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">${day.slots.map((s,si)=>{
             const n=(s.have||[]).length, all=n>=total;
             const miss=d.clusters.filter(c=>!(s.have||[]).includes(c));
-            return `<button style="${btn}${all?'':';color:var(--amber)'}" title="${all?'доступен всем кластерам':'нет у: '+escHtml(miss.join(', '))+' — они поедут в ближайший свободный'}" onclick="ozonPickSlot(${di},${si})">${hhmm(s.from)}–${hhmm(s.to)}${all||total<2?'':` <span style="opacity:0.7">${n}/${total}</span>`}</button>`;
+            return `<button class="btn sm${all?'':' amber'}" title="${all?'доступен всем кластерам':'нет у: '+escHtml(miss.join(', '))+' — они поедут в ближайший свободный'}" onclick="ozonPickSlot(${di},${si})">${hhmm(s.from)}–${hhmm(s.to)}${all||total<2?'':` <span style="opacity:0.7">${n}/${total}</span>`}</button>`;
           }).join('')}</div>
-        </div>`).join('')||'<span style="font-size:12px;color:var(--muted)">слотов нет</span>'}`;
+        </div>`).join('')||'<span class="hint">слотов нет</span>'}`;
     }else if(d.stage==='confirm'){
-      inner=`<div style="font-family:var(--font);font-size:12px;line-height:1.7">
+      inner=`<div style="font-size:12px;line-height:1.7">
           слот: <b>${ozonWhen(d.slot.from)} – ${ozonWhen(d.slot.to)}</b><br>
           заявок: <b>${d.clusters.length}</b> · ${d.clusters.map(escHtml).join(', ')}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-          <button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4)" onclick="ozonCreateSupply()">создать ${d.clusters.length>1?d.clusters.length+' заявки':'заявку'} в Ozon</button>
-          <button style="${btn};color:var(--muted)" onclick="ozonDraft.stage='slots';redraw()">← другой слот</button></div>`;
+          <button class="btn green" onclick="ozonCreateSupply()">создать ${d.clusters.length>1?d.clusters.length+' заявки':'заявку'} в Ozon</button>
+          <button class="btn muted" onclick="ozonDraft.stage='slots';redraw()">← другой слот</button></div>`;
     }else if(d.stage==='running'||d.stage==='done'){
-      inner=`<div id="ozon-wait" style="font-family:var(--font);font-size:12px;color:var(--accent);min-height:16px"></div>
-      <div style="font-family:var(--font);font-size:12px;line-height:1.8">
+      inner=`<div id="ozon-wait" style="font-size:12px;color:var(--accent);min-height:16px"></div>
+      <div style="font-size:12px;line-height:1.8">
         ${(d.results||[]).map(r=>`<div>
           ${r.status==='ok'?'<span style="color:var(--green)">✓</span>':r.status==='err'?'<span style="color:var(--red)">✕</span>':'<span style="color:var(--accent)">…</span>'}
           <b>${escHtml(r.cluster)}</b>
@@ -1910,33 +1952,32 @@ function ozonSupplyHtml(){
           ${r.error?`<span style="color:var(--red)"> · ${escHtml(r.error)}</span>`:''}
           ${(r.rejected||[]).length?`<span style="color:var(--amber)"> · не вошло: ${r.rejected.map(escHtml).join('; ')}</span>`:''}
           ${(r.cargoNotes||[]).length?`<span style="color:var(--amber)"> · ${r.cargoNotes.map(escHtml).join('; ')}</span>`:''}
-          ${r.orderId?` <button style="${btn};font-size:11px;padding:3px 8px;color:var(--accent)" onclick="ozonLabels('${r.orderId}')">этикетки PDF</button>`:''}
+          ${r.orderId?` <button class="btn sm accent" onclick="ozonLabels('${r.orderId}')">этикетки PDF</button>`:''}
         </div>`).join('')}</div>
 `;
     }else{
-      inner=`<button style="${btn};color:var(--muted)" onclick="ozonCancelDraft()">закрыть</button>`;
+      inner=`<button class="btn muted" onclick="ozonCancelDraft()">закрыть</button>`;
     }
-    wizard=`<div class="block" style="padding:0.75rem 1rem;margin:0 0 12px;border-color:var(--accent)">${head}${rejected}${errs}${inner}</div>`;
+    wizard=`<div class="block" style="padding:1rem;margin:0 0 12px;border-color:var(--accent)">${head}${rejected}${errs}${inner}</div>`;
   }
 
   const rows=groups.map(g=>{
     const on=sel.includes(g.cluster), cid=ozonClusterId(g.cluster);
     const items=Object.entries(g.byArticle).map(([a,q])=>escHtml(artName(a))+' '+q).join(' · ');
-    return `<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer">
-      <span style="font-family:var(--font);font-size:12px;display:flex;align-items:center;gap:8px">
-        <input type="checkbox" ${on?'checked':''} onchange="ozonToggleCluster(&quot;${escHtml(g.cluster)}&quot;)" style="accent-color:var(--accent);cursor:pointer">
-        <b>${escHtml(g.cluster)}</b> <span style="color:var(--green)">${g.total} шт</span>
-        <span style="color:var(--muted)">${items}</span>${cid?'':'<span style="color:var(--amber)">кластер не сопоставлен</span>'}</span>
+    return `<label class="pick-row">
+        <input type="checkbox" ${on?'checked':''} onchange="ozonToggleCluster(&quot;${escHtml(g.cluster)}&quot;)">
+        <b>${escHtml(g.cluster)}</b> <span class="pick-qty">${g.total} шт</span>
+        <span class="pick-sub">${items}</span>${cid?'':'<span style="color:var(--amber);font-size:12px">кластер не сопоставлен</span>'}
     </label>`;
   }).join('');
 
-  return `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 10px">
-      <span style="font-size:14px;font-weight:600">Готово к отгрузке</span>
-      <span style="font-size:12px;color:var(--muted)">упаковано и ждёт заявки</span></div>
+  return `<div class="blk-head">
+      <b>Готово к отгрузке</b>
+      <span class="blk-sub">упаковано и ждёт заявки</span></div>
     ${typeRow}
     ${wizard}
-    ${rows||'<div style="font-size:12px;color:var(--muted);font-family:var(--font);padding:4px 0">нет упакованных отправок — отметь их значком 📦 в списке отправок</div>'}
-    ${groups.length&&(!d||d.stage==='done')?`<button style="${btn};background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500;margin-top:10px" onclick="ozonStartDraft()">создать ${sel.length>1?sel.length+' заявки одним слотом':'заявку'}</button>`:''}`;
+    ${rows||'<div class="hint" style="padding:4px 0">нет упакованных отправок — отметь их значком 📦 в списке отправок</div>'}
+    ${groups.length&&(!d||d.stage==='done')?`<button class="btn primary" style="margin-top:12px" onclick="ozonStartDraft()">создать ${sel.length>1?sel.length+' заявки одним слотом':'заявку'}</button>`:''}`;
 }
 
 // Браузер вытесняет хранилище сайта целиком, когда на диске кончается место, — так пропали
@@ -1984,12 +2025,11 @@ function storageBlockHtml(){
   const st=storagePersisted===true?'<span style="color:var(--green)">защищено от очистки</span>'
     :storagePersisted===false?'<span style="color:var(--amber)">обычное — браузер может стереть при нехватке места</span>'
     :'<span style="color:var(--muted)">неизвестно</span>';
-  const b='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
   return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
     <div style="font-family:var(--font);font-size:12px;color:var(--muted);margin-bottom:8px">Хранилище браузера: ${st}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button style="${b}" onclick="downloadBackup()" title="Ключи, отправки, коробки, настройки и загруженные данные одним файлом">скачать резервную копию</button>
-      <button style="${b}" onclick="document.getElementById('backup-file').click()">восстановить из файла</button>
+      <button class="btn" onclick="downloadBackup()" title="Ключи, отправки, коробки, настройки и загруженные данные одним файлом">скачать резервную копию</button>
+      <button class="btn" onclick="document.getElementById('backup-file').click()">восстановить из файла</button>
       <input type="file" id="backup-file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this)">
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">В копии лежит и ключ Ozon — храни файл как пароль.</div>
@@ -2002,8 +2042,6 @@ function ozonPanelHtml(){
     <span style="cursor:pointer" onclick="toggleOzonPanel()">${open?'▾':'▸'} Ozon API · заявки на поставку</span>
     <span style="font-size:11px;font-family:var(--font);text-transform:none;letter-spacing:0;color:${keys?'var(--green)':'var(--muted)'}">${keys?'подключено · Client-Id '+escHtml(keys.clientId):'не подключено'}${cache.updatedAt?' · обновлено '+ozonWhen(cache.updatedAt):''}</span></div>`;
   if(!open) return head;
-  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
-  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:6px 8px';
   let body;
   if(!keys){
     body=`<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px">
@@ -2012,9 +2050,9 @@ function ozonPanelHtml(){
         Ключ сохраняется только в этом браузере и не уходит в облачную синхронизацию. На другом устройстве введи его заново.
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input id="ozon-client-id" placeholder="Client-Id" style="${inp};width:140px">
-        <input id="ozon-api-key" type="password" placeholder="Api-Key" style="${inp};width:320px">
-        <button style="${btn};color:var(--green)" onclick="saveOzonKeys()">подключить</button>
+        <input id="ozon-client-id" placeholder="Client-Id" class="fld" style="width:140px">
+        <input id="ozon-api-key" type="password" placeholder="Api-Key" class="fld" style="width:320px">
+        <button class="btn green" onclick="saveOzonKeys()">подключить</button>
       </div>
       <div id="ozon-status" style="font-family:var(--font);font-size:12px;color:var(--muted);margin-top:8px"></div>
       ${storageBlockHtml()}`;
@@ -2093,7 +2131,7 @@ function ozonPanelHtml(){
         <td style="${i===0?edge:''};width:26px">${(()=>{const k=pickKey(o.id,b?b.cargoId:'');
           return `<input type="checkbox" ${ozonBoxChecked(k,shownKeys)?'checked':''} title="${b&&!b.cargoId?'этикетку на эту коробку отдельно не взять — только вместе с заявкой':'эта коробка'}" onchange="ozonTogglePick('${escHtml(k)}',${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)">`;})()}</td>
         <td style="font-size:12px;${i===0?edge:''}">${b?escHtml(b.cluster):(escHtml(ozonOrderClusters(o.id))||'<span style="color:var(--muted)">—</span>')}</td>
-        <td class="mono" style="font-size:11px;line-height:1.5;${i===0?edge:''}">${b?escHtml(artName(b.article))+' '+b.qty+' шт':itemsCell(o)}</td>
+        <td style="font-size:12px;line-height:1.5;${i===0?edge:''}">${b?escHtml(artName(b.article))+' '+b.qty+' шт':itemsCell(o)}</td>
         ${i===0?`<td class="mono" rowspan="${span}" style="${edge};color:var(--muted);vertical-align:top">${ozonOrderActions(o.id)}</td>`:''}
       </tr>`).join('');
     }).join(''):`<tr><td colspan="8" style="color:var(--muted);padding:10px">${ordersAll?'заявок нет':'готовых к отгрузке заявок нет'}</td></tr>`;
@@ -2102,7 +2140,7 @@ function ozonPanelHtml(){
     const keyWarn=keyLeft!==null&&keyLeft<30
       ?`<div style="font-family:var(--font);font-size:12px;color:${keyLeft<14?'var(--red)':'var(--amber)'};margin-bottom:10px">ключ Ozon действует ещё ${keyLeft} дн — пора перевыпустить в кабинете</div>`:'';
     const errs=(cache.errors||[]).length
-      ?`<div style="background:var(--red-bg);color:var(--red);font-family:var(--font);font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.5">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
+      ?`<div class="alert red" style="margin-top:0">${(cache.errors||[]).map(escHtml).join('<br>')}</div>`:'';
     // Экран разложен на три части: что отгружаем сейчас, список заявок и настройки.
     // Раньше всё лежало в одном блоке подряд и читалось как свалка.
     const supply=ozonSupplyHtml();
@@ -2115,15 +2153,15 @@ function ozonPanelHtml(){
           <span style="color:var(--accent);cursor:pointer;margin-left:8px" onclick="toggleAllOrders()">${ordersAll?'только готовые':'показать все'}</span></span></div>
       <div class="block" style="padding:0.9rem 1.25rem">
       ${pickedBoxes?`<div style="margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button style="${btn};color:var(--accent);border-color:rgba(91,127,255,0.4)" onclick="ozonLabelsPicked(${escHtml(JSON.stringify(picks))})">⬇ этикетки одним PDF · ${pickedBoxes} ${pkPlural(pickedBoxes,'коробка','коробки','коробок')}</button>
+        <button class="btn accent" onclick="ozonLabelsPicked(${escHtml(JSON.stringify(picks))})">⬇ этикетки одним PDF · ${pickedBoxes} ${pkPlural(pickedBoxes,'коробка','коробки','коробок')}</button>
         <span id="labels-all" style="font-family:var(--font);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
       <div class="table-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedBoxes===shownKeys.length&&shownKeys.length?'checked':''} title="выбрать все коробки" onchange="ozonToggleAllPicks(${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th style="width:26px"></th><th>Кластер</th><th>Что внутри</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       </div>
       <div class="section-label" style="margin-top:1.4rem">Настройки отгрузки</div>
       <div class="block" style="padding:0.9rem 1.25rem">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <button style="${btn};color:var(--accent)" onclick="ozonRefresh()">⟳ обновить справочники</button>
-          <button style="${btn};color:var(--muted)" onclick="forgetOzonKeys()">отключить ключ</button>
+          <button class="btn accent" onclick="ozonRefresh()">⟳ обновить справочники</button>
+          <button class="btn muted" onclick="forgetOzonKeys()">отключить ключ</button>
           <span id="ozon-status" style="font-size:12px;color:var(--muted)">${cache.updatedAt?'обновлено '+ozonWhen(cache.updatedAt):'данные ещё не загружены'}</span>
         </div>
         <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-top:8px">Client-Id ${escHtml(keys.clientId)} · роли: ${(cache.roles||[]).length?(cache.roles||[]).map(r=>escHtml(r.name)).join(', '):'—'}${cache.keyExpiresAt?' · действует до '+ozonWhen(cache.keyExpiresAt):''}</div>
@@ -2849,33 +2887,31 @@ function pdSave(){
 function packRulesHtml(){
   if(!packDraft) packDraft=makePackDraft();
   const d=packDraft;
-  const inp='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:6px 8px;min-width:0;width:100%';
   const del='background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-size:14px;padding:4px 0;width:100%';
   const head='font-size:11px;color:var(--muted);font-family:var(--font)';
   const opt=(v,cur,t)=>`<option value="${escHtml(v)}"${v===cur?' selected':''}>${escHtml(t)}</option>`;
   const boxRows=d.boxes.map((b,i)=>`<div class="pk-ctor-row pk-ctor-box">
-      <input style="${inp}" value="${escHtml(b.name)}" placeholder="название" oninput="pdSet('boxes',${i},'name',this.value)">
-      <input style="${inp}" type="number" min="1" value="${b.w}" title="длина (фасад), см" oninput="pdSet('boxes',${i},'w',this.value)">
-      <input style="${inp}" type="number" min="1" value="${b.d}" title="ширина (глубина), см" oninput="pdSet('boxes',${i},'d',this.value)">
-      <input style="${inp}" type="number" min="1" value="${b.h}" title="высота, см" oninput="pdSet('boxes',${i},'h',this.value)">
-      <select style="${inp}" onchange="pdSet('boxes',${i},'color',this.value)">${Object.entries(BOX_PALETTE).map(([k,p])=>opt(k,b.color,p.name)).join('')}</select>
+      <input class="fld" style="width:100%;min-width:0" value="${escHtml(b.name)}" placeholder="название" oninput="pdSet('boxes',${i},'name',this.value)">
+      <input class="fld" style="width:100%;min-width:0" type="number" min="1" value="${b.w}" title="длина (фасад), см" oninput="pdSet('boxes',${i},'w',this.value)">
+      <input class="fld" style="width:100%;min-width:0" type="number" min="1" value="${b.d}" title="ширина (глубина), см" oninput="pdSet('boxes',${i},'d',this.value)">
+      <input class="fld" style="width:100%;min-width:0" type="number" min="1" value="${b.h}" title="высота, см" oninput="pdSet('boxes',${i},'h',this.value)">
+      <select class="fld" style="width:100%;min-width:0" onchange="pdSet('boxes',${i},'color',this.value)">${Object.entries(BOX_PALETTE).map(([k,p])=>opt(k,b.color,p.name)).join('')}</select>
       <button style="${del}" title="удалить коробку" onclick="pdDel('boxes',${i})">✕</button>
     </div>`).join('');
   const ruleRows=d.rules.map((r,i)=>`<div class="pk-ctor-row pk-ctor-rule">
-      <select style="${inp}" onchange="pdSet('rules',${i},'article',this.value)">${ALL_ARTICLES.map(a=>opt(a,r.article,artName(a))).join('')}</select>
-      <select style="${inp}" onchange="pdSet('rules',${i},'box',this.value)">${d.boxes.map(b=>opt(b.id,r.box,b.name||'(без названия)')).join('')}</select>
-      <input style="${inp}" value="${escHtml(r.label)}" placeholder="авто: полная / неполная" oninput="pdSet('rules',${i},'label',this.value)">
-      <input style="${inp}" type="number" min="1" value="${r.qty}" placeholder="шт" oninput="pdSet('rules',${i},'qty',this.value)">
+      <select class="fld" style="width:100%;min-width:0" onchange="pdSet('rules',${i},'article',this.value)">${ALL_ARTICLES.map(a=>opt(a,r.article,artName(a))).join('')}</select>
+      <select class="fld" style="width:100%;min-width:0" onchange="pdSet('rules',${i},'box',this.value)">${d.boxes.map(b=>opt(b.id,r.box,b.name||'(без названия)')).join('')}</select>
+      <input class="fld" style="width:100%;min-width:0" value="${escHtml(r.label)}" placeholder="авто: полная / неполная" oninput="pdSet('rules',${i},'label',this.value)">
+      <input class="fld" style="width:100%;min-width:0" type="number" min="1" value="${r.qty}" placeholder="шт" oninput="pdSet('rules',${i},'qty',this.value)">
       <button style="${del}" title="удалить вариант" onclick="pdDel('rules',${i})">✕</button>
     </div>`).join('');
   const labelRows=(d.labels||[]).map((l,i)=>`<div class="pk-ctor-row pk-ctor-label">
       <span style="font-family:var(--font);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis">${escHtml(artName(l.article))}</span>
-      <input style="${inp}" value="${escHtml(l.name)}" placeholder="${escHtml(PACK_NAMES[l.article]||artName(l.article))}" oninput="pdSet('labels',${i},'name',this.value)">
-      <input style="${inp}" value="${escHtml(l.code||'')}" placeholder="${escHtml(DEFAULT_SHEET_CODES[l.article]||'')}" title="код для Google Таблицы" oninput="pdSet('labels',${i},'code',this.value)">
+      <input class="fld" style="width:100%;min-width:0" value="${escHtml(l.name)}" placeholder="${escHtml(PACK_NAMES[l.article]||artName(l.article))}" oninput="pdSet('labels',${i},'name',this.value)">
+      <input class="fld" style="width:100%;min-width:0" value="${escHtml(l.code||'')}" placeholder="${escHtml(DEFAULT_SHEET_CODES[l.article]||'')}" title="код для Google Таблицы" oninput="pdSet('labels',${i},'code',this.value)">
     </div>`).join('');
-  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 12px;cursor:pointer';
   const msgColor=packDraftMsg.startsWith('✓')?'var(--green)':'var(--red)';
-  const tab=(id,label)=>`<button style="${btn};${ctorTab===id?'color:var(--accent);border-color:var(--accent)':'color:var(--muted)'}" onclick="setCtorTab('${id}')">${label}</button>`;
+  const tab=(id,label)=>`<button class="btn ${ctorTab===id?'on':'muted'}" onclick="setCtorTab('${id}')">${label}</button>`;
   return `<div>
     <style>
       .pk-ctor-row{display:grid;gap:6px;margin-top:6px;align-items:center}
@@ -2892,7 +2928,7 @@ function packRulesHtml(){
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Размеры нужны только для пропорций иконок в задании. Удалить коробку можно, если ею никто не пакует.</div>
       <div class="pk-ctor-row pk-ctor-box" style="${head}"><span>название</span><span>длина</span><span>ширина</span><span>высота</span><span>цвет</span><span></span></div>
       ${boxRows}
-      <button style="${btn};margin-top:8px" onclick="pdAddBox()">＋ коробка</button>
+      <button class="btn" style="margin-top:8px" onclick="pdAddBox()">＋ коробка</button>
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5">Чего сейчас нет под рукой. Снятая галочка убирает коробку из подсказок в списке приоритетов — на сами укладки и задание упаковщику это не влияет. Применяется сразу, отдельно от «Сохранить», и только в этом браузере.</div>
         ${TRANSPORT_BOXES.map(b=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0;font-family:var(--font);font-size:12px;cursor:pointer;color:${getBoxesOff().has(b.id)?'var(--muted)':'var(--text)'}">
@@ -2907,10 +2943,10 @@ function packRulesHtml(){
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Сколько штук товара кладём в коробку. Раскладка идёт только по этим вариантам: количество отправки должно точно совпасть со строкой. Самый большой вариант для пары «товар + коробка» считается полной коробкой.</div>
       <div class="pk-ctor-row pk-ctor-rule" style="${head}"><span>товар</span><span>коробка</span><span>название укладки</span><span>штук</span><span></span></div>
       ${ruleRows||`<div style="font-size:12px;color:var(--muted);margin-top:6px">вариантов нет</div>`}
-      <button style="${btn};margin-top:8px" onclick="pdAddRule()">＋ вариант укладки</button>`:''}
+      <button class="btn" style="margin-top:8px" onclick="pdAddRule()">＋ вариант укладки</button>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-      <button style="${btn};color:var(--green);border-color:rgba(61,204,122,0.4)" onclick="pdSave()">Сохранить</button>
-      <button style="${btn};color:var(--muted)" onclick="pdCancel()">Отменить изменения</button>
+      <button class="btn green" onclick="pdSave()">Сохранить</button>
+      <button class="btn muted" onclick="pdCancel()">Отменить изменения</button>
       ${packDraftMsg?`<span style="font-size:12px;color:${msgColor};line-height:1.5">${escHtml(packDraftMsg)}</span>`:''}
     </div>
   </div>`;
@@ -2945,7 +2981,6 @@ const PACK_SHEET_CSS=`<style>
 function packTaskHtml(){
   const task=buildPackTask();
   const notes=getPackNotes();
-  const btn='font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer';
   let body;
   if(!task.items.length){
     body=`<div style="font-size:12px;color:var(--muted);font-family:var(--font)">пока нечего паковать — запланированных отправок нет</div>`;
@@ -2962,16 +2997,16 @@ function packTaskHtml(){
     const pageCount=buildPackPages(task).length;
     body=`${PACK_SHEET_CSS}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px;align-items:center">
-        <select style="${btn}" onchange="if(this.value==='+'){this.value=getPackWho();addPacker();}else setPackWho(this.value)" title="кто пакует всё это задание">
+        <select class="btn" onchange="if(this.value==='+'){this.value=getPackWho();addPacker();}else setPackWho(this.value)" title="кто пакует всё это задание">
           <option value="">кто пакует?</option>
           ${getPackers().map(p=>`<option value="${escHtml(p)}" ${getPackWho()===p?'selected':''}>${escHtml(p)}</option>`).join('')}
           <option value="+">+ добавить…</option>
         </select>
         ${pageCount>1
-          ?`<span style="font-size:12px;color:var(--muted);font-family:var(--font);align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button style="${btn}" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
-          :`<button style="${btn}" onclick="copyPackImage(0,this)">🖼 копировать картинку</button>`}
-        <button style="${btn}" onclick="downloadPackImage()">⬇ скачать PNG${pageCount>1?` (${pageCount} шт)`:''}</button>
-        <button id="pack-copy-txt" style="${btn}" onclick="copyPackText()">📋 копировать текст</button>
+          ?`<span class="hint" style="align-self:center">🖼 копировать:</span>${Array.from({length:pageCount},(_,i)=>`<button class="btn" onclick="copyPackImage(${i},this)">${i+1}/${pageCount}</button>`).join('')}`
+          :`<button class="btn" onclick="copyPackImage(0,this)">🖼 копировать картинку</button>`}
+        <button class="btn" onclick="downloadPackImage()">⬇ скачать PNG${pageCount>1?` (${pageCount} шт)`:''}</button>
+        <button id="pack-copy-txt" class="btn" onclick="copyPackText()">📋 копировать текст</button>
       </div>
       <div style="font-size:11px;color:var(--muted);font-family:var(--font);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
       <div id="pack-sheet">
@@ -4515,25 +4550,22 @@ function render(data){
     <span style="font-size:12px;color:var(--muted)">сортировка:</span>
     ${sortOptions.map(o=>{
       const active=priorityFilters.sortBy===o.key;
-      return `<button onclick="setSortBy('${o.key}')" style="font-family:var(--font);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;border:1px solid ${active?'var(--accent)':'var(--border)'};background:${active?'rgba(91,127,255,0.15)':'none'};color:${active?'var(--accent)':'var(--muted)'}">${o.label}</button>`;
+      return `<button class="chip${active?' on':''}" onclick="setSortBy('${o.key}')">${o.label}</button>`;
     }).join('')}
-    <button onclick="toggleFiltersOpen()" style="font-size:12px;padding:3px 10px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:none;color:${clustersOff?'var(--amber)':'var(--muted)'};margin-left:4px">
+    <button class="chip${clustersOff?' warn':''}" style="margin-left:4px" onclick="toggleFiltersOpen()">
       ${filtersOpen?'скрыть настройку кластеров':'кластеры'+(clustersOff?': выключено '+clustersOff:'')}</button>
   </div>
   ${filtersOpen?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
     <span style="font-size:12px;color:var(--muted)">группы:</span>
     ${CLUSTER_GROUPS.map(g=>{
       const off=hiddenGroups.has(g.name);
-      const style=off
-        ?'border:1px solid var(--border);background:none;color:var(--muted);opacity:0.55;text-decoration:line-through'
-        :'border:1px solid var(--accent);background:rgba(91,127,255,0.15);color:var(--accent)';
-      return `<button onclick="toggleHiddenGroup('${g.name}')" title="${off?'клик — включить в расчёт':'клик — скрыть из расчётов'}" style="font-family:var(--font);font-size:11px;padding:3px 10px;border-radius:4px;cursor:pointer;${style}">${g.name}</button>`;
+      return `<button class="chip ${off?'off':'on'}" onclick="toggleHiddenGroup('${g.name}')" title="${off?'клик — включить в расчёт':'клик — скрыть из расчётов'}">${g.name}</button>`;
     }).join('')}
   </div>
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px">
     <span style="font-size:12px;color:var(--muted)">кластеры:</span>
-    ${[...hiddenClusters].sort().map(c=>`<button onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт" style="font-family:var(--font);font-size:11px;padding:3px 8px 3px 10px;border-radius:4px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);opacity:0.6;text-decoration:line-through">${c} ×</button>`).join('')}
-    <select onchange="hideCluster(this.value); this.value='';" style="font-family:var(--font);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);cursor:pointer">
+    ${[...hiddenClusters].sort().map(c=>`<button class="chip off" onclick="unhideCluster('${c}')" title="клик — вернуть в расчёт">${c} ×</button>`).join('')}
+    <select class="chip" onchange="hideCluster(this.value); this.value='';" style="background:var(--bg3)">
       <option value="">+ скрыть кластер</option>
       ${[...new Set(data.map(r=>r.cluster))].sort().filter(c=>!hiddenClusters.has(c)&&!isClusterHidden(c,hiddenGroups,new Set())).map(c=>`<option value="${c}">${c}</option>`).join('')}
     </select>
