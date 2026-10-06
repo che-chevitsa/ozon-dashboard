@@ -323,7 +323,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.155</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.156</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -583,6 +583,37 @@ async function ozonApi(path,body){
   _ozonGate=p.then(()=>{},()=>{});
   return p;
 }
+/** Весь каталог продавца: список артикулов прямо из Ozon.
+ *  Раньше справочник запрашивался только по артикулам, записанным в дашборде, поэтому новый
+ *  товар не появлялся нигде — ни в остатках, ни в галочках. Теперь список приходит от Ozon. */
+async function ozonCatalogOffers(){
+  const offers=[]; let lastId='';
+  for(let page=0;page<20;page++){            // 20 страниц по 1000 — с большим запасом
+    const res=await ozonApi('/v3/product/list',{filter:{visibility:'ALL'},limit:1000,last_id:lastId});
+    const r=(res&&res.result)||res||{};
+    const items=r.items||[];
+    items.forEach(it=>{ if(it&&it.offer_id) offers.push(String(it.offer_id)); });
+    lastId=r.last_id||'';
+    if(!lastId||!items.length) break;
+  }
+  return [...new Set(offers)];
+}
+/** Карточки товаров пачками: info/list не любит слишком длинные списки артикулов. */
+async function ozonSkuMap(offers){
+  const map={};
+  for(let i=0;i<offers.length;i+=200){
+    const res=await ozonApi('/v3/product/info/list',{offer_id:offers.slice(i,i+200)});
+    (res.items||[]).forEach(it=>{ map[it.offer_id]={sku:it.sku,name:it.name,barcode:(it.barcodes||[])[0]||''}; });
+  }
+  return map;
+}
+/** Добавляет незнакомые артикулы в список дашборда. Возвращает, сколько добавилось. */
+function ozonAddArticles(list){
+  let added=0;
+  (list||[]).forEach(a=>{ const art=String(a||'').trim(); if(art&&!ALL_ARTICLES.includes(art)){ ALL_ARTICLES.push(art); added++; } });
+  if(added){ refreshFocus(); scheduleSave&&scheduleSave(); }
+  return added;
+}
 async function ozonApiRaw(path,body){
   const k=getOzonKeys();
   if(!k) throw new Error('не введены Client-Id и Api-Key');
@@ -678,10 +709,10 @@ async function ozonRefresh(){
 
     ozonSetStatus('Загружаю товары…');
     try{
-      const res=await ozonApi('/v3/product/info/list',{offer_id:ALL_ARTICLES});
-      const map={};
-      (res.items||[]).forEach(it=>{ map[it.offer_id]={sku:it.sku,name:it.name,barcode:(it.barcodes||[])[0]||''}; });
-      cache.skus=map;
+      const offers=await ozonCatalogOffers();
+      const added=ozonAddArticles(offers);
+      if(added) ozonSetStatus('Нашлись новые товары: '+added+' — загружаю карточки…');
+      cache.skus=await ozonSkuMap(offers.length?offers:ALL_ARTICLES);
     }catch(e){ errors.push('товары: '+e.message); }
 
     ozonSetStatus('Загружаю заявки на поставку…');
@@ -730,10 +761,11 @@ async function ozonLoadStocks(){
   try{
     say('обновляю…','var(--accent)');
     let skus=Object.values(getOzonCache().skus||{}).map(s=>s.sku).filter(Boolean);
-    if(!skus.length){ // справочник ещё не загружен — тянем товары
-      const res=await ozonApi('/v3/product/info/list',{offer_id:ALL_ARTICLES});
-      const cache=getOzonCache(), map={};
-      (res.items||[]).forEach(it=>{ map[it.offer_id]={sku:it.sku,name:it.name,barcode:(it.barcodes||[])[0]||''}; });
+    if(!skus.length){ // справочник ещё не загружен — тянем весь каталог продавца
+      const offers=await ozonCatalogOffers();
+      ozonAddArticles(offers);
+      const map=await ozonSkuMap(offers.length?offers:ALL_ARTICLES);
+      const cache=getOzonCache();
       cache.skus=map; saveOzonCache(cache);
       skus=Object.values(map).map(s=>s.sku).filter(Boolean);
     }
@@ -767,6 +799,8 @@ async function ozonLoadStocks(){
       return {...r,total,days:r.sales>0?total/r.sales:99};
     });
     if(!data.length) throw new Error('Ozon вернул пустой список остатков');
+    // Товар мог появиться после последнего обновления справочников — берём артикулы из остатков.
+    ozonAddArticles(data.map(r=>r.article));
     // Дальше всё то же, что и при загрузке файла: сперва отмечаем приехавшие отправки,
     // потом пишем лог (он сравнивает с прошлым снимком) и сохраняем новый снимок «в пути».
     autoCleanAdjs(data);
