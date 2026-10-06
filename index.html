@@ -323,7 +323,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.156</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.158</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -720,17 +720,19 @@ async function ozonRefresh(){
       // states — обязательный фильтр, пустым быть не может: просим все статусы сразу
       const list=await ozonApi('/v3/supply-order/list',{limit:50,filter:{states:OZON_ALL_STATES},sort_by:'ORDER_CREATION',sort_dir:'DESC'});
       const ids=(list.order_ids||[]).slice(0,50);
+      // Что помнили о дате отгрузки, читаем ДО перезаписи списка. Раньше список обнулялся
+      // строкой выше, память всегда оказывалась пустой — и дата в таблицу учёта не попадала.
+      const before={};
+      ((cache.orders)||[]).forEach(o=>{ if(o.acceptedAt) before[String(o.id)]=o.acceptedAt; });
       cache.orders=[];
       if(ids.length){
         const got=await ozonApi('/v3/supply-order/get',{order_ids:ids});
-        const before={};
-        ((cache.orders)||[]).forEach(o=>{ if(o.acceptedAt) before[String(o.id)]=o.acceptedAt; });
         cache.orders=(got.orders||[]).map(o=>{
           const state=String(o.state||'').replace(/^ORDER_STATE_/,'');
           const rec={
             id:o.order_id, number:o.order_number, state:o.state,
             created:o.created_date, deadline:o.data_filling_deadline_utc,
-            stateAt:o.state_updated_date,
+            stateAt:o.state_updated_date||o.state_updated_at||o.updated_at||'',
             warehouse:(o.dropoff_warehouse||{}).name||'',
             timeslot:((o.timeslot||{}).timeslot)||null,
             supplies:(o.supplies||[]).map(s=>({id:s.supply_id,state:s.state,bundleId:s.bundle_id,clusterId:s.macrolocal_cluster_id})),
@@ -738,7 +740,11 @@ async function ozonRefresh(){
           // Момент, когда пункт принял коробки, — это и есть факт отгрузки. Запоминаем его
           // навсегда: дальше state_updated_date уедет на следующий статус.
           const prev=before[String(o.order_id)];
-          rec.acceptedAt=prev||(OZON_SHIPPED.includes(state)?o.state_updated_date:'');
+          // Ozon не всегда отдаёт дату смены статуса. Тогда берём начало слота — коробки
+          // уехали в нём, — а если и его нет, момент, когда мы впервые увидели статус
+          // «отгружено». Пустая дата означала бы пустой столбец в таблице учёта.
+          const shippedWhen=rec.stateAt||(rec.timeslot&&rec.timeslot.from)||new Date().toISOString();
+          rec.acceptedAt=prev||(OZON_SHIPPED.includes(state)?shippedWhen:'');
           return rec;
         });
       }
@@ -760,15 +766,22 @@ async function ozonLoadStocks(){
   const say=(t,c)=>{ if(btn){ btn.textContent=t; btn.style.color=c||''; } };
   try{
     say('обновляю…','var(--accent)');
-    let skus=Object.values(getOzonCache().skus||{}).map(s=>s.sku).filter(Boolean);
-    if(!skus.length){ // справочник ещё не загружен — тянем весь каталог продавца
+    // Каталог перечитываем каждый раз: товар мог появиться в кабинете после прошлой загрузки,
+    // а по кэшу справочника мы бы его не запросили — и он не появился бы в дашборде вовсе.
+    let skus=[];
+    try{
+      say('читаю каталог…','var(--accent)');
       const offers=await ozonCatalogOffers();
       ozonAddArticles(offers);
-      const map=await ozonSkuMap(offers.length?offers:ALL_ARTICLES);
-      const cache=getOzonCache();
-      cache.skus=map; saveOzonCache(cache);
-      skus=Object.values(map).map(s=>s.sku).filter(Boolean);
-    }
+      const cache=getOzonCache(), known=cache.skus||{};
+      const missing=offers.filter(a=>!known[a]);
+      if(missing.length||!Object.keys(known).length){
+        const map=await ozonSkuMap(missing.length?missing:(offers.length?offers:ALL_ARTICLES));
+        cache.skus={...known,...map};
+        saveOzonCache(cache);
+      }
+    }catch(e){ /* каталог не дался — работаем по тому, что уже знаем */ }
+    skus=Object.values(getOzonCache().skus||{}).map(s=>s.sku).filter(Boolean);
     if(!skus.length) throw new Error('не нашёл SKU товаров');
     const skuToArt={};
     Object.entries(getOzonCache().skus||{}).forEach(([art,s])=>{ if(s&&s.sku) skuToArt[String(s.sku)]=art; });
