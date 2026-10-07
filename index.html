@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.163</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.164</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -475,6 +475,7 @@ function refreshFocus(){
   FOCUS=ALL_ARTICLES.filter(a=>!hidden.has(a));
 }
 refreshFocus();
+setTimeout(()=>{ try{ leadDropLocal(); }catch(e){} },0);   // чистим ошибочные образцы при старте
 // ===== ТИПЫ КОРОБОК (данные, не хардкод) =====
 // Хранятся как массив {id, name, articles:[...]}. Из него выводятся BOX_TYPE (артикул→тип)
 // и BOX_META (тип→имя). Пользователь добавляет/удаляет типы сам через форму на вкладке поставок.
@@ -616,10 +617,8 @@ function leadAddSample(cluster,days,at,orderId,src){
 }
 /** Срок по каждому кластеру, где он измерен или задан вручную. */
 function leadPick(rec){
-  const all=(rec&&rec.samples)||[];
-  const ozon=all.filter(s=>s.src!=='local');
-  const use=ozon.length?ozon:all;                    // даты Ozon точнее своих наблюдений
-  return {list:use,src:ozon.length?'ozon':'local'};
+  const all=((rec&&rec.samples)||[]).filter(s=>s.src!=='local');
+  return {list:all,src:'ozon'};
 }
 function leadKnown(){
   const out={};
@@ -640,7 +639,7 @@ function leadDays(cluster){
   const rec=getLeadData()[leadKey(cluster)];
   if(rec&&rec.manual>0) return {days:Math.round(rec.manual),kind:'manual',n:(rec.samples||[]).length};
   const p=leadPick(rec);
-  if(p.list.length) return {days:median(p.list.map(x=>x.days)),kind:p.src==='ozon'?'fact':'local',n:p.list.length};
+  if(p.list.length) return {days:median(p.list.map(x=>x.days)),kind:'fact',n:p.list.length};
   const base=leadBaseline();
   return {days:base||LEAD_DEFAULT,kind:'guess',n:0,
     from:base?'медиана по кластерам, куда уже возили':'значение по умолчанию'};
@@ -666,17 +665,18 @@ function leadLearn(orders){
   });
   return st;
 }
-/** Свои записи отправок: от «отгружено» до момента, когда коробки увиделись в остатках.
- *  Дают срок сразу, без запросов к Ozon, но с запасом в день-два — «приехало» фиксируется
- *  в обновление данных, а не в день приёмки. Поэтому это запасной источник, не главный. */
-function leadLearnLocal(){
-  let added=0;
-  getAdjs().forEach(a=>{
-    if(!a.sentAt||!a.arrivedAt||!a.cluster)return;
-    const days=Math.round((Date.parse(a.arrivedAt)-Date.parse(a.sentAt))/86400000);
-    if(leadAddSample(a.cluster,days,a.arrivedAt,'local-'+(a.ts||a.sentAt),'local')) added++;
+/** Разовая уборка: образцы «из своих записей» были ошибкой. Дата «приехало» в дашборде
+ *  означает «Ozon засчитал заявку», а не приёмку на складе, — из них выходили сутки на любой
+ *  маршрут. Считаем срок только по датам прибытия от Ozon. */
+function leadDropLocal(){
+  const data=getLeadData(); let dropped=0;
+  Object.values(data).forEach(r=>{
+    const before=(r.samples||[]).length;
+    r.samples=(r.samples||[]).filter(s=>s.src!=='local');
+    dropped+=before-r.samples.length;
   });
-  return added;
+  if(dropped) saveLeadData(data);
+  return dropped;
 }
 /** Разовый проход по истории заявок: нужен, чтобы таблица сроков появилась сразу. */
 let leadScanState=null;
@@ -727,7 +727,7 @@ async function leadScanHistory(months,quiet){
       if(!lastId)break;
       if(oldest&&oldest<since)break;
     }
-    const local=leadLearnLocal();     // добираем из своих записей то, чего нет у Ozon
+    leadDropLocal();
     // Итог говорит и о неудачах: иначе «собрано 0» выглядит как поломка, хотя причина бытовая.
     const why=[];
     if(tot.noArrival) why.push('без даты прибытия: '+tot.noArrival);
@@ -735,7 +735,7 @@ async function leadScanHistory(months,quiet){
     if(tot.noCluster) why.push('кластер не опознан: '+tot.noCluster);
     if(tot.dup) why.push('уже были: '+tot.dup);
     leadScanState={busy:false,msg:'заявок '+seen+', поставок '+tot.supplies+' · новых сроков '+tot.added
-      +(local?' (+'+local+' из своих записей)':'')+(why.length?' · '+why.join(', '):'')};
+      +(why.length?' · '+why.join(', '):'')};
     try{ localStorage.setItem(LS_LEAD_SCAN,String(Date.now())); }catch(e){}
   }catch(e){
     leadScanState={busy:false,msg:'',error:e.message};
@@ -746,7 +746,7 @@ async function leadScanHistory(months,quiet){
  *  обновлении заявок. Кнопка остаётся для случая «хочу прямо сейчас». */
 async function leadAutoCollect(){
   if(!getOzonKeys())return;
-  leadLearnLocal();
+  leadDropLocal();
   const last=Number(localStorage.getItem(LS_LEAD_SCAN)||0);
   if(Date.now()-last < 7*86400000) return;
   await leadScanHistory(12,true);
