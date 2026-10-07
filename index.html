@@ -159,6 +159,14 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .blk-head b{font-size:14px;font-weight:600;}
 .blk-head .blk-sub{font-size:12px;color:var(--muted);}
 .hint{font-size:12px;color:var(--muted);line-height:1.5;}
+/* Срочность отправки: точка, запас дней и подпись «сколько ехать». */
+.urg{display:flex;align-items:center;gap:8px;}
+.urg b{font-size:13px;font-weight:600;}
+.urg .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px;display:inline-block;}
+.urg.red b{color:var(--red);} .urg.red .dot{background:var(--red);}
+.urg.amber b{color:var(--amber);} .urg.amber .dot{background:var(--amber);}
+.urg.calm b{color:var(--muted);font-weight:400;} .urg.calm .dot{background:#c9cedb;}
+.urg-sub{font-size:10px;color:var(--muted);margin-top:3px;}
 /* Маленький переключатель-«фишка»: сортировка приоритетов, группы и кластеры в фильтрах.
    Раньше каждый из них рисовался своей строкой стилей с чуть разными отступами. */
 .chip{font-family:var(--font);font-size:11px;line-height:1.2;padding:5px 10px;border-radius:6px;
@@ -323,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.159</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.161</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4170,19 +4178,22 @@ function confirmHeatmapSend(article,cluster,inputId,safeId){
   closeHeatmapSend(safeId);
 }
 
-/** Подпись под числом: сколько ехать и до какого дня успеть отправить. */
-function leadHintHtml(r){
-  if(!r.lead)return '';
+/** Колонка «когда отправлять»: запас дней до последнего срока и дорога под ним. */
+function urgencyCellHtml(r,dim){
+  if(!r.lead)return '<td></td>';
+  const s=r.slack;
+  const tone=s<=0?'red':s<=7?'amber':'calm';
+  const label=s<0?'−'+Math.abs(s)+' дн':s===0?'сегодня':'через '+s+' дн';
+  const mark=r.lead.kind==='guess'?'~':'';
   const d=r.lastDay, p=n=>String(n).padStart(2,'0');
   const when=d?p(d.getDate())+'.'+p(d.getMonth()+1):'';
-  const mark=r.lead.kind==='guess'?'~':'';
-  const color=r.late?'var(--red)':'var(--muted)';
-  const text=r.late?'ехать '+mark+r.lead.days+' дн · отправлять уже поздно'
-    :'ехать '+mark+r.lead.days+' дн · до '+when;
-  const title=r.lead.kind==='fact'?('по своим поставкам: '+r.lead.n+' шт')
+  const road=r.lead.kind==='fact'?('срок по своим поставкам: '+r.lead.n+' шт')
     :r.lead.kind==='manual'?'срок задан вручную'
     :('оценка по зоне «'+(r.lead.group||'Прочее')+'» — своих поставок сюда ещё не было');
-  return `<div style="font-size:10px;color:${color};margin-top:3px;font-family:var(--font)" title="${escHtml(title)}">${text}</div>`;
+  const title=(s<0?'последний день отправки был '+when:'отправить до '+when)+' · '+road;
+  return `<td style="${dim?'opacity:0.7':''}" title="${escHtml(title)}">
+    <div class="urg ${tone}"><span class="dot"></span><b>${label}</b></div>
+    <div class="urg-sub">ехать ${mark}${r.lead.days} дн</div></td>`;
 }
 // Фильтры и сортировка приоритетов
 let priorityFilters = { articles: new Set(FOCUS), sortBy: 'score' };
@@ -4682,8 +4693,11 @@ function render(data){
       const hor=period+lead.days;
       // Последний день отправки: когда остатка хватит ровно до приезда следующей партии.
       const lastDay=new Date(Date.now()+(r.days-lead.days)*86400000);
+      // Запас — сколько дней осталось до последнего дня отправки: остатка хватит ровно
+      // до приезда следующей партии. Отрицательный — уже опоздали.
+      const slack=Math.round(r.days-lead.days);
       return {...r,lead,needed:Math.max(0,Math.round(r.sales*hor-r.total)),
-        lastDay,late:r.days-lead.days<0,score:Math.max(0,hor-r.days)*r.sales};
+        lastDay,slack,late:slack<0,score:Math.max(0,hor-r.days)*r.sales};
     })
     .filter(r=>r.needed>0)
     .filter(r=>priorityFilters.articles.has(r.article))
@@ -4763,7 +4777,7 @@ function render(data){
 
   // Фильтр по артикулам и сортировка
   const sortOptions = [
-    {key:'score', label:'по умолч.'},
+    {key:'score', label:'срочность'},
     {key:'sales', label:'продажи'},
     {key:'needed', label:'нужно'},
     {key:'days', label:'дней'},
@@ -4804,15 +4818,25 @@ function render(data){
     if(priorityFilters.sortBy === 'sales') rows = [...rows].sort((a,b)=>b.sales-a.sales);
     else if(priorityFilters.sortBy === 'needed') rows = [...rows].sort((a,b)=>b.needed-a.needed);
     else if(priorityFilters.sortBy === 'days') rows = [...rows].sort((a,b)=>a.days-b.days);
+    // По умолчанию — по запасу времени: сверху то, что надо отправлять прямо сейчас,
+    // даже если дефицит там меньше, чем у соседа под боком.
+    else rows = [...rows].sort((a,b)=>(a.slack-b.slack)||(b.needed-a.needed));
     filteredGrouped[g] = rows;
   });
 
+  /* При сортировке по срочности и сами зоны идут по самой горящей строке: иначе Дальний
+     Восток с «−3 дн» уезжал в конец только потому, что он последний в списке зон. */
+  const slackOf=g=>{const rows=filteredGrouped[g]||[];return rows.length?Math.min(...rows.map(r=>r.slack)):1e9;};
+  const renderOrder=priorityFilters.sortBy==='score'
+    ? [...groupOrder].sort((a,b)=>slackOf(a)-slackOf(b))
+    : groupOrder;
+
   html+=`<div class="section-label" style="margin-top:2rem">Топ приоритеты · по дефициту за ${period} дней</div>`;
   html+=filterBar;
-  html+='<div class="table-wrap"><table><thead><tr><th>Группа</th><th>Товар</th><th>Кластер</th><th>Продаж/день</th><th>Нужно отправить</th><th>На складе</th><th>В пути</th><th>Дней</th><th></th></tr></thead><tbody>';
+  html+='<div class="table-wrap"><table><thead><tr><th>Группа</th><th style="width:118px">Когда</th><th>Товар</th><th>Кластер</th><th>Продаж/день</th><th>Нужно отправить</th><th>На складе</th><th>В пути</th><th>Дней</th><th></th></tr></thead><tbody>';
 
   let hasAny = false;
-  groupOrder.forEach(groupName => {
+  renderOrder.forEach(groupName => {
     const rows = filteredGrouped[groupName];
     if (!rows || !rows.length) return;
     hasAny = true;
@@ -4844,10 +4868,11 @@ function render(data){
         : '';
       html+=`<tr data-adj="${r.article}|${r.cluster}">
         ${groupCell}
+        ${urgencyCellHtml(r,!isTop)}
         <td class="item-name" style="${isTop?'':'opacity:0.7'}">${NAMES[r.article]||r.article}${isTop?' <span style="font-size:10px;color:var(--accent)">★</span>':''}</td>
         <td style="${clusterStyle}">${r.cluster}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.sales.toFixed(1)}${r.fromProfile?'<span style="font-size:9px;color:var(--amber);margin-left:3px" title="историческое">~</span>':''}</td>
-        <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт${leadHintHtml(r)}${sugBtnHtml(r)}</td>
+        <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт${sugBtnHtml(r)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
         <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}">${Math.round(r.transit+(r.requested||0))}${r.requested?`<span style="display:block;font-size:10px;margin-top:2px;opacity:0.75">${Math.round(r.requested)} в заявках</span>`:''}</td>
         <td><span class="badge ${dc}">${daysLabel}</span></td>
@@ -4856,7 +4881,7 @@ function render(data){
     });
   });
 
-  if (!hasAny) html += `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:2rem">Дефицита нет</td></tr>`;
+  if (!hasAny) html += `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:2rem">Дефицита нет</td></tr>`;
   // Группа «Остатки» — всегда видна, по строке на каждый товар в расчёте. Кнопка добавляет коробочки «на полку».
   // Остатки — всегда все товары, независимо от галочек «Товары в расчёте».
   html += '</tbody></table></div>';
