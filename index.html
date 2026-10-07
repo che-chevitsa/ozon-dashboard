@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.164</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.166</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -650,17 +650,23 @@ function leadDays(cluster){
 function leadLearn(orders){
   const byId={};
   ((getOzonCache().clusters)||[]).forEach(c=>{ byId[String(c.id)]=c.name; });
-  const st={added:0,supplies:0,noFrom:0,noArrival:0,noCluster:0,dup:0};
+  const st={added:0,supplies:0,noFrom:0,noArrival:0,noCluster:0,dup:0,byState:0};
+  // Заявка уже доехала: последняя смена статуса — это и есть приёмка на складе хранения.
+  const ARRIVED=['ACCEPTANCE_AT_STORAGE_WAREHOUSE','REPORTS_CONFIRMATION_AWAITING','COMPLETED'];
   (orders||[]).forEach(o=>{
     const from=(o.timeslot&&o.timeslot.from)||o.acceptedAt||'';
+    const state=String(o.state||'').replace(/^ORDER_STATE_/,'');
     (o.supplies||[]).forEach(s=>{
       st.supplies++;
       if(!from){ st.noFrom++; return; }
-      if(!s.arrivalDate){ st.noArrival++; return; }
+      let arrived=s.arrivalDate, src='ozon';
+      if(!arrived&&ARRIVED.includes(state)&&o.stateAt){ arrived=o.stateAt; src='state'; }
+      if(!arrived){ st.noArrival++; return; }
       const cluster=byId[String(s.clusterId)]||'';
       if(!cluster){ st.noCluster++; return; }
-      const days=Math.round((Date.parse(s.arrivalDate)-Date.parse(from))/86400000);
-      if(leadAddSample(cluster,days,s.arrivalDate,o.id+'-'+s.id,'ozon')) st.added++; else st.dup++;
+      const days=Math.round((Date.parse(arrived)-Date.parse(from))/86400000);
+      if(leadAddSample(cluster,days,arrived,o.id+'-'+s.id,src)){ st.added++; if(src==='state') st.byState++; }
+      else st.dup++;
     });
   });
   return st;
@@ -687,7 +693,7 @@ async function leadScanHistory(months,quiet){
   if(!quiet) redraw();
   const since=Date.now()-(months||12)*30*86400000;
   let lastId='', seen=0, pages=0;
-  const tot={added:0,supplies:0,noFrom:0,noArrival:0,noCluster:0,dup:0};
+  const tot={added:0,supplies:0,noFrom:0,noArrival:0,noCluster:0,dup:0,byState:0};
   try{
     // Без справочника кластеров поставку не к чему привязать — тогда сбор молча давал ноль.
     if(!((getOzonCache().clusters)||[]).length){
@@ -714,8 +720,10 @@ async function leadScanHistory(months,quiet){
       const orders=(got.orders||[]).map(o=>({
         id:o.order_id,
         created:o.created_date||'',
+        state:o.state||'',
+        stateAt:o.state_updated_date||'',
         timeslot:((o.timeslot||{}).timeslot)||null,
-        acceptedAt:o.state_updated_date||'',
+        acceptedAt:'',
         supplies:(o.supplies||[]).map(s=>({id:s.supply_id,clusterId:s.macrolocal_cluster_id,
           arrivalDate:((s.storage_warehouse||{}).arrival_date)||''})),
       }));
@@ -730,6 +738,7 @@ async function leadScanHistory(months,quiet){
     leadDropLocal();
     // Итог говорит и о неудачах: иначе «собрано 0» выглядит как поломка, хотя причина бытовая.
     const why=[];
+    if(tot.byState) why.push('по статусу «на складе»: '+tot.byState);
     if(tot.noArrival) why.push('без даты прибытия: '+tot.noArrival);
     if(tot.noFrom) why.push('без даты отгрузки: '+tot.noFrom);
     if(tot.noCluster) why.push('кластер не опознан: '+tot.noCluster);
@@ -740,6 +749,48 @@ async function leadScanHistory(months,quiet){
   }catch(e){
     leadScanState={busy:false,msg:'',error:e.message};
   }
+  redraw();
+}
+/** Что на самом деле отдаёт Ozon по заявкам. Нужна, когда сроки не собираются: по строкам
+ *  видно, у каких статусов есть дата прибытия, а где её нет и почему факт не получился. */
+let leadDiag=null;
+async function leadDiagRun(){
+  if(leadDiag&&leadDiag.busy)return;
+  leadDiag={busy:true,lines:[]};
+  redraw();
+  try{
+    if(!((getOzonCache().clusters)||[]).length){
+      let res; try{ res=await ozonApi('/v2/cluster/list',{}); }
+      catch(e){ res=await ozonApi('/v2/cluster/list',{cluster_type:'CLUSTER_TYPE_OZON'}); }
+      const c=getOzonCache();
+      c.clusters=(res.result||[]).map(x=>({id:x.macrolocal_cluster_id,
+        name:((x.data||{}).macrolocal_cluster||{}).name||'',
+        warehouses:(((x.data||{}).fulfillments)||[]).map(f=>({id:f.warehouse_id,name:f.name}))})).filter(x=>x.name);
+      saveOzonCache(c);
+    }
+    const byId={};
+    ((getOzonCache().clusters)||[]).forEach(c=>{ byId[String(c.id)]=c.name; });
+    const list=await ozonApi('/v3/supply-order/list',{limit:20,last_id:'',
+      filter:{states:OZON_ALL_STATES},sort_by:'ORDER_CREATION',sort_dir:'DESC'});
+    const ids=(list.order_ids||[]).slice(0,20);
+    const got=ids.length?await ozonApi('/v3/supply-order/get',{order_ids:ids}):{orders:[]};
+    const lines=(got.orders||[]).flatMap(o=>{
+      const state=String(o.state||'').replace(/^ORDER_STATE_/,'');
+      const slot=((o.timeslot||{}).timeslot||{}).from||'';
+      return (o.supplies||[]).map(s=>{
+        const arr=((s.storage_warehouse||{}).arrival_date)||'';
+        const cl=byId[String(s.macrolocal_cluster_id)]||('id '+s.macrolocal_cluster_id+' — не в справочнике');
+        const d=(arr&&slot)?Math.round((Date.parse(arr)-Date.parse(slot))/86400000)+' дн':'—';
+        return [o.order_number||o.order_id,state,
+          'слот '+(slot?slot.slice(0,10):'нет'),
+          'прибытие '+(arr?arr.slice(0,10):'нет'),
+          'статус от '+String(o.state_updated_date||'').slice(0,10),
+          cl, d].join(' · ');
+      });
+    });
+    leadDiag={busy:false,lines,
+      head:'кластеров в справочнике: '+((getOzonCache().clusters)||[]).length+', заявок получено: '+(got.orders||[]).length};
+  }catch(e){ leadDiag={busy:false,lines:[],error:e.message}; }
   redraw();
 }
 /** Сроки должны копиться сами: раз в неделю тихо проходим историю, плюс учимся на каждом
@@ -939,7 +990,8 @@ async function ozonRefresh(){
     cache.errors=errors;
     saveOzonCache(cache);
   }finally{ ozonBusy=false; }
-  leadLearn((getOzonCache().orders)||[]);   // заодно запоминаем, сколько ехало до кластеров
+  // Кэш заявок хранит stateAt — разбор возьмёт его, если даты прибытия у поставки нет.
+  leadLearn(((getOzonCache().orders)||[]).map(o=>({...o,stateAt:o.stateAt||o.acceptedAt||''})));
   leadAutoCollect();                        // и раз в неделю тихо проходим историю целиком
   await sheetAutoSend();   // отгрузка подтвердилась — можно писать строки учёта
   redraw();
@@ -2438,9 +2490,15 @@ function leadBlockHtml(){
     <div class="hint" style="margin:8px 0 10px">Срок считается по своим поставкам: от таймслота до даты прибытия на склад, которую отдаёт Ozon. Он прибавляется к периоду в расчёте «нужно отправить», поэтому в дальние кластеры дашборд просит больше и раньше.</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn accent" ${st.busy?'disabled':''} onclick="leadScanHistory(12)">${st.busy?'читаю историю…':'собрать по истории заявок'}</button>
+      <button class="btn" ${(leadDiag&&leadDiag.busy)?'disabled':''} onclick="leadDiagRun()">${(leadDiag&&leadDiag.busy)?'смотрю…':'что отдаёт Ozon'}</button>
       <span class="hint">${escHtml(st.msg||'')}</span>
       ${st.error?`<span style="font-size:12px;color:var(--red)">${escHtml(st.error)}</span>`:''}
     </div>
+    ${leadDiag&&!leadDiag.busy?`<div style="margin-bottom:12px">
+      ${leadDiag.error?`<div class="alert red">${escHtml(leadDiag.error)}</div>`
+        :`<div class="hint" style="margin-bottom:6px">${escHtml(leadDiag.head||'')}</div>
+          <pre class="mono" style="font-size:11px;line-height:1.6;background:var(--bg3);border-radius:8px;padding:10px;overflow:auto;max-height:260px;white-space:pre-wrap">${escHtml((leadDiag.lines||[]).join('\n')||'заявок не нашлось')}</pre>`}
+    </div>`:''}
     ${rows||'<span class="hint">кластеров пока нет — загрузи остатки</span>'}</details>`;
 }
 function leadSetManual(cluster,value){
