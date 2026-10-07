@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.166</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.167</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -616,9 +616,16 @@ function leadAddSample(cluster,days,at,orderId,src){
   return true;
 }
 /** Срок по каждому кластеру, где он измерен или задан вручную. */
+/* Источники по убыванию точности: акт приёмки → дата прибытия от Ozon → дата завершения
+   заявки (она позже приёмки, поэтому срок по ней всегда с запасом). */
+const LEAD_SRC=['act','ozon','state'];
 function leadPick(rec){
   const all=((rec&&rec.samples)||[]).filter(s=>s.src!=='local');
-  return {list:all,src:'ozon'};
+  for(const src of LEAD_SRC){
+    const list=all.filter(s=>(s.src||'ozon')===src);
+    if(list.length) return {list,src};
+  }
+  return {list:[],src:''};
 }
 function leadKnown(){
   const out={};
@@ -639,7 +646,8 @@ function leadDays(cluster){
   const rec=getLeadData()[leadKey(cluster)];
   if(rec&&rec.manual>0) return {days:Math.round(rec.manual),kind:'manual',n:(rec.samples||[]).length};
   const p=leadPick(rec);
-  if(p.list.length) return {days:median(p.list.map(x=>x.days)),kind:'fact',n:p.list.length};
+  if(p.list.length) return {days:median(p.list.map(x=>x.days)),
+    kind:p.src==='state'?'rough':'fact',n:p.list.length,src:p.src};
   const base=leadBaseline();
   return {days:base||LEAD_DEFAULT,kind:'guess',n:0,
     from:base?'медиана по кластерам, куда уже возили':'значение по умолчанию'};
@@ -671,6 +679,18 @@ function leadLearn(orders){
   });
   return st;
 }
+/** Дата приёмки по акту. Акт приёмки создаётся, когда склад принял поставку, поэтому его
+ *  дата — это и есть приезд. Дата завершения заявки наступает позже и годится лишь грубо. */
+async function leadActDates(orderId){
+  const out={};
+  const res=await ozonApi('/v1/supply-order/act/summary/get',{order_id:Number(orderId)||orderId});
+  ((res.supplies_acts)||[]).forEach(sa=>{
+    const acts=(sa.supply_acts||[]).filter(a=>!a.type||a.type==='ACCEPTANCE');
+    const dates=acts.map(a=>a.created_date).filter(Boolean).sort();
+    if(dates.length) out[String(sa.supply_id)]=dates[0];
+  });
+  return out;
+}
 /** Разовая уборка: образцы «из своих записей» были ошибкой. Дата «приехало» в дашборде
  *  означает «Ozon засчитал заявку», а не приёмку на складе, — из них выходили сутки на любой
  *  маршрут. Считаем срок только по датам прибытия от Ozon. */
@@ -694,6 +714,7 @@ async function leadScanHistory(months,quiet){
   const since=Date.now()-(months||12)*30*86400000;
   let lastId='', seen=0, pages=0;
   const tot={added:0,supplies:0,noFrom:0,noArrival:0,noCluster:0,dup:0,byState:0};
+  const actQueue=[];          // доехавшие поставки без точной даты — их уточним по актам
   try{
     // Без справочника кластеров поставку не к чему привязать — тогда сбор молча давал ноль.
     if(!((getOzonCache().clusters)||[]).length){
@@ -728,6 +749,19 @@ async function leadScanHistory(months,quiet){
           arrivalDate:((s.storage_warehouse||{}).arrival_date)||''})),
       }));
       seen+=orders.length;
+      // Кандидаты на уточнение: заявка доехала, кластер известен, точной даты нет.
+      const ARRIVED=['ACCEPTANCE_AT_STORAGE_WAREHOUSE','REPORTS_CONFIRMATION_AWAITING','COMPLETED'];
+      const byId2={}; ((getOzonCache().clusters)||[]).forEach(c=>{ byId2[String(c.id)]=c.name; });
+      orders.forEach(o=>{
+        const st2=String(o.state||'').replace(/^ORDER_STATE_/,'');
+        const from=(o.timeslot&&o.timeslot.from)||'';
+        if(!from||!ARRIVED.includes(st2))return;
+        (o.supplies||[]).forEach(s=>{
+          if(s.arrivalDate)return;
+          const cluster=byId2[String(s.clusterId)]||'';
+          if(cluster) actQueue.push({orderId:o.id,supplyId:s.id,cluster,from});
+        });
+      });
       const st=leadLearn(orders);
       Object.keys(tot).forEach(k=>{ tot[k]+=st[k]||0; });
       const oldest=orders.map(o=>Date.parse(o.created||((o.timeslot||{}).from)||'')||0).filter(Boolean).sort()[0];
@@ -736,6 +770,26 @@ async function leadScanHistory(months,quiet){
       if(oldest&&oldest<since)break;
     }
     leadDropLocal();
+    // Для доехавших заявок без даты прибытия спрашиваем акт приёмки: по нему срок точный.
+    // Берём не все подряд — пяти поставок на кластер хватает для медианы.
+    let acts=0, actFail=0;
+    for(const c of actQueue){
+      if(acts>=120) break;
+      const have=((getLeadData()[leadKey(c.cluster)]||{}).samples||[]).filter(s=>s.src==='act').length;
+      if(have>=5) continue;
+      leadScanState.msg='уточняю по актам приёмки: '+acts;
+      if(!quiet) redraw();
+      try{
+        const map=await leadActDates(c.orderId);
+        acts++;
+        Object.entries(map).forEach(([supplyId,date])=>{
+          const item=actQueue.find(x=>String(x.orderId)===String(c.orderId)&&String(x.supplyId)===String(supplyId));
+          if(!item)return;
+          const days=Math.round((Date.parse(date)-Date.parse(item.from))/86400000);
+          leadAddSample(item.cluster,days,date,item.orderId+'-'+item.supplyId+'-act','act');
+        });
+      }catch(e){ actFail++; if(actFail>3) break; }
+    }
     // Итог говорит и о неудачах: иначе «собрано 0» выглядит как поломка, хотя причина бытовая.
     const why=[];
     if(tot.byState) why.push('по статусу «на складе»: '+tot.byState);
@@ -744,6 +798,8 @@ async function leadScanHistory(months,quiet){
     if(tot.noCluster) why.push('кластер не опознан: '+tot.noCluster);
     if(tot.dup) why.push('уже были: '+tot.dup);
     leadScanState={busy:false,msg:'заявок '+seen+', поставок '+tot.supplies+' · новых сроков '+tot.added
+      +(acts?' · уточнено по актам приёмки: '+acts:'')
+      +(actFail?' · акты недоступны ('+actFail+' отказа)':'')
       +(why.length?' · '+why.join(', '):'')};
     try{ localStorage.setItem(LS_LEAD_SCAN,String(Date.now())); }catch(e){}
   }catch(e){
@@ -2474,7 +2530,8 @@ function leadBlockHtml(){
   const st=leadScanState||{};
   const rows=all.map(c=>{
     const l=leadDays(c);
-    const mark=l.kind==='fact'?`<span style="color:var(--green)">по своим поставкам · ${l.n}</span>`
+    const mark=l.kind==='fact'?`<span style="color:var(--green)">${l.src==='act'?'по актам приёмки':'по датам прибытия'} · ${l.n}</span>`
+      :l.kind==='rough'?`<span style="color:var(--amber)">по дате завершения заявки · ${l.n} — срок с запасом</span>`
       :l.kind==='manual'?`<span style="color:var(--accent)">задано вручную${l.n?' · своих поставок '+l.n:''}</span>`
       :`<span style="color:var(--amber)">оценка · ${escHtml(l.from||'')}</span>`;
     return `<div class="pick-row" style="cursor:default">
@@ -4313,7 +4370,8 @@ function urgencyCellHtml(r,dim){
   const mark=r.lead.kind==='guess'?'~':'';
   const d=r.lastDay, p=n=>String(n).padStart(2,'0');
   const when=d?p(d.getDate())+'.'+p(d.getMonth()+1):'';
-  const road=r.lead.kind==='fact'?('срок по своим поставкам: '+r.lead.n+' шт')
+  const road=r.lead.kind==='fact'?('срок по своим поставкам ('+(r.lead.src==='act'?'акты приёмки':'даты прибытия')+'): '+r.lead.n+' шт')
+    :r.lead.kind==='rough'?('срок по дате завершения заявок ('+r.lead.n+') — считается с запасом')
     :r.lead.kind==='manual'?'срок задан вручную'
     :('срок неизвестен: своих поставок сюда не было, взята '+(r.lead.from||'оценка'));
   const title=(s<0?'последний день отправки был '+when:'отправить до '+when)+' · '+road;
