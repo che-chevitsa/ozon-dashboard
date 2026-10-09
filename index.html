@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.167</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.168</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3916,6 +3916,12 @@ function setAdjStage(idx,stage){
     delete adjs[idx].tbox;
   }
   if(stage==='sent'&&was!=='sent') adjs[idx].sentAt=new Date().toISOString(); // день, когда коробки реально уехали
+  // Остатки на полку никуда не едут и заявку не получат: отметили готово — и с глаз долой.
+  // Запись не удаляется, а уходит в свёрнутый список внизу, откуда её можно вернуть.
+  if(adjs[idx].cluster===LEFTOVER_CLUSTER){
+    if(stage==='sent'&&!adjs[idx].arrived){ adjs[idx].arrived=true; adjs[idx].arrivedAt=new Date().toISOString(); }
+    if(stage!=='sent'&&adjs[idx].arrived){ delete adjs[idx].arrived; delete adjs[idx].arrivedAt; }
+  }
   if(stage==='sent'&&was!=='sent'&&adjs[idx].ozonOrderId) setTimeout(sheetAutoSend,0);
   if(stage!=='sent') delete adjs[idx].sentAt;
   if(stage==='plan'){ delete adjs[idx].packedAt; delete adjs[idx].packedBy; }
@@ -3958,7 +3964,7 @@ function adjRowsHtml(){
   // Списанные («приехало на склад») раньше исчезали совсем, и проверить их было нельзя.
   // Теперь они свёрнуты внизу, и любую можно вернуть в учёт одной кнопкой.
   const goneHtml=gone.length?`<details style="margin-top:10px">
-    <summary style="cursor:pointer;font-family:var(--font);font-size:11px;color:var(--muted)">приехало на склад · ${gone.length} — списаны из учёта</summary>
+    <summary style="cursor:pointer;font-family:var(--font);font-size:11px;color:var(--muted)">списано из учёта · ${gone.length} — приехало на склад или разобрано в остатки</summary>
     <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
       ${gone.slice().reverse().map(a=>`<div style="display:flex;align-items:center;gap:10px;font-family:var(--font);font-size:12px;color:var(--muted)">
         <span>${escHtml(artName(a.article))} → ${escHtml(a.cluster)} · ${a.qty} шт</span>
@@ -4001,7 +4007,7 @@ function adjRowsHtml(){
     const btns=(stage==='plan'||later)
       ?`${eye}${defer}<button class="adj-del" style="color:var(--accent)" title="упаковано и лежит на складе" onclick="packedAdjustment(${i})">📦</button>${del(i)}`
       :stage==='packed'
-      ?`<button class="adj-del" style="color:var(--green)" title="заявка создана, отгружено" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted)" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
+      ?`<button class="adj-del" style="color:var(--green)" title="${a.cluster===LEFTOVER_CLUSTER?'готово: убрать с глаз, заявки по остаткам не бывает':'заявка создана, отгружено'}" onclick="confirmAdjustment(${i})">✓</button><button class="adj-del" style="color:var(--muted)" title="вернуть в план упаковки" onclick="unpackAdjustment(${i})">↩</button>${del(i)}`
       :`<button class="adj-del" style="color:var(--muted)" title="вернуть в «упаковано»" onclick="unconfirmAdjustment(${i})">↩</button>${del(i)}`;
     // Слева — точка состояния: план серый, упаковано синее, отгружено зелёное. По ней видно
     // стадию, не читая подписей.
