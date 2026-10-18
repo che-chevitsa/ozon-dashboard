@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.168</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.169</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -379,6 +379,20 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     </div>
     <div id="upload-cancel" style="display:none;text-align:center;margin-top:12px">
       <span onclick="cancelUpload()" style="cursor:pointer;font-family:var(--font);font-size:12px;color:var(--muted)">← вернуться к дашборду</span>
+    </div>
+    <!-- Когда браузер вычистил хранилище, человек попадает сюда и не знает, что делать:
+         кнопка восстановления раньше жила в настройках, до которых без данных не добраться. -->
+    <div id="upload-restore" style="display:none;margin-top:18px;text-align:center">
+      <div class="alert amber" style="display:inline-block;text-align:left;max-width:560px">
+        <b>Данные пропали из браузера.</b><br>
+        Так бывает, когда Chrome чистит хранилище сайта — обычно при нехватке места на диске.
+        Ключи Ozon и настройки тоже стёрты. Восстанови из последней копии, а потом настрой
+        синхронизацию, чтобы это не повторилось.
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+          <button class="btn accent" onclick="document.getElementById('restore-file').click()">восстановить из копии</button>
+          <input type="file" id="restore-file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this)">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2337,10 +2351,28 @@ function backupText(){
   }
   return JSON.stringify({kind:'ozon-dashboard-backup',savedAt:new Date().toISOString(),data},null,1);
 }
+const LS_BACKUP_AT='ozon_backup_at';
 function downloadBackup(){
   const d=new Date(), p=n=>String(n).padStart(2,'0');
   downloadBlob(new Blob([backupText()],{type:'application/json'}),
     'дашборд-копия_'+p(d.getDate())+'-'+p(d.getMonth()+1)+'.json');
+  try{ localStorage.setItem(LS_BACKUP_AT,new Date().toISOString()); }catch(e){}
+  redraw();
+}
+/* Хранилище сайта браузер чистит без спроса — дашборд уже дважды обнулялся. Пока нет ни
+   облака, ни свежей копии, об этом должно быть видно на главном экране, а не в настройках. */
+function backupWarnHtml(){
+  if(getSheetCfg()) return '';                       // облако настроено — копия не единственная
+  const at=localStorage.getItem(LS_BACKUP_AT)||'';
+  const days=at?Math.floor((Date.now()-Date.parse(at))/86400000):null;
+  if(days!==null&&days<7) return '';
+  const when=days===null?'копии ещё не было':'последняя копия '+days+' '+pkPlural(days,'день','дня','дней')+' назад';
+  return `<div class="alert amber" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 14px">
+    <span><b>Данные живут только в этом браузере</b> · ${when}. Если Chrome почистит хранилище, пропадёт всё: отправки, укладки, ключи.</span>
+    <span style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn" onclick="downloadBackup()">скачать копию</button>
+      <button class="btn accent" onclick="switchView('ship')">настроить синхронизацию</button>
+    </span></div>`;
 }
 async function restoreBackup(input){
   const file=input&&input.files&&input.files[0];
@@ -4841,6 +4873,20 @@ function renderFileDate(){
   el.textContent=ts?'файл от '+short(ts):'';
   el.title='Загружен файлом';
 }
+/* Пустой экран бывает двух видов: «первый запуск» и «всё стёрлось». Отличаем по следам:
+   если нет ни ключей, ни отправок, ни коробок, ни настроек — восстанавливать нечего. */
+function renderRestoreHint(){
+  const el=document.getElementById('upload-restore');
+  if(!el)return;
+  let keys=0;
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('ozon_')===0) keys++; }
+  const empty=!rawData||!rawData.length;
+  el.style.display=empty?'block':'none';
+  // Совсем чистый браузер — это первый запуск, пугать незачем.
+  const first=keys<=1;
+  const box=el.querySelector('.alert');
+  if(box) box.style.display=first?'none':'block';
+}
 // Кнопка обновления имеет смысл только с ключом Ozon.
 function renderStocksBtn(){
   const has=!!getOzonKeys();
@@ -4851,6 +4897,7 @@ function renderStocksBtn(){
   // На пустом экране файл — не единственный выход: с ключом данные берутся прямо из Ozon.
   const u=document.getElementById('upload-api-wrap');
   if(u) u.style.display=has?'block':'none';
+  renderRestoreHint();
 }
 function render(data){
   document.getElementById('upload-section').style.display='none';
@@ -4940,7 +4987,7 @@ function render(data){
       <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
   }
 
-  let html='<div class="dash-view" data-view="plan">';
+  let html='<div class="dash-view" data-view="plan">'+backupWarnHtml();
 
   // Панель галочек: какие артикулы участвуют в карточках, приоритетах и тепловой карте.
   // Данные по скрытым товарам остаются в rawData — прячется только отображение.
