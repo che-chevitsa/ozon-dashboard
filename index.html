@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.169</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.170</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -382,6 +382,21 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     </div>
     <!-- Когда браузер вычистил хранилище, человек попадает сюда и не знает, что делать:
          кнопка восстановления раньше жила в настройках, до которых без данных не добраться. -->
+    <!-- Ключ Ozon раньше вводился только в настройках, а настройки живут внутри дашборда,
+         которого без данных нет. Выход из этого круга был один — файл. Теперь ключ можно
+         ввести прямо здесь, и данные приедут из Ozon без всякой выгрузки. -->
+    <div id="upload-keys" style="display:none;margin-top:18px">
+      <div class="block" style="margin-top:0;max-width:560px;margin-left:auto;margin-right:auto">
+        <div class="blk-head"><b>Подключить Ozon</b><span class="blk-sub">данные приедут сами, файл не нужен</span></div>
+        <div class="hint" style="margin-bottom:10px">Кабинет Ozon → Настройки → Seller API. Нужны роли: аналитика остатков, товары, склады, поставки.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="up-client-id" class="fld" style="width:150px" placeholder="Client-Id" inputmode="numeric">
+          <input id="up-api-key" class="fld" style="flex:1;min-width:220px" type="password" placeholder="Api-Key">
+          <button class="btn green" onclick="connectOzonFromEmpty()">подключить</button>
+        </div>
+        <div id="up-keys-msg" class="hint" style="margin-top:8px"></div>
+      </div>
+    </div>
     <div id="upload-restore" style="display:none;margin-top:18px;text-align:center">
       <div class="alert amber" style="display:inline-block;text-align:left;max-width:560px">
         <b>Данные пропали из браузера.</b><br>
@@ -4887,6 +4902,22 @@ function renderRestoreHint(){
   const box=el.querySelector('.alert');
   if(box) box.style.display=first?'none':'block';
 }
+/** Подключение ключа с пустого экрана: та же проверка, что и в настройках. */
+function connectOzonFromEmpty(){
+  const msg=document.getElementById('up-keys-msg');
+  const say=(t,c)=>{ if(msg){ msg.textContent=t; msg.style.color=c||'var(--muted)'; } };
+  const id=((document.getElementById('up-client-id')||{}).value||'').trim();
+  const key=((document.getElementById('up-api-key')||{}).value||'').trim();
+  if(!/^\d+$/.test(id)) return say('Client-Id — это число из личного кабинета','var(--red)');
+  if(key.length<10) return say('Api-Key выглядит слишком коротким','var(--red)');
+  try{ localStorage.setItem(LS_OZON_KEYS,JSON.stringify({clientId:id,apiKey:key})); }
+  catch(e){ return say('не удалось сохранить ключ: '+e.message,'var(--red)'); }
+  say('подключаюсь к Ozon…','var(--accent)');
+  renderStocksBtn();
+  ozonRefresh().then(()=>{ say('справочники загружены, беру остатки…','var(--accent)'); return ozonLoadStocks(); })
+    .then(()=>say(''))
+    .catch(e=>say('не вышло: '+(e&&e.message||e),'var(--red)'));
+}
 // Кнопка обновления имеет смысл только с ключом Ozon.
 function renderStocksBtn(){
   const has=!!getOzonKeys();
@@ -4897,6 +4928,8 @@ function renderStocksBtn(){
   // На пустом экране файл — не единственный выход: с ключом данные берутся прямо из Ozon.
   const u=document.getElementById('upload-api-wrap');
   if(u) u.style.display=has?'block':'none';
+  const k=document.getElementById('upload-keys');
+  if(k) k.style.display=(!has&&(!rawData||!rawData.length))?'block':'none';
   renderRestoreHint();
 }
 function render(data){
