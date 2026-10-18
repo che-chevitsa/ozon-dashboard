@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.171</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.172</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -2395,6 +2395,31 @@ function backupWarnHtml(){
 function looksLikeState(o){
   return !!o&&typeof o==='object'&&(o.adjustments||o.packRules||o.rawDataC||o.rawData||o.allArticles||o.boxTypes);
 }
+/* Состояние на Диске лежит по-разному: скрипт мог положить объект как есть, завернуть его
+   в {data:…} или в {text:"…"}, а большие — кусками. Разворачиваем все эти обёртки, пока не
+   увидим знакомую структуру. */
+function unwrapState(obj,depth){
+  if(depth>6||obj==null) return null;
+  if(typeof obj==='string'){
+    try{ return unwrapState(JSON.parse(obj),(depth||0)+1); }catch(e){ return null; }
+  }
+  if(Array.isArray(obj)){
+    // куски текста или массив записей — пробуем склеить
+    if(obj.every(x=>typeof x==='string')) return unwrapState(obj.join(''),(depth||0)+1);
+    for(const x of obj){ const r=unwrapState(x,(depth||0)+1); if(r) return r; }
+    return null;
+  }
+  if(typeof obj!=='object') return null;
+  if(looksLikeState(obj)) return obj;
+  if(Array.isArray(obj.parts)&&obj.parts.length){
+    const text=obj.parts.map(p=>typeof p==='string'?p:(p&&p.text)||'').join('');
+    const r=unwrapState(text,(depth||0)+1); if(r) return r;
+  }
+  for(const k of ['data','state','text','value','record','content','json','result','payload']){
+    if(obj[k]!==undefined){ const r=unwrapState(obj[k],(depth||0)+1); if(r) return r; }
+  }
+  return null;
+}
 /** Разложить файл состояния по местам. В отличие от синхронизации — без проверки свежести:
  *  файл выбрал человек, значит он и главнее. */
 function applyStateFile(rec){
@@ -2450,8 +2475,21 @@ async function restoreBackup(input){
     return;
   }
   // Файл состояния с Диска: ключей Ozon в нём нет, их придётся ввести заново.
-  const rec=(obj&&obj.data&&looksLikeState(obj.data))?obj.data:obj;
-  if(!looksLikeState(rec)){ alert('Это не файл дашборда: ни резервная копия, ни состояние с Google Диска.'); return; }
+  const rec=unwrapState(obj,0);
+  if(!rec){
+    // Глухое «не тот файл» ничего не даёт: показываем, что внутри, — по этому видно, чего ждать.
+    let what='не удалось прочитать как JSON';
+    if(obj&&typeof obj==='object'){
+      const keys=Object.keys(obj).slice(0,12);
+      what='верхние ключи: '+(keys.join(', ')||'(пусто)');
+    }else if(typeof obj==='string') what='внутри строка длиной '+obj.length;
+    const nl=String.fromCharCode(10);
+    alert('Не похоже ни на резервную копию, ни на состояние дашборда.'+nl+nl
+      +'Файл: '+file.name+nl+what+nl+nl
+      +'Пришли этот файл мне — посмотрю, что в нём.');
+    console.log('Непонятный файл восстановления:',obj);
+    return;
+  }
   const when=rec.savedAt?ozonWhen(rec.savedAt):'без даты';
   if(!confirm('Это файл состояния с Google Диска от '+when+'.\n\nВосстановить из него? Ключи Ozon в таком файле не хранятся — их нужно будет ввести заново.'))return;
   const got=applyStateFile(rec);
