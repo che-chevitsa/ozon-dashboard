@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.172</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.173</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -405,7 +405,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
         синхронизацию, чтобы это не повторилось.
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button class="btn accent" onclick="document.getElementById('restore-file').click()">восстановить из копии</button>
-          <input type="file" id="restore-file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this)">
+          <input type="file" multiple id="restore-file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this)">
         </div>
       </div>
     </div>
@@ -2460,11 +2460,38 @@ function applyStateFile(rec){
   return counts;
 }
 async function restoreBackup(input){
-  const file=input&&input.files&&input.files[0];
+  const files=[...((input&&input.files)||[])];
+  const file=files[0];
   input.value='';
   if(!file)return;
+  /* Состояние на Диске пишется кусками по 48 КБ, и каждый кусок — отдельный файл: сам по себе
+     он не JSON, он начинается с середины. Поэтому принимаем несколько файлов сразу и склеиваем
+     их по порядку имён. */
+  const texts=[];
+  for(const f of files) texts.push(await f.text());
+  const nl=String.fromCharCode(10);
   let obj=null;
-  try{ obj=JSON.parse(await file.text()); }catch(e){}
+  if(files.length>1){
+    const order=files.map((f,i)=>({name:f.name,i}))
+      .sort((a,b)=>a.name.localeCompare(b.name,'ru',{numeric:true}));
+    const joined=order.map(o=>texts[o.i]).join('');
+    try{ obj=JSON.parse(joined); }catch(e){
+      alert('Части не склеились в целый файл.'+nl+nl+'Выбрано файлов: '+files.length
+        +nl+'Порядок: '+order.map(o=>o.name).join(', ')
+        +nl+nl+'Похоже, какой-то части не хватает или они не в том порядке.');
+      return;
+    }
+  }else{
+    try{ obj=JSON.parse(texts[0]); }catch(e){
+      const head=texts[0].trim().slice(0,1);
+      if(head!=='{'&&head!=='['){
+        alert('Это кусок файла состояния, а не весь файл.'+nl+nl
+          +'Синхронизация пишет состояние частями. Найди на Google Диске остальные части '
+          +'(они лежат рядом, имена отличаются номером) и выбери их все разом — дашборд склеит.');
+        return;
+      }
+    }
+  }
   if(obj&&obj.kind==='ozon-dashboard-backup'&&obj.data){
     const keys=Object.keys(obj.data);
     if(!confirm('Восстановить '+keys.length+' записей из копии от '+ozonWhen(obj.savedAt)+'?\n\nТо, что сейчас в этом браузере, будет заменено.'))return;
@@ -2505,7 +2532,7 @@ function storageBlockHtml(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn" onclick="downloadBackup()" title="Ключи, отправки, коробки, настройки и загруженные данные одним файлом">скачать резервную копию</button>
       <button class="btn" onclick="document.getElementById('backup-file').click()">восстановить из файла</button>
-      <input type="file" id="backup-file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this)">
+      <input type="file" multiple id="backup-file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this)">
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">В копии лежит и ключ Ozon — храни файл как пароль.</div>
   </div>`;
