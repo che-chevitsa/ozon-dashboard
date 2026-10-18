@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.170</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.171</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -2389,18 +2389,73 @@ function backupWarnHtml(){
       <button class="btn accent" onclick="switchView('ship')">настроить синхронизацию</button>
     </span></div>`;
 }
+/* Файлов, из которых можно подняться, два: резервная копия (слепок localStorage) и файл
+   состояния с Google Диска — ozon-dashboard-state.json, его пишет синхронизация. Формат у них
+   разный, но человеку это знать незачем: кнопка принимает оба. */
+function looksLikeState(o){
+  return !!o&&typeof o==='object'&&(o.adjustments||o.packRules||o.rawDataC||o.rawData||o.allArticles||o.boxTypes);
+}
+/** Разложить файл состояния по местам. В отличие от синхронизации — без проверки свежести:
+ *  файл выбрал человек, значит он и главнее. */
+function applyStateFile(rec){
+  const put=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} };
+  if(Array.isArray(rec.adjustments)) put(LS_ADJ,rec.adjustments);
+  if(Array.isArray(rec.boxes)) put(LS_BOXES,rec.boxes);
+  if(Array.isArray(rec.log)) put(LS_LOG,rec.log);
+  if(Array.isArray(rec.hiddenArticles)) put(LS_HIDDEN_ARTICLES,rec.hiddenArticles);
+  if(rec.packRules) put(LS_PACK_RULES,rec.packRules);
+  if(rec.packLabels) put(LS_PACK_LABELS,rec.packLabels);
+  if(Array.isArray(rec.packers)&&rec.packers.length) put(LS_PACKERS,rec.packers);
+  if(rec.packAssign) put(LS_PACK_ASSIGN,rec.packAssign);
+  if(typeof rec.packWho==='string') put(LS_PACK_WHO,rec.packWho);
+  if(rec.sheetCodes) put(LS_SHEET_CODES,rec.sheetCodes);
+  if(Array.isArray(rec.packOrder)) put(LS_PACK_ORDER,rec.packOrder);
+  if(rec.packNotes) put(LS_PACK_NOTES,rec.packNotes);
+  if(Array.isArray(rec.transportTypes)&&rec.transportTypes.length) put(LS_TBOX_TYPES,rec.transportTypes);
+  if(Array.isArray(rec.transportBoxes)&&rec.transportBoxes.length) put(LS_TBOX_LOG,rec.transportBoxes);
+  if(Array.isArray(rec.boxTypes)&&rec.boxTypes.length) put(LS_BOX_TYPES,rec.boxTypes);
+  if(rec.leadTimes&&typeof rec.leadTimes==='object') put(LS_LEAD,rec.leadTimes);
+  if(Array.isArray(rec.allArticles)) rec.allArticles.forEach(a=>{ if(!ALL_ARTICLES.includes(a)) ALL_ARTICLES.push(a); });
+  // Остатки: в файле они лежат в сжатом виде — разворачиваем так же, как при чтении с Диска.
+  let raw=null;
+  if(Array.isArray(rec.rawDataC)&&rec.rawDataC.length){
+    raw=rec.rawDataC.map(a=>{
+      const fbo=a[4]||0,transit=a[5]||0,sales=a[3]||0,requested=a[7]||0,total=fbo+transit+requested;
+      return {article:a[0],cluster:a[1],rec:a[2]||0,sales,fbo,transit,requested,total,days:sales>0?total/sales:99,fromProfile:a[6]===1};
+    });
+  }else if(Array.isArray(rec.rawData)&&rec.rawData.length) raw=rec.rawData;
+  if(raw) put(LS_RAWDATA,raw);
+  if(rec.salesDailyC) put(LS_SALESDAILY,rec.salesDailyC);
+  else if(rec.salesDaily) put(LS_SALESDAILY,rec.salesDaily);
+  const counts=[];
+  if(Array.isArray(rec.adjustments)) counts.push('отправок '+rec.adjustments.length);
+  if(raw) counts.push('строк остатков '+raw.length);
+  if(rec.packRules) counts.push('правила укладки');
+  if(Array.isArray(rec.boxTypes)&&rec.boxTypes.length) counts.push('коробки');
+  return counts;
+}
 async function restoreBackup(input){
   const file=input&&input.files&&input.files[0];
   input.value='';
   if(!file)return;
   let obj=null;
   try{ obj=JSON.parse(await file.text()); }catch(e){}
-  if(!obj||obj.kind!=='ozon-dashboard-backup'||!obj.data){ alert('Это не файл резервной копии дашборда.'); return; }
-  const keys=Object.keys(obj.data);
-  if(!confirm('Восстановить '+keys.length+' записей из копии от '+ozonWhen(obj.savedAt)+'?\n\nТо, что сейчас в этом браузере, будет заменено.'))return;
-  let bad=0;
-  keys.forEach(k=>{ try{ localStorage.setItem(k,obj.data[k]); }catch(e){ bad++; } });
-  if(bad) alert('Не записалось: '+bad+' из '+keys.length+'. Скорее всего не хватает места на диске.');
+  if(obj&&obj.kind==='ozon-dashboard-backup'&&obj.data){
+    const keys=Object.keys(obj.data);
+    if(!confirm('Восстановить '+keys.length+' записей из копии от '+ozonWhen(obj.savedAt)+'?\n\nТо, что сейчас в этом браузере, будет заменено.'))return;
+    let bad=0;
+    keys.forEach(k=>{ try{ localStorage.setItem(k,obj.data[k]); }catch(e){ bad++; } });
+    if(bad) alert('Не записалось: '+bad+' из '+keys.length+'. Скорее всего не хватает места на диске.');
+    location.reload();
+    return;
+  }
+  // Файл состояния с Диска: ключей Ozon в нём нет, их придётся ввести заново.
+  const rec=(obj&&obj.data&&looksLikeState(obj.data))?obj.data:obj;
+  if(!looksLikeState(rec)){ alert('Это не файл дашборда: ни резервная копия, ни состояние с Google Диска.'); return; }
+  const when=rec.savedAt?ozonWhen(rec.savedAt):'без даты';
+  if(!confirm('Это файл состояния с Google Диска от '+when+'.\n\nВосстановить из него? Ключи Ozon в таком файле не хранятся — их нужно будет ввести заново.'))return;
+  const got=applyStateFile(rec);
+  alert('Восстановлено: '+(got.join(', ')||'данные')+'. Сейчас перезагружу страницу.');
   location.reload();
 }
 function storageBlockHtml(){
