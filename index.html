@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.173</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.176</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1326,6 +1326,9 @@ async function ozonOrderInfo(orderId){
   saveOzonCache(c);
   return rec;
 }
+/* Ключ строки учёта. Нужен, чтобы запись «упаковано» и запись «заявка создана» попадали
+   в одну строку таблицы, а не плодили дубли: оба раза ключ считается от самих коробок. */
+function sheetRowKey(article,ts){ return 'p'+(ts||0)+'-'+article; }
 // Строки по заявке: одна строка на товар, как в таблице учёта.
 async function sheetRows(orderId){
   const cfg=getSheetCfg()||{};
@@ -1342,8 +1345,9 @@ async function sheetRows(orderId){
     if(String(a.ozonOrderId||'')!==String(orderId))return;
     if(a.sentAt&&(!sentAt||a.sentAt<sentAt)) sentAt=a.sentAt;
     const k=a.article+'|'+a.qty;
-    const g=by[k]||(by[k]={article:a.article,qty:a.qty,boxes:0,total:0,packedAt:a.packedAt||'',packedBy:a.packedBy||''});
+    const g=by[k]||(by[k]={article:a.article,qty:a.qty,boxes:0,total:0,packedAt:a.packedAt||'',packedBy:a.packedBy||'',ts:a.ts||0});
     g.boxes+=1; g.total+=a.qty;
+    if(a.ts&&(!g.ts||a.ts<g.ts)) g.ts=a.ts;
     if(a.packedAt&&(!g.packedAt||a.packedAt<g.packedAt)) g.packedAt=a.packedAt;
     if(a.packedBy&&!g.packedBy) g.packedBy=a.packedBy;
   });
@@ -1355,6 +1359,7 @@ async function sheetRows(orderId){
     const artByName={};
     ALL_ARTICLES.forEach(a=>{ artByName[artName(a)]=a; });
     return items.map(i=>({
+      key:'o'+String(orderId)+'-'+(artByName[i.name]||i.name),
       shipDate:shippedAt?fmt(new Date(shippedAt)):'',
       orderNumber:order.number||String(orderId),
       orderUrl:(cfg.link||'https://seller.ozon.ru/app/supply/orders/{id}').replace('{id}',String(orderId)),
@@ -1365,6 +1370,7 @@ async function sheetRows(orderId){
     }));
   }
   return Object.values(by).map(g=>({
+    key:sheetRowKey(g.article,g.ts),
     // Строка уходит в таблицу сразу при оформлении, когда отгрузки ещё не было, — и дата
     // тогда пустая. Её проставит второй проход, когда Ozon переключит статус на отгружено
     // или ты отметишь «отгружено» вручную. Выдумывать сегодняшнее число нельзя: вечером
@@ -1422,6 +1428,58 @@ async function sheetSend(orderId,auto,pass){
     }
   }catch(e){ sheetState.error=e.message; sheetState.msg=''; }
   sheetState.busy=false;
+  redraw();
+}
+/** Записать в таблицу коробки кластера, не создавая заявку. Строки уходят без номера
+ *  заявки и без даты отгрузки; когда заявка появится, тот же ключ их дополнит, а не
+ *  продублирует. Коробки остаются упакованными и доступными для заявки. */
+let sheetPackState=null;
+async function sheetSendPacked(cluster){
+  const cfg=getSheetCfg();
+  if(!cfg){ alert('Сначала настрой Google Таблицу в настройках отгрузки.'); return; }
+  const grp=packedByCluster().find(g=>g.cluster===cluster);
+  if(!grp){ alert('В этом кластере нет упакованных коробок.'); return; }
+  const adjs=getAdjs();
+  const by={};
+  grp.idx.forEach(i=>{
+    const a=adjs[i]; if(!a)return;
+    const k=a.article+'|'+a.qty;
+    const g=by[k]||(by[k]={article:a.article,qty:a.qty,boxes:0,total:0,packedAt:a.packedAt||'',packedBy:a.packedBy||'',ts:a.ts||0,idx:[]});
+    g.boxes+=1; g.total+=a.qty; g.idx.push(i);
+    if(a.packedAt&&(!g.packedAt||a.packedAt<g.packedAt)) g.packedAt=a.packedAt;
+    if(a.packedBy&&!g.packedBy) g.packedBy=a.packedBy;
+    if(a.ts&&(!g.ts||a.ts<g.ts)) g.ts=a.ts;
+  });
+  const groups=Object.values(by);
+  if(!groups.length)return;
+  const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  const fmt=d=>d?d.getDate()+' '+MONTHS[d.getMonth()]:'';
+  const rows=groups.map(g=>({
+    key:sheetRowKey(g.article,g.ts),
+    shipDate:'', orderNumber:'', orderUrl:'',
+    what:sheetCode(g.article), perBox:g.qty, boxes:g.boxes>1?g.boxes:'', total:g.total,
+    packDate:g.packedAt?fmt(new Date(g.packedAt)):'', packedBy:g.packedBy||'', cluster,
+  }));
+  const what=groups.map(g=>artName(g.article)+' '+g.total+' шт').join(', ');
+  if(!confirm('Записать в таблицу упакованное без заявки?'+String.fromCharCode(10)+String.fromCharCode(10)
+    +cluster+': '+what+' · коробок '+grp.idx.length+String.fromCharCode(10)+String.fromCharCode(10)
+    +'Номер заявки и дата отгрузки появятся позже, когда создашь заявку. Коробки останутся упакованными.'))return;
+  sheetPackState={cluster,busy:true,msg:'отправляю в таблицу…'};
+  redraw();
+  try{
+    const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({secret:cfg.secret||'',rows})});
+    const text=await r.text();
+    if(!r.ok) throw new Error('HTTP '+r.status+': '+text.slice(0,140));
+    let res=null; try{ res=JSON.parse(text); }catch(e){}
+    if(res&&res.error) throw new Error(res.error);
+    const all=getAdjs();
+    grp.idx.forEach(i=>{ if(all[i]) all[i].sheetPackedAt=new Date().toISOString(); });
+    saveAdjs(all);
+    sheetPackState={cluster,busy:false,msg:'✓ в таблице: '+rows.length+' '+pkPlural(rows.length,'строка','строки','строк')};
+  }catch(e){
+    sheetPackState={cluster,busy:false,msg:'',error:e.message};
+  }
   redraw();
 }
 // Строки учёта отправляются не при создании заявки (вечером заявка, утром отгрузка —
@@ -2058,6 +2116,24 @@ function packedByCluster(){
   });
   return Object.values(g).sort((x,y)=>y.total-x.total);
 }
+/* Единица отгрузки. По умолчанию кластер едет одной заявкой, но на пункте выдачи коробки
+   одной заявки нужно пикать подряд, и если вторую не нашли — встаёт весь процесс. Поэтому
+   можно отгружать каждую коробку своей заявкой: они независимы. */
+const LS_ONE_PER_BOX='ozon_one_order_per_box';
+function onePerBox(){ return localStorage.getItem(LS_ONE_PER_BOX)!=='0'; }
+function setOnePerBox(on){ try{ localStorage.setItem(LS_ONE_PER_BOX,on?'1':'0'); }catch(e){} redraw(); }
+function ozonUnits(clusters){
+  const out=[], adjs=getAdjs();
+  packedByCluster().filter(g=>clusters.includes(g.cluster)).forEach(g=>{
+    if(!onePerBox()){ out.push({key:g.cluster,cluster:g.cluster,byArticle:g.byArticle,idx:g.idx}); return; }
+    g.idx.forEach((i,n)=>{
+      const a=adjs[i]; if(!a)return;
+      out.push({key:g.cluster+' · коробка '+(n+1),cluster:g.cluster,
+        byArticle:{[a.article]:a.qty},idx:[i]});
+    });
+  });
+  return out;
+}
 function ozonClusterId(name){
   const c=(getOzonCache().clusters||[]).find(x=>ozonNorm(x.name)===ozonNorm(name));
   return c?c.id:null;
@@ -2074,9 +2150,11 @@ function ozonToggleCluster(name){
 }
 
 // Черновик одного кластера: возвращает draft_id, склад (для DIRECT), слоты и отклонённые товары.
-async function ozonMakeDraft(cluster){
-  const grp=packedByCluster().find(g=>g.cluster===cluster);
+async function ozonMakeDraft(unit){
+  // unit — либо единица отгрузки (кластер целиком или одна коробка), либо имя кластера.
+  const grp=(unit&&typeof unit==='object')?unit:packedByCluster().find(g=>g.cluster===unit);
   if(!grp) throw new Error('нет упакованных отправок');
+  const cluster=grp.cluster;
   const clusterId=ozonClusterId(cluster);
   if(!clusterId) throw new Error('кластер не сопоставлен с Ozon');
   const skus=getOzonCache().skus||{};
@@ -2144,16 +2222,20 @@ function ozonUnionDays(drafts){
 // Шаг 1: черновик по КАЖДОМУ выбранному кластеру — только так видно настоящие слоты.
 // Ozon пускает создавать черновики раз в 31 секунду, поэтому на несколько кластеров это небыстро.
 async function ozonStartDraft(){
-  const clusters=ozonSelected();
-  if(!clusters.length){ alert('Отметь хотя бы один кластер.'); return; }
-  ozonDraft={clusters,stage:'draft',busy:true,errors:[],rejected:[],results:[],drafts:{},progress:''};
+  const chosen=ozonSelected();
+  if(!chosen.length){ alert('Отметь хотя бы один кластер.'); return; }
+  const units=ozonUnits(chosen);
+  if(!units.length){ alert('Нет упакованных коробок в выбранных кластерах.'); return; }
+  const clusters=units.map(u=>u.key);
+  ozonDraft={clusters,units:{},stage:'draft',busy:true,errors:[],rejected:[],results:[],drafts:{},progress:''};
+  units.forEach(u=>{ ozonDraft.units[u.key]=u; });
   redraw();
   for(let i=0;i<clusters.length;i++){
     const c=clusters[i];
     ozonDraft.progress=`черновик ${i+1} из ${clusters.length} · ${c}`;
     redraw();
     try{
-      const dr=await ozonMakeDraft(c);
+      const dr=await ozonMakeDraft(ozonDraft.units[c]);
       ozonDraft.drafts[c]=dr;
       if(!ozonDraft.supplyType) ozonDraft.supplyType=dr.supplyType;
       if(!ozonDraft.tz) ozonDraft.tz=dr.tz;
@@ -2182,7 +2264,7 @@ async function ozonCreateSupply(){
   const d=ozonDraft;
   if(!d||!d.slot)return;
   const plan=d.clusters.map(c=>{
-    const g=packedByCluster().find(x=>x.cluster===c)||{byArticle:{},idx:[]};
+    const g=(d.units||{})[c]||packedByCluster().find(x=>x.cluster===c)||{byArticle:{},idx:[]};
     return c+': '+Object.entries(g.byArticle).map(([a,q])=>artName(a)+' '+q).join(', ')+' ('+g.idx.length+' кор.)';
   }).join('\n');
   if(!confirm('Создать '+d.clusters.length+' '+pkPlural(d.clusters.length,'заявку','заявки','заявок')+' на поставку в Ozon?\n\n'
@@ -2197,7 +2279,7 @@ async function ozonCreateSupply(){
     d.results.push(r); d.current=cluster; redraw();
     try{
       // Черновик уже создан на шаге выбора слота; если протух — делаем заново.
-      const draft=(d.drafts||{})[cluster]||await ozonMakeDraft(cluster);
+      const draft=(d.drafts||{})[cluster]||await ozonMakeDraft(((d.units||{})[cluster])||cluster);
       // ищем тот же слот; если его нет — ближайший в тот же день
       // Слоты у кластеров могут не совпадать: берём точный, иначе ближайший к выбранному.
       const flat=[];
@@ -2255,6 +2337,10 @@ function ozonSupplyHtml(){
   const typeRow=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px">
       <span class="hint">тип поставки:</span>
       ${tbtn('CROSSDOCK','кросс-докинг')}${tbtn('DIRECT','напрямую на склад')}
+      <label class="tgl" style="margin-left:6px" title="На пункте выдачи коробки одной заявки пикают подряд. Отдельными заявками каждую коробку можно сдать независимо.">
+        <input type="checkbox" ${onePerBox()?'checked':''} onchange="setOnePerBox(this.checked)">
+        <span class="tgl-track"><span class="tgl-knob"></span></span>
+        <span class="tgl-text">каждая коробка — своя заявка</span></label>
       ${type==='CROSSDOCK'?`<span class="hint" style="margin-left:6px">пункт отгрузки:</span>
         ${dropoff&&!ozonDropoffEdit
           ?`<span style="font-size:12px;color:var(--green)">${escHtml(dropoff.name)}</span>
@@ -2328,10 +2414,20 @@ function ozonSupplyHtml(){
   const rows=groups.map(g=>{
     const on=sel.includes(g.cluster), cid=ozonClusterId(g.cluster);
     const items=Object.entries(g.byArticle).map(([a,q])=>escHtml(artName(a))+' '+q).join(' · ');
+    // Записать в таблицу можно и не создавая заявку: иногда коробки стоят упакованными день-два.
+    const st=sheetPackState&&sheetPackState.cluster===g.cluster?sheetPackState:null;
+    const sent=getAdjs().filter((a,i)=>g.idx.includes(i)).some(a=>a.sheetPackedAt);
+    const tbl=getSheetCfg()
+      ? (st&&st.busy?`<span class="pick-sub" style="color:var(--accent)">${escHtml(st.msg)}</span>`
+        : st&&st.error?`<span class="pick-sub" style="color:var(--red)" title="${escHtml(st.error)}">не вышло</span>`
+        : st&&st.msg?`<span class="pick-sub" style="color:var(--green)">${escHtml(st.msg)}</span>`
+        : `<button class="btn sm ${sent?'green':'muted'}" title="${sent?'уже записано — можно записать ещё раз':'записать коробки в таблицу учёта, не создавая заявку'}" onclick="event.preventDefault();sheetSendPacked(&quot;${escHtml(g.cluster)}&quot;)">${sent?'✓ в таблице':'в таблицу'}</button>`)
+      : '';
     return `<label class="pick-row">
         <input type="checkbox" ${on?'checked':''} onchange="ozonToggleCluster(&quot;${escHtml(g.cluster)}&quot;)">
         <b>${escHtml(g.cluster)}</b> <span class="pick-qty">${g.total} шт</span>
         <span class="pick-sub">${items}</span>${cid?'':'<span style="color:var(--amber);font-size:12px">кластер не сопоставлен</span>'}
+        <span style="margin-left:auto">${tbl}</span>
     </label>`;
   }).join('');
 
@@ -3804,6 +3900,10 @@ async function saveToCloud(){
       localStorage.setItem('ozon_local_saved_at',record.savedAt); // локал и облако теперь в синхроне
       let msg=`Сохранено в облако: ${sizeKB} КБ | поставки: ${record.rawDataC?record.rawDataC.length+' строк':'нет'} | продажи: ${record.salesDailyC?Object.keys(record.salesDailyC).length+' дней':'нет'}`;
       cloudDiag(msg);
+      /* Записать мало — надо убедиться, что это читается обратно. Прежний скрипт писал все
+         части в один файл, затирая предыдущие: ответ был «ок», а в облаке лежал огрызок,
+         и выяснилось это только когда понадобилось восстановиться. */
+      verifyCloud(record.savedAt);
     }else{
       const txt=await resp.text().catch(()=>'');
       if(s){s.textContent=`ошибка ${resp.status}`;s.style.color='var(--red)';}
@@ -3812,6 +3912,30 @@ async function saveToCloud(){
   }catch(e){ cloudDiag('ОШИБКА сети при сохранении: '+e.message); console.log('Ошибка сохранения:',e.message);}
 }
 
+/** Перечитываем только что сохранённое: целое ли оно и та ли это версия. */
+async function verifyCloud(savedAt){
+  try{
+    const back=await driveState('get');
+    const rec=back&&back.data;
+    const s=document.getElementById('cloud-status');
+    if(!rec||back.broken){
+      saveWarn('облако не читается обратно: сохранить получилось, а прочитать — нет. Нажми «проверить хранилище» в настройках отгрузки и не полагайся на синхронизацию, пока не починим.');
+      if(s){ s.textContent='облако битое'; s.style.color='var(--red)'; }
+      cloudDiag('ОШИБКА проверки: файл состояния не читается');
+      return false;
+    }
+    if(savedAt&&rec.savedAt!==savedAt){
+      cloudDiag('проверка: в облаке версия от '+ozonWhen(rec.savedAt)+', ожидалась от '+ozonWhen(savedAt));
+      return false;
+    }
+    saveWarn('');
+    cloudDiag('Проверено: облако читается, версия от '+ozonWhen(rec.savedAt));
+    return true;
+  }catch(e){
+    saveWarn('облако не читается обратно: '+e.message);
+    return false;
+  }
+}
 async function loadFromCloud(){
   if(!getSheetCfg())return;
   try{
