@@ -5,6 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Озон — Планирование поставок</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* Библиотека чтения xlsx живёт на внешнем CDN, и он бывает недоступен — тогда любой файл
+   выглядел «нераспознанным», хотя дело в сети. Пробуем зеркала по очереди и говорим правду. */
+window.XLSX_SOURCES=[
+  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+];
+window.ensureXLSX=function(){
+  if(window.XLSX) return Promise.resolve(true);
+  if(window.__xlsxWait) return window.__xlsxWait;
+  window.__xlsxWait=new Promise(function(resolve){
+    var i=0;
+    (function next(){
+      if(window.XLSX) return resolve(true);
+      if(i>=window.XLSX_SOURCES.length) return resolve(false);
+      var s=document.createElement('script');
+      s.src=window.XLSX_SOURCES[i++];
+      s.onload=function(){ resolve(!!window.XLSX); };
+      s.onerror=next;
+      document.head.appendChild(s);
+      setTimeout(function(){ if(!window.XLSX) next(); },8000);   // зеркало молчит — следующее
+    })();
+  });
+  return window.__xlsxWait;
+};
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Golos+Text:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -159,6 +186,20 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .blk-head b{font-size:14px;font-weight:600;}
 .blk-head .blk-sub{font-size:12px;color:var(--muted);}
 .hint{font-size:12px;color:var(--muted);line-height:1.5;}
+/* Разбор дня живёт сбоку от графика, а не поверх него. */
+.sales-row{display:flex;gap:14px;align-items:stretch;}
+.sales-day{width:272px;flex:0 0 272px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;
+  padding:12px 14px;font-size:12px;overflow:auto;max-height:380px;}
+.sales-day-empty{color:var(--muted);font-size:12px;line-height:1.5;}
+.sales-day-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+.sales-day-date{font-family:var(--mono);font-size:13px;font-weight:500;}
+.sales-day-total{margin-left:auto;font-weight:600;}
+.sales-day-row{display:flex;align-items:center;gap:8px;padding:3px 0;}
+.sales-day-dot{width:8px;height:8px;border-radius:2px;flex:0 0 8px;}
+.sales-day-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sales-day-val{font-family:var(--mono);font-size:12px;}
+.sales-day-pct{font-family:var(--mono);font-size:11px;color:var(--muted);width:40px;text-align:right;}
+@media(max-width:900px){.sales-row{flex-direction:column;}.sales-day{width:auto;flex:none;max-height:none;}}
 /* Срочность отправки: точка, запас дней и подпись «сколько ехать». */
 .urg{display:flex;align-items:center;gap:8px;}
 .urg b{font-size:13px;font-weight:600;}
@@ -331,7 +372,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.179</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.181</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -448,7 +489,11 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
           </label>
         </div>
         <div id="sales-toggles" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px"></div>
-        <div style="position:relative;width:100%;height:380px"><canvas id="salesChart"></canvas></div>
+        <div class="sales-row">
+          <div style="position:relative;flex:1;min-width:0;height:380px"><canvas id="salesChart"></canvas></div>
+          <!-- Разбор дня вынесен из графика: всплывающее окно закрывало половину линий. -->
+          <div id="sales-day" class="sales-day"><div class="sales-day-empty">наведи на график — здесь будет разбор дня</div></div>
+        </div>
         <div id="sales-summary" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px"></div>
       </div>
     </div>
@@ -5648,7 +5693,11 @@ function cancelUpload(){
 
 function handleFile(file){
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
+    if(!await ensureXLSX()){
+      alert('Не загрузилась библиотека чтения xlsx — файл тут ни при чём. Обычно это блокировка внешних сайтов: включи VPN или открой дашборд в другой сети и повтори. Остатки можно взять и без файла — кнопкой «⟳ взять данные из Ozon».');
+      return;
+    }
     try{
       const wb=XLSX.read(e.target.result,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
@@ -6131,7 +6180,11 @@ function handleSalesFile(file){
   const reader=new FileReader();
   if(/\.xlsx?$/i.test(file.name)){
     // Отчёт «Аналитика → Графики»: общие продажи FBO+FBS по дням
-    reader.onload=e=>{
+    reader.onload=async e=>{
+      if(!await ensureXLSX()){
+        alert('Не загрузилась библиотека чтения xlsx — файл тут ни при чём. Обычно это блокировка внешних сайтов: включи VPN или открой дашборд в другой сети и повтори. Продажи можно взять и без файла — кнопкой «⟳ продажи из Ozon».');
+        return;
+      }
       let incoming=null;
       try{
         const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
@@ -6267,6 +6320,11 @@ function renderSalesChart(){
   if(showCancels){
     datasets.push({label:'Отмены',data:buckets.map(b=>cancelAgg[b]||0),borderColor:'#DC2626',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:0.25,borderDash:[3,3]});
   }
+  // Линия «всего»: сумма по показанным товарам. Без неё общий ход продаж приходилось
+  // складывать глазами по десятку линий.
+  const totals=buckets.map((b,i)=>names.reduce((s,n)=>s+(agg[n][b]||0),0));
+  datasets.unshift({label:'Всего',data:totals,borderColor:'#111827',backgroundColor:'transparent',
+    borderWidth:2.5,pointRadius:0,tension:0.25,isTotal:true});
   if(salesChartObj) salesChartObj.destroy();
   // Плагин-перекрестие: вертикальная пунктирная линия на дне под курсором.
   // Прилипает к ближайшей точке данных (mode:'index'), чтобы было видно, какой именно день читает тултип.
@@ -6292,11 +6350,15 @@ function renderSalesChart(){
     type:'line', data:{labels,datasets},
     plugins:[crosshairPlugin],
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false,callbacks:{label:c=>`${c.dataset.label}: ${Math.round(c.parsed.y).toLocaleString('ru')}${salesMetric==='revenue'?' ₽':' шт'}`}}},
+      plugins:{legend:{display:false},
+        // Своё окно вместо встроенного: оно сбоку, и в нём видно долю каждого товара.
+        tooltip:{enabled:false,mode:'index',intersect:false,external:salesDayPanel}},
+      onHover:(e,els,chart)=>{ if(!els.length) salesDayPanel({chart,tooltip:{opacity:0}}); },
       scales:{x:{ticks:{maxRotation:45,font:{size:10},autoSkip:true,maxTicksLimit:18},grid:{color:'rgba(128,128,128,0.08)'}},
               y:{beginAtZero:true,title:{display:true,text:salesMetric==='revenue'?'₽ за период':'шт за период',font:{size:11}},grid:{color:'rgba(128,128,128,0.08)'}}}
     }
   });
+  salesDayPanel(null);                      // новый период — старый разбор не к месту
   document.getElementById('sales-summary').innerHTML=names.map(n=>{
     const total=Object.values(agg[n]).reduce((a,b)=>a+b,0);
     const color=salesColor(n);
@@ -6304,6 +6366,33 @@ function renderSalesChart(){
   }).join('');
 }
 
+/** Разбор дня сбоку: всего за день и доля каждого товара. Вызывается Chart.js как external
+ *  tooltip, поэтому принимает его контекст; null — просто очистить. */
+function salesDayPanel(ctx){
+  const box=document.getElementById('sales-day');
+  if(!box)return;
+  const empty='<div class="sales-day-empty">наведи на график — здесь будет разбор дня</div>';
+  if(!ctx||!ctx.tooltip||!ctx.tooltip.opacity||!(ctx.tooltip.dataPoints||[]).length){ box.innerHTML=empty; return; }
+  const unit=salesMetric==='revenue'?' ₽':' шт';
+  const points=ctx.tooltip.dataPoints.filter(p=>!(p.dataset&&p.dataset.isTotal));
+  const title=(ctx.tooltip.title||[])[0]||'';
+  // «Всего» считаем по товарам, а не по линии: отмены в сумму идти не должны.
+  const total=points.filter(p=>p.dataset.label!=='Отмены')
+    .reduce((s,p)=>s+(Number(p.parsed.y)||0),0);
+  const rows=points.sort((a,b)=>b.parsed.y-a.parsed.y).map(p=>{
+    const v=Number(p.parsed.y)||0;
+    const pct=total>0&&p.dataset.label!=='Отмены'?Math.round(v/total*100):null;
+    return `<div class="sales-day-row">
+      <span class="sales-day-dot" style="background:${p.dataset.borderColor}"></span>
+      <span class="sales-day-name" title="${escHtml(p.dataset.label)}">${escHtml(p.dataset.label)}</span>
+      <span class="sales-day-val">${Math.round(v).toLocaleString('ru')}</span>
+      <span class="sales-day-pct">${pct===null?'':pct+'%'}</span></div>`;
+  }).join('');
+  box.innerHTML=`<div class="sales-day-head"><span class="sales-day-date">${escHtml(title)}</span>
+      <span class="sales-day-total">${Math.round(total).toLocaleString('ru')}${unit}</span></div>
+    <div class="hint" style="margin:-4px 0 8px">продано всего за ${salesGran==='week'?'неделю':'день'}</div>
+    ${rows}`;
+}
 (function initSalesUpload(){
   const inp=document.getElementById('salesFileInput');
   const zone=document.getElementById('sales-dropzone');
