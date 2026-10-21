@@ -331,7 +331,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.176</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.179</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1428,6 +1428,36 @@ async function sheetSend(orderId,auto,pass){
     }
   }catch(e){ sheetState.error=e.message; sheetState.msg=''; }
   sheetState.busy=false;
+  redraw();
+}
+/** Записать в таблицу сразу несколько заявок — те, что отмечены галочками. Поштучно это
+ *  была отдельная кнопка в каждой строке, и на десяти заявках превращалось в десять кликов. */
+let sheetBulkState=null;
+async function sheetSendPicked(orderIds){
+  if(!getSheetCfg()){ alert('Сначала настрой Google Таблицу в настройках отгрузки.'); return; }
+  const ids=[...new Set((orderIds||[]).map(String))];
+  if(!ids.length){ alert('Отметь галочками заявки.'); return; }
+  const adjs=getAdjs();
+  const already=ids.filter(id=>{
+    const ours=adjs.filter(a=>String(a.ozonOrderId||'')===id);
+    return ours.length&&ours.every(a=>a.sheetSentAt);
+  });
+  const nl=String.fromCharCode(10);
+  let msg='Записать в таблицу '+ids.length+' '+pkPlural(ids.length,'заявку','заявки','заявок')+'?';
+  if(already.length) msg+=nl+nl+already.length+' из них уже записаны — строки дополнятся, дубликатов не будет.';
+  if(!confirm(msg))return;
+  sheetBulkState={busy:true,done:0,total:ids.length,fail:[]};
+  redraw();
+  for(const id of ids){
+    try{ await sheetSend(id,true); }
+    catch(e){ sheetBulkState.fail.push(id); }
+    sheetBulkState.done++;
+    redraw();
+  }
+  const fail=sheetBulkState.fail.length;
+  sheetBulkState={busy:false,done:ids.length,total:ids.length,fail:sheetBulkState.fail,
+    msg:fail?('записано '+(ids.length-fail)+' из '+ids.length+', не вышло: '+sheetBulkState.fail.join(', '))
+            :('✓ в таблице: '+ids.length+' '+pkPlural(ids.length,'заявка','заявки','заявок'))};
   redraw();
 }
 /** Записать в таблицу коробки кластера, не создавая заявку. Строки уходят без номера
@@ -2758,6 +2788,8 @@ function ozonPanelHtml(){
       <div class="block" style="padding:0.9rem 1.25rem">
       ${pickedBoxes?`<div style="margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn accent" onclick="ozonLabelsPicked(${escHtml(JSON.stringify(picks))})">⬇ этикетки одним PDF · ${pickedBoxes} ${pkPlural(pickedBoxes,'коробка','коробки','коробок')}</button>
+        ${getSheetCfg()?`<button class="btn" ${sheetBulkState&&sheetBulkState.busy?'disabled':''} title="записать отмеченные заявки в таблицу учёта" onclick="sheetSendPicked(${escHtml(JSON.stringify(picks.map(p=>p.orderId)))})">▤ в таблицу · ${picks.length} ${pkPlural(picks.length,'заявка','заявки','заявок')}</button>
+        <span style="font-size:12px;color:${sheetBulkState&&sheetBulkState.fail&&sheetBulkState.fail.length?'var(--red)':sheetBulkState&&sheetBulkState.busy?'var(--accent)':'var(--green)'}">${sheetBulkState?escHtml(sheetBulkState.busy?('отправляю '+sheetBulkState.done+' из '+sheetBulkState.total+'…'):(sheetBulkState.msg||'')):''}</span>`:''}
         <span id="labels-all" style="font-family:var(--font);font-size:12px;color:${ozonMergeState&&ozonMergeState.error?'var(--red)':ozonMergeState&&ozonMergeState.busy?'var(--accent)':'var(--green)'}">${ozonMergeState?escHtml(ozonMergeState.error||ozonMergeState.msg):''}</span></div>`:''}
       <div class="table-wrap"><table><thead><tr><th style="width:28px"><input type="checkbox" ${pickedBoxes===shownKeys.length&&shownKeys.length?'checked':''} title="выбрать все коробки" onchange="ozonToggleAllPicks(${escHtml(JSON.stringify(shownKeys))})" style="cursor:pointer;accent-color:var(--accent)"></th><th>Заявка</th><th>Статус</th><th>Слот</th><th>Кластер</th><th>Что внутри</th><th></th></tr></thead><tbody>${orderRows}</tbody></table></div>
       </div>
@@ -5620,6 +5652,24 @@ function handleFile(file){
     try{
       const wb=XLSX.read(e.target.result,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
+      /* Два отчёта Ozon похожи, и продажи часто кидают в зону остатков. Молча они проходили
+         как остатки: колонки «Кластер» нет, подставлялся исторический профиль, склад выходил
+         нулевым — выглядело как «дашборд сломался». Поэтому сначала узнаём отчёт в лицо. */
+      const grid=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+      const head=grid.slice(0,20);
+      const hasDay=head.some(r=>(r||[]).some(c=>String(c).trim()==='День'));
+      const hasCluster=head.some(r=>(r||[]).some(c=>/кластер/i.test(String(c))));
+      if(hasDay&&!hasCluster){
+        const inc=parseSalesRows(grid);
+        if(inc){
+          salesRaw=null;
+          applySalesIncoming(inc);
+          alert('Это отчёт по продажам, а не таблица доступности. Принял его как продажи: дней '
+            +Object.keys(inc).length+'. Остатки грузятся отдельным файлом — «Доступность товаров».');
+          switchMainTab&&switchMainTab('sales');
+          return;
+        }
+      }
       const rows=parseData(ws);
       const data=processRows(rows);
       if(data&&data.length){
@@ -5637,7 +5687,21 @@ function handleFile(file){
         renderLog();
         redraw();
         scheduleSave(); // сохраняем данные файла в облако
-      }else alert('Не удалось прочитать файл.');
+      }else{
+        // Два разных отчёта Ozon похожи по виду, и продажи часто кидают в зону остатков.
+        // Вместо «не удалось прочитать» разбираем их как продажи — файл ведь правильный.
+        let asSales=null;
+        try{ asSales=parseSalesRows(XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''})); }catch(e2){}
+        if(asSales){
+          salesRaw=null;
+          applySalesIncoming(asSales);
+          alert('Это отчёт по продажам, а не таблица доступности — принял его как продажи: дней '
+            +Object.keys(asSales).length+'.');
+          switchMainTab&&switchMainTab('sales');
+          return;
+        }
+        alert('Не удалось прочитать файл. Для остатков нужен отчёт «Аналитика → Планирование поставок → Доступность товаров», для продаж — «Аналитика → Графики» с детализацией по дням.');
+      }
     }catch(err){alert('Ошибка: '+err.message);}
   };
   reader.readAsArrayBuffer(file);
