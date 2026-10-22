@@ -372,7 +372,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.181</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.182</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -6256,11 +6256,19 @@ function getSalesNames(){
 }
 
 function renderSalesToggles(){
-  document.getElementById('sales-toggles').innerHTML=getSalesNames().map(name=>{
+  const totalOn=showTotalLine();
+  const totalBtn=`<button class="sales-toggle ${totalOn?'on':''}" title="общая линия по всем показанным товарам" onclick="toggleTotalLine()"><span class="dot" style="background:${totalOn?'#111827':'transparent'};border:1px solid #111827"></span>Всего</button>`;
+  document.getElementById('sales-toggles').innerHTML=totalBtn+getSalesNames().map(name=>{
     const color=salesColor(name);
     const on=!salesHidden.has(name);
     return `<button class="sales-toggle ${on?'on':''}" onclick="toggleSalesSeries(&quot;${escHtml(name)}&quot;)"><span class="dot" style="background:${on?color:'transparent'};border:1px solid ${color}"></span>${name}</button>`;
   }).join('');
+}
+const LS_SALES_TOTAL='ozon_sales_total_line';
+function showTotalLine(){ return localStorage.getItem(LS_SALES_TOTAL)!=='0'; }
+function toggleTotalLine(){
+  try{ localStorage.setItem(LS_SALES_TOTAL,showTotalLine()?'0':'1'); }catch(e){}
+  renderSalesToggles(); renderSalesChart();
 }
 function toggleSalesSeries(name){
   if(salesHidden.has(name)) salesHidden.delete(name); else salesHidden.add(name);
@@ -6320,11 +6328,13 @@ function renderSalesChart(){
   if(showCancels){
     datasets.push({label:'Отмены',data:buckets.map(b=>cancelAgg[b]||0),borderColor:'#DC2626',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,tension:0.25,borderDash:[3,3]});
   }
-  // Линия «всего»: сумма по показанным товарам. Без неё общий ход продаж приходилось
-  // складывать глазами по десятку линий.
-  const totals=buckets.map((b,i)=>names.reduce((s,n)=>s+(agg[n][b]||0),0));
-  datasets.unshift({label:'Всего',data:totals,borderColor:'#111827',backgroundColor:'transparent',
-    borderWidth:2.5,pointRadius:0,tension:0.25,isTotal:true});
+  // Линия «всего»: сумма по показанным товарам. Выключается своей галочкой — кому-то она
+  // мешает, потому что крупнее всех и сжимает остальные линии к нулю.
+  if(showTotalLine()){
+    const totals=buckets.map(b=>names.reduce((s,n)=>s+(agg[n][b]||0),0));
+    datasets.unshift({label:'Всего',data:totals,borderColor:'#111827',backgroundColor:'transparent',
+      borderWidth:2.5,pointRadius:0,tension:0.25,isTotal:true});
+  }
   if(salesChartObj) salesChartObj.destroy();
   // Плагин-перекрестие: вертикальная пунктирная линия на дне под курсором.
   // Прилипает к ближайшей точке данных (mode:'index'), чтобы было видно, какой именно день читает тултип.
@@ -6353,11 +6363,16 @@ function renderSalesChart(){
       plugins:{legend:{display:false},
         // Своё окно вместо встроенного: оно сбоку, и в нём видно долю каждого товара.
         tooltip:{enabled:false,mode:'index',intersect:false,external:salesDayPanel}},
-      onHover:(e,els,chart)=>{ if(!els.length) salesDayPanel({chart,tooltip:{opacity:0}}); },
+      // Наведение считаем по вертикали дня, а не по попаданию в точку: иначе панель гасла,
+      // стоило курсору сойти с линии на пиксель.
+      interaction:{mode:'index',intersect:false},
       scales:{x:{ticks:{maxRotation:45,font:{size:10},autoSkip:true,maxTicksLimit:18},grid:{color:'rgba(128,128,128,0.08)'}},
               y:{beginAtZero:true,title:{display:true,text:salesMetric==='revenue'?'₽ за период':'шт за период',font:{size:11}},grid:{color:'rgba(128,128,128,0.08)'}}}
     }
   });
+  // Панель чистим только при уходе курсора с графика — не на каждом движении.
+  const cv=document.getElementById('salesChart');
+  if(cv&&!cv.__leaveBound){ cv.__leaveBound=true; cv.addEventListener('mouseleave',()=>salesDayPanel(null)); }
   salesDayPanel(null);                      // новый период — старый разбор не к месту
   document.getElementById('sales-summary').innerHTML=names.map(n=>{
     const total=Object.values(agg[n]).reduce((a,b)=>a+b,0);
