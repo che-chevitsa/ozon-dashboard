@@ -372,7 +372,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.182</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.183</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1509,7 +1509,7 @@ async function sheetSendPicked(orderIds){
  *  заявки и без даты отгрузки; когда заявка появится, тот же ключ их дополнит, а не
  *  продублирует. Коробки остаются упакованными и доступными для заявки. */
 let sheetPackState=null;
-async function sheetSendPacked(cluster){
+async function sheetSendPacked(cluster,quiet){
   const cfg=getSheetCfg();
   if(!cfg){ alert('Сначала настрой Google Таблицу в настройках отгрузки.'); return; }
   const grp=packedByCluster().find(g=>g.cluster===cluster);
@@ -1518,7 +1518,10 @@ async function sheetSendPacked(cluster){
   const by={};
   grp.idx.forEach(i=>{
     const a=adjs[i]; if(!a)return;
-    const k=a.article+'|'+a.qty;
+    /* Ключ строки должен совпасть с тем, что уйдёт при создании заявки. Если каждая коробка
+       едет своей заявкой, то и строка должна быть на коробку — иначе ключи разойдутся и
+       в таблице появится вторая строка вместо дополнения первой. */
+    const k=onePerBox()?('box'+i):(a.article+'|'+a.qty);
     const g=by[k]||(by[k]={article:a.article,qty:a.qty,boxes:0,total:0,packedAt:a.packedAt||'',packedBy:a.packedBy||'',ts:a.ts||0,idx:[]});
     g.boxes+=1; g.total+=a.qty; g.idx.push(i);
     if(a.packedAt&&(!g.packedAt||a.packedAt<g.packedAt)) g.packedAt=a.packedAt;
@@ -1536,7 +1539,7 @@ async function sheetSendPacked(cluster){
     packDate:g.packedAt?fmt(new Date(g.packedAt)):'', packedBy:g.packedBy||'', cluster,
   }));
   const what=groups.map(g=>artName(g.article)+' '+g.total+' шт').join(', ');
-  if(!confirm('Записать в таблицу упакованное без заявки?'+String.fromCharCode(10)+String.fromCharCode(10)
+  if(!quiet&&!confirm('Записать в таблицу упакованное без заявки?'+String.fromCharCode(10)+String.fromCharCode(10)
     +cluster+': '+what+' · коробок '+grp.idx.length+String.fromCharCode(10)+String.fromCharCode(10)
     +'Номер заявки и дата отгрузки появятся позже, когда создашь заявку. Коробки останутся упакованными.'))return;
   sheetPackState={cluster,busy:true,msg:'отправляю в таблицу…'};
@@ -1554,7 +1557,27 @@ async function sheetSendPacked(cluster){
     sheetPackState={cluster,busy:false,msg:'✓ в таблице: '+rows.length+' '+pkPlural(rows.length,'строка','строки','строк')};
   }catch(e){
     sheetPackState={cluster,busy:false,msg:'',error:e.message};
+    if(quiet) throw e;
   }
+  redraw();
+}
+/** То же самое, но сразу по всем отмеченным кластерам: по кнопке рядом с созданием заявок. */
+async function sheetSendPackedPicked(){
+  if(!getSheetCfg()){ alert('Сначала настрой Google Таблицу в настройках отгрузки.'); return; }
+  const chosen=ozonSelected();
+  const groups=packedByCluster().filter(g=>chosen.includes(g.cluster));
+  if(!groups.length){ alert('Отметь галочками кластеры.'); return; }
+  const nl=String.fromCharCode(10);
+  const plan=groups.map(g=>g.cluster+': '+g.total+' шт · коробок '+g.idx.length).join(nl);
+  if(!confirm('Записать в таблицу упакованное без создания заявок?'+nl+nl+plan+nl+nl
+    +'Номера заявок и даты отгрузки подставятся потом сами, когда создашь заявки. Коробки останутся упакованными.'))return;
+  const fail=[];
+  for(const g of groups){
+    try{ await sheetSendPacked(g.cluster,true); }catch(e){ fail.push(g.cluster); }
+  }
+  sheetPackState={cluster:'',busy:false,
+    msg:fail.length?('записаны не все, не вышло: '+fail.join(', '))
+      :('✓ в таблице: '+groups.length+' '+pkPlural(groups.length,'кластер','кластера','кластеров'))};
   redraw();
 }
 // Строки учёта отправляются не при создании заявки (вечером заявка, утром отгрузка —
@@ -2512,7 +2535,11 @@ function ozonSupplyHtml(){
     ${typeRow}
     ${wizard}
     ${rows||'<div class="hint" style="padding:4px 0">нет упакованных отправок — отметь их значком 📦 в списке отправок</div>'}
-    ${groups.length&&(!d||d.stage==='done')?`<button class="btn primary" style="margin-top:12px" onclick="ozonStartDraft()">создать ${sel.length>1?sel.length+' заявки одним слотом':'заявку'}</button>`:''}`;
+    ${groups.length&&(!d||d.stage==='done')?`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+      <button class="btn primary" onclick="ozonStartDraft()">создать ${sel.length>1?sel.length+' заявки одним слотом':'заявку'}</button>
+      ${getSheetCfg()?`<button class="btn" title="записать отмеченные кластеры в таблицу учёта, не создавая заявки" onclick="sheetSendPackedPicked()">▤ в таблицу без заявки · ${sel.length} ${pkPlural(sel.length,'кластер','кластера','кластеров')}</button>`:''}
+      ${sheetPackState&&!sheetPackState.cluster?`<span style="font-size:12px;color:${sheetPackState.msg&&sheetPackState.msg[0]==='✓'?'var(--green)':'var(--red)'}">${escHtml(sheetPackState.msg||'')}</span>`:''}
+    </div>`:''}`;
 }
 
 // Браузер вытесняет хранилище сайта целиком, когда на диске кончается место, — так пропали
