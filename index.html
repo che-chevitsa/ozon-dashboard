@@ -372,7 +372,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.183</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.184</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -1285,6 +1285,31 @@ function saveSheetCfg(){
   localStorage.setItem(LS_SHEET,JSON.stringify({url,secret,link}));
   redraw();
 }
+/** Спрашиваем у скрипта таблицы, какая у него версия и куда он кладёт каждое поле.
+ *  Это единственный способ увидеть факты: сама таблица дашборду не видна. */
+async function sheetCheckMap(){
+  const cfg=getSheetCfg(); if(!cfg)return;
+  const el=document.getElementById('sheet-map');
+  const say=(t,c)=>{ if(el){ el.innerHTML=t; el.style.color=c||'var(--muted)'; } };
+  say('спрашиваю скрипт…','var(--accent)');
+  try{
+    const r=await fetch(cfg.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({secret:cfg.secret||'',action:'map'})});
+    const text=await r.text();
+    let j=null; try{ j=JSON.parse(text); }catch(e){}
+    if(!j) return say('скрипт ответил не по-нашему: '+escHtml(text.slice(0,120)),'var(--red)');
+    if(j.error) return say('скрипт: '+escHtml(j.error),'var(--red)');
+    if(!j.version) return say('в Google крутится старая версия скрипта — вставь новый код и создай новую версию развёртывания','var(--amber)');
+    const names={shipDate:'дата отгрузки',orderNumber:'номер заявки',what:'что',perBox:'в коробке',
+      boxes:'коробок',total:'всего',packDate:'дата упаковки',packedBy:'кто паковал',cluster:'кластер',key:'ключ'};
+    const cols=Object.entries(j.columns||{}).map(([f,c])=>escHtml(names[f]||f)+' → '+c).join(' · ');
+    const missing=Object.keys(names).filter(f=>!(j.columns||{})[f]).map(f=>names[f]);
+    say('скрипт '+escHtml(j.version)+' · лист «'+escHtml(j.sheet)+'», строк '+(j.rows||0)
+      +'<br>заголовки: '+escHtml((j.headers||[]).filter(Boolean).join(' | '))
+      +'<br>раскладка: '+cols
+      +(missing.length?'<br><span style="color:var(--amber)">нет столбца для: '+escHtml(missing.join(', '))+' — эти поля не пишутся</span>':''));
+  }catch(e){ say('не дозвонился до скрипта: '+escHtml(e.message),'var(--red)'); }
+}
 function forgetSheetCfg(){ if(confirm('Убрать настройки таблицы из этого браузера?')){ localStorage.removeItem(LS_SHEET); redraw(); } }
 
 // Что внутри заявки: только по своим отправкам — за составом чужих заявок в Ozon не ходим.
@@ -1637,7 +1662,9 @@ function sheetCfgHtml(){
   const cfg=getSheetCfg();
   if(cfg) return `<div style="font-family:var(--font);font-size:12px;color:var(--muted);margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span>Google Таблица: <span style="color:var(--green)">подключена</span></span>
-      <button class="btn muted" onclick="forgetSheetCfg()">отключить</button></div>`;
+      <button class="btn" onclick="sheetCheckMap()">проверить колонки</button>
+      <button class="btn muted" onclick="forgetSheetCfg()">отключить</button>
+      <span id="sheet-map" style="font-size:12px;color:var(--muted);width:100%;line-height:1.6"></span></div>`;
   return `<details style="margin-top:14px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">Google Таблица · учёт отгрузок (не настроена)</summary>
     <div style="font-size:12px;color:var(--muted);line-height:1.6;margin:8px 0">В таблице: Расширения → Apps Script, вставь код (я дам), затем Развернуть → Веб-приложение,
       доступ «Все, у кого есть ссылка». Полученную ссылку вида .../exec вставь сюда. Секрет — любое слово, оно же в коде скрипта.</div>
