@@ -372,7 +372,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.184</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.185</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -2193,7 +2193,33 @@ function ozonOrderActions(orderId){
 // Один таймслот — на все выбранные кластеры. Для каждого кластера создаётся свой черновик
 // (живёт 30 минут), затем заявка и грузоместа. Запись в Ozon — только после подтверждения.
 let ozonDraft=null; // {clusters, items, draftId, slots, days, slot, stage, busy, errors, rejected, results, current}
-let ozonPicked=null; // Set выбранных кластеров; null = все готовые
+/* Выбор к отгрузке — по коробкам, а не по кластерам: в один город могут ехать разные
+   коробки, и отправить иногда нужно только часть. Храним id коробок (метку времени записи),
+   null означает «выбрано всё готовое». Кластер считается выбранным, если выбрана хотя бы
+   одна его коробка. */
+let ozonPicked=null;
+let ozonOpenClusters=new Set();          // какие кластеры раскрыты до коробок
+const boxId=a=>String((a&&a.ts)||0);
+function allBoxIds(){
+  const adjs=getAdjs(), out=[];
+  packedByCluster().forEach(g=>g.idx.forEach(i=>{ if(adjs[i]) out.push(boxId(adjs[i])); }));
+  return out;
+}
+function boxPicked(id){ return !ozonPicked||ozonPicked.has(id); }
+function toggleBox(id){
+  if(!ozonPicked) ozonPicked=new Set(allBoxIds());
+  ozonPicked.has(id)?ozonPicked.delete(id):ozonPicked.add(id);
+  redraw();
+}
+function clusterBoxIds(cluster){
+  const adjs=getAdjs();
+  const g=packedByCluster().find(x=>x.cluster===cluster);
+  return g?g.idx.map(i=>adjs[i]).filter(Boolean).map(boxId):[];
+}
+function toggleClusterOpen(cluster){
+  ozonOpenClusters.has(cluster)?ozonOpenClusters.delete(cluster):ozonOpenClusters.add(cluster);
+  redraw();
+}
 // Тип поставки и пункт отгрузки запоминаются: обычно они одни и те же от поставки к поставке.
 const LS_OZON_SUPPLY_TYPE='ozon_supply_type', LS_OZON_DROPOFF='ozon_dropoff';
 function ozonSupplyType(){ return lsGet(LS_OZON_SUPPLY_TYPE,'CROSSDOCK')==='DIRECT'?'DIRECT':'CROSSDOCK'; }
@@ -2250,9 +2276,17 @@ function setOnePerBox(on){ try{ localStorage.setItem(LS_ONE_PER_BOX,on?'1':'0');
 function ozonUnits(clusters){
   const out=[], adjs=getAdjs();
   packedByCluster().filter(g=>clusters.includes(g.cluster)).forEach(g=>{
-    if(!onePerBox()){ out.push({key:g.cluster,cluster:g.cluster,byArticle:g.byArticle,idx:g.idx}); return; }
-    g.idx.forEach((i,n)=>{
-      const a=adjs[i]; if(!a)return;
+    // Берём только отмеченные коробки: остальные остаются ждать следующей отгрузки.
+    const picked=g.idx.filter(i=>adjs[i]&&boxPicked(boxId(adjs[i])));
+    if(!picked.length)return;
+    if(!onePerBox()){
+      const byArticle={};
+      picked.forEach(i=>{ const a=adjs[i]; byArticle[a.article]=(byArticle[a.article]||0)+a.qty; });
+      out.push({key:g.cluster,cluster:g.cluster,byArticle,idx:picked});
+      return;
+    }
+    picked.forEach((i,n)=>{
+      const a=adjs[i];
       out.push({key:g.cluster+' · коробка '+(n+1),cluster:g.cluster,
         byArticle:{[a.article]:a.qty},idx:[i]});
     });
@@ -2264,13 +2298,14 @@ function ozonClusterId(name){
   return c?c.id:null;
 }
 function ozonSelected(){
-  const all=packedByCluster().map(g=>g.cluster);
-  return ozonPicked?all.filter(c=>ozonPicked.has(c)):all;
+  // Кластер в деле, пока в нём отмечена хоть одна коробка.
+  return packedByCluster().map(g=>g.cluster).filter(c=>clusterBoxIds(c).some(boxPicked));
 }
 function ozonToggleCluster(name){
-  const all=packedByCluster().map(g=>g.cluster);
-  if(!ozonPicked) ozonPicked=new Set(all);
-  if(ozonPicked.has(name)) ozonPicked.delete(name); else ozonPicked.add(name);
+  if(!ozonPicked) ozonPicked=new Set(allBoxIds());
+  const ids=clusterBoxIds(name);
+  const all=ids.every(id=>ozonPicked.has(id));
+  ids.forEach(id=>all?ozonPicked.delete(id):ozonPicked.add(id));
   redraw();
 }
 
@@ -2536,9 +2571,25 @@ function ozonSupplyHtml(){
     wizard=`<div class="block" style="padding:1rem;margin:0 0 12px;border-color:var(--accent)">${head}${rejected}${errs}${inner}</div>`;
   }
 
+  const adjsAll=getAdjs();
   const rows=groups.map(g=>{
-    const on=sel.includes(g.cluster), cid=ozonClusterId(g.cluster);
+    const cid=ozonClusterId(g.cluster);
+    const ids=clusterBoxIds(g.cluster);
+    const onCount=ids.filter(boxPicked).length;
+    const on=onCount>0;
+    const part=onCount>0&&onCount<ids.length;
+    const open=ozonOpenClusters.has(g.cluster);
     const items=Object.entries(g.byArticle).map(([a,q])=>escHtml(artName(a))+' '+q).join(' · ');
+    // Коробки показываем по требованию: обычно нужен весь кластер, но иногда — только часть.
+    const boxRows=open?g.idx.map((i,n)=>{
+      const a=adjsAll[i]; if(!a)return '';
+      const id=boxId(a);
+      return `<label class="pick-row" style="margin-left:26px">
+        <input type="checkbox" ${boxPicked(id)?'checked':''} onchange="toggleBox('${escHtml(id)}')">
+        <span style="font-size:13px">коробка ${n+1}</span>
+        <span class="pick-sub">${escHtml(artName(a.article))} ${a.qty} шт</span>
+      </label>`;
+    }).join(''):'';
     // Записать в таблицу можно и не создавая заявку: иногда коробки стоят упакованными день-два.
     const st=sheetPackState&&sheetPackState.cluster===g.cluster?sheetPackState:null;
     const sent=getAdjs().filter((a,i)=>g.idx.includes(i)).some(a=>a.sheetPackedAt);
@@ -2550,10 +2601,11 @@ function ozonSupplyHtml(){
       : '';
     return `<label class="pick-row">
         <input type="checkbox" ${on?'checked':''} onchange="ozonToggleCluster(&quot;${escHtml(g.cluster)}&quot;)">
-        <b>${escHtml(g.cluster)}</b> <span class="pick-qty">${g.total} шт</span>
+        <b>${escHtml(g.cluster)}</b> <span class="pick-qty">${part?onCount+' из '+ids.length+' кор · ':''}${g.total} шт</span>
         <span class="pick-sub">${items}</span>${cid?'':'<span style="color:var(--amber);font-size:12px">кластер не сопоставлен</span>'}
+        <span class="pick-sub" style="color:var(--accent);cursor:pointer" onclick="event.preventDefault();toggleClusterOpen(&quot;${escHtml(g.cluster)}&quot;)">${open?'свернуть':'коробки по одной'} (${ids.length})</span>
         <span style="margin-left:auto">${tbl}</span>
-    </label>`;
+    </label>${boxRows}`;
   }).join('');
 
   return `<div class="blk-head">
@@ -3102,7 +3154,11 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
         <span style="color:var(--muted)">· ${period} дней · все товары</span></span>
-      <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
+      <label class="tgl" style="margin-left:auto" title="Запланированные и упакованные отправки дашборд считает как «в пути». Выключи, чтобы увидеть только то, что реально на складах Ozon.">
+        <input type="checkbox" ${countPlanned()?'checked':''} onchange="toggleCountPlanned()">
+        <span class="tgl-track"><span class="tgl-knob"></span></span>
+        <span class="tgl-text">считать запланированное</span></label>
+      <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;margin-left:12px" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
     </div>`;
   const stat=art=>{
     const rows=data.filter(r=>r.article===art&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)&&r.cluster!==LEFTOVER_CLUSTER);
@@ -4204,7 +4260,15 @@ let currentPeriod=28, rawData=null;
 let salesRaw=null, salesDaily=null, salesGran='day', salesMetric='qty', salesPeriodDays=0, salesCleared=false;
 
 // Единая точка перерисовки — заменяет повторяющийся вызов render(applyAdjustments(rawData)) по коду.
-function redraw(){if(rawData)render(applyAdjustments(rawData));}
+/* Запланированные отправки дашборд прибавляет к «в пути»: так видно будущую картину.
+   Но иногда нужно посмотреть, что на складе на самом деле — для этого переключатель. */
+const LS_COUNT_PLANNED='ozon_count_planned';
+function countPlanned(){ return localStorage.getItem(LS_COUNT_PLANNED)!=='0'; }
+function toggleCountPlanned(){
+  try{ localStorage.setItem(LS_COUNT_PLANNED,countPlanned()?'0':'1'); }catch(e){}
+  redraw();
+}
+function redraw(){ if(rawData) render(countPlanned()?applyAdjustments(rawData):rawData); }
 
 function pctClass(p){return p>=60?'green':p>=35?'amber':'red';}
 function dayClass(d){return d<=0?'red':d<7?'red':d<14?'amber':'green';}
