@@ -13,6 +13,30 @@ window.XLSX_SOURCES=[
   'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
 ];
+/* Тот же приём, что и для xlsx: источников несколько, и ни один не обязан быть живым. */
+window.CHART_SOURCES=[
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
+  'https://unpkg.com/chart.js@4.4.1/dist/chart.umd.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js'
+];
+window.ensureChart=function(){
+  if(window.Chart) return Promise.resolve(true);
+  if(window.__chartWait) return window.__chartWait;
+  window.__chartWait=new Promise(function(resolve){
+    var i=0;
+    (function next(){
+      if(window.Chart) return resolve(true);
+      if(i>=window.CHART_SOURCES.length){ window.__chartWait=null; return resolve(false); }
+      var s=document.createElement('script');
+      s.src=window.CHART_SOURCES[i++];
+      s.onload=function(){ resolve(!!window.Chart); };
+      s.onerror=next;
+      document.head.appendChild(s);
+      setTimeout(function(){ if(!window.Chart) next(); },8000);
+    })();
+  });
+  return window.__chartWait;
+};
 window.ensureXLSX=function(){
   if(window.XLSX) return Promise.resolve(true);
   if(window.__xlsxWait) return window.__xlsxWait;
@@ -372,7 +396,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.185</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.187</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3164,20 +3188,25 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
     const rows=data.filter(r=>r.article===art&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)&&r.cluster!==LEFTOVER_CLUSTER);
     const sold=rows.filter(r=>r.sales>0);
     const need=sold.reduce((s,r)=>s+r.sales*period,0);
-    const covered=sold.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0);      // склад + путь + план
+    // Два разных числа, и оба нужны. «Есть» — сколько товара всего, без обрезки: излишек
+    // в одном кластере остаётся излишком и должен быть виден. «Покрыто» — сколько из этого
+    // реально закрывает потребность: лишнее в Москве не спасает пустой Красноярск.
+    const haveQty=sold.reduce((s,r)=>s+r.total,0);                               // склад + путь + план
+    const covered=sold.reduce((s,r)=>s+Math.min(r.total,r.sales*period),0);
     const coveredNow=sold.reduce((s,r)=>s+Math.min(r.fbo,r.sales*period),0);     // только то, что уже лежит
-    const have=rows.filter(r=>r.fbo>0).map(r=>r.cluster);
+    const haveClusters=rows.filter(r=>r.fbo>0).map(r=>r.cluster);
     const coming=rows.filter(r=>r.fbo<=0&&r.transit>0).map(r=>r.cluster);
     return {
-      pct: need>0?Math.min(100,covered/need*100):null,
+      pct: need>0?haveQty/need*100:null,                                          // без потолка
+      pctCovered: need>0?Math.min(100,covered/need*100):null,                     // по кластерам
       pctNow: need>0?Math.min(100,coveredNow/need*100):null,
       sales: rows.reduce((s,r)=>s+r.sales,0),
-      need: Math.round(need), covered: Math.round(covered),
+      need: Math.round(need), have: Math.round(haveQty), covered: Math.round(covered),
       fbo: Math.round(rows.reduce((s,r)=>s+r.fbo,0)),
       transit: Math.round(rows.reduce((s,r)=>s+r.transit,0)),
       // «Нет» — только там, где ни товара, ни отправки: если коробка уже запланирована,
       // дыра считается закрытой, иначе одно и то же место попадало и в «нет», и в «едет».
-      have, coming, miss: clusters.filter(c=>!have.includes(c)&&!coming.includes(c)),
+      haveClusters, coming, miss: clusters.filter(c=>!haveClusters.includes(c)&&!coming.includes(c)),
     };
   };
   if(ringsCollapsed){
@@ -3188,22 +3217,22 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   const R=17, C=2*Math.PI*R;
   // Товар, которого нет в выгрузке, не продаётся и не лежит на складе: тревожиться не о чем,
   // поэтому он серый и спрятан под «показать ещё», а не кричит красным наравне с дырами.
-  const hasData=art=>{ const s=stat(art); return s.sales>0||s.fbo>0||s.transit>0||s.have.length||s.coming.length; };
+  const hasData=art=>{ const s=stat(art); return s.sales>0||s.fbo>0||s.transit>0||s.haveClusters.length||s.coming.length; };
   const tile=art=>{
     const s=stat(art);
     // Товар без продаж процентом не описывается: показываем прочерк, но если его нет нигде —
     // это как раз то, что нужно заметить, и кольцо краснеет.
     // Красный бережём для настоящей дыры: товар продаётся, а запаса нет.
-    const empty=!s.have.length&&!s.coming.length;
+    const empty=!s.haveClusters.length&&!s.coming.length;
     const pct=s.pct;
     const col=pct===null?(empty&&s.sales>0?'var(--red)':'var(--muted)'):`var(--${pctClass(pct)})`;
     const label=pct===null?(empty?'нет':'—'):Math.round(pct)+'%';
-    const arc=pct===null?0:C*Math.min(100,pct)/100;                       // вся дуга — с учётом плана
+    const arc=s.pctCovered===null?0:C*Math.min(100,s.pctCovered)/100;     // дуга — покрытие по кластерам
     const arcNow=s.pctNow===null?0:C*Math.min(100,s.pctNow)/100;          // плотная часть — что уже на складе
     const open=ringOpen===art;
     const focus=FOCUS.includes(art);
     const off=getHiddenArticles().has(art);
-    return `<div class="lf-tile${open?' on':''}${off?' off':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}${s.coming.length?' с учётом запланированного':''}, есть в ${s.have.length} из ${total} кластеров${s.coming.length?`, едет ещё в ${s.coming.length}`:''}">
+    return `<div class="lf-tile${open?' on':''}${off?' off':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}${s.coming.length?' с учётом запланированного':''}, есть в ${s.haveClusters.length} из ${total} кластеров${s.coming.length?`, едет ещё в ${s.coming.length}`:''}${s.covered<s.have?`. Кольцо показывает покрытие по кластерам — ${Math.round(s.pctCovered)}%: излишек в одном кластере не закрывает нехватку в другом`:''}">
       <span class="lf-check-wrap" onclick="event.stopPropagation()" title="${off?'вернуть товар в расчёты':'убрать товар из приоритетов и карты'}">
         <input type="checkbox" class="lf-check" ${off?'':'checked'} onchange="toggleHiddenArticle('${art}')">
       </span>
@@ -3216,10 +3245,10 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
         <text x="23" y="27" text-anchor="middle" font-size="${label.length>3?10:12}" font-family="var(--mono)" fill="${col}">${label}</text>
       </svg>
       <div class="lf-name" style="margin-top:4px;${focus?'':'color:var(--muted)'}">${artName(art)}</div>
-      <div class="lf-qty" style="color:var(--muted)">${s.need>0?`${s.covered} из ${s.need} шт`:'нет продаж'}</div>
+      <div class="lf-qty" style="color:var(--muted)">${s.need>0?`${s.have} из ${s.need} шт`:'нет продаж'}</div>
       ${s.miss.length?`<div style="font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:1px">нет в ${s.miss.length} ${pkPlural(s.miss.length,'кластере','кластерах','кластерах')}</div>`:''}
       ${open?`<div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.45;text-align:left">
-        ${s.sales>0?`${s.sales.toFixed(1)} шт/день · покрыто ${s.covered} из ${s.need}<br>`:''}
+        ${s.sales>0?`${s.sales.toFixed(1)} шт/день · есть ${s.have} из ${s.need}${s.covered<s.have?` · по кластерам закрыто ${s.covered}`:''}<br>`:''}
         ${s.fbo} на складе · ${s.transit} в пути и в плане
         ${s.miss.length?`<br><span style="color:var(--amber)">нет: ${s.miss.map(escHtml).join(', ')}</span>`:''}
         ${s.coming.length?`<br><span style="color:var(--green)">закрыто отправкой: ${s.coming.map(escHtml).join(', ')}</span>`:''}
@@ -5391,7 +5420,7 @@ function render(data){
     const rows=data.filter(r=>r.article===art&&r.sales>0&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters));
     const need=rows.reduce((s,r)=>s+r.sales*horizon(r.cluster),0);
     const covered=rows.reduce((s,r)=>s+Math.min(r.total,r.sales*horizon(r.cluster)),0);
-    coverage[art]=need>0?Math.min(100,covered/need*100):0;
+    coverage[art]=need>0?covered/need*100:0;   // потолка нет: излишек должен быть виден
   });
 
   const priorities=data
@@ -6406,12 +6435,23 @@ function isoWeek(dateStr){
 
 function renderSalesChart(){
   if(!salesRaw) return;
-  // Chart.js грузится с CDN — без VPN может не загрузиться. Тогда не роняем страницу,
-  // а показываем данные текстом и подсказку. Всё остальное (поставки, приоритеты) работает.
+  // Библиотека графика живёт на внешнем CDN. Если её нет — пробуем зеркала и рисуем, когда
+  // доедет; данные при этом целы, и цифры под графиком всё равно видны.
   if(typeof Chart==='undefined'){
     const c=document.getElementById('salesChart');
-    if(c&&c.parentElement){
-      c.parentElement.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted);font-size:12px;font-family:var(--font)">График недоступен — не загрузилась библиотека Chart.js (нужен доступ к CDN / VPN).<br>Данные продаж сохранены и в безопасности, таблицы и поставки работают.</div>';
+    if(c&&c.parentElement&&!c.parentElement.__waiting){
+      c.parentElement.__waiting=true;
+      const box=c.parentElement;
+      box.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted);font-size:12px;font-family:var(--font)">загружаю библиотеку графика…</div>';
+      ensureChart().then(ok=>{
+        box.__waiting=false;
+        box.innerHTML='<canvas id="salesChart"></canvas>';
+        if(ok) renderSalesChart();
+        else box.innerHTML='<div style="padding:2rem;text-align:center;color:var(--muted);font-size:12px;font-family:var(--font);line-height:1.6">'
+          +'График недоступен — библиотека не загрузилась ни с одного источника (обычно это блокировка внешних сайтов, помогает VPN).<br>'
+          +'Данные продаж целы: числа под графиком и выгрузки работают.<br>'
+          +'<button class="btn" style="margin-top:10px" onclick="window.__chartWait=null;renderSalesChart()">попробовать ещё раз</button></div>';
+      });
     }
     return;
   }
