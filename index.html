@@ -396,7 +396,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.187</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.189</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -559,7 +559,37 @@ function toggleHiddenArticle(art){ // держим фильтр приорите
   redraw();
 }
 let FOCUS=[];
-function artName(art){ return NAMES[art]||art; }
+/* Свои товары — то, чего нет в выгрузке Озона: новинки, образцы, то, что пакуем «на полку».
+   Названия вводят руками в конструкторе «коробки и укладки», дальше товар живёт как обычный
+   артикул: укладки, задание упаковщику, план остатков. Имя удалённого товара оставляем с
+   пометкой off — иначе прошлые упаковки превратились бы в непонятные коды. */
+const LS_CUSTOM_ARTS='ozon_custom_articles';
+let CUSTOM_ARTS={};
+function loadCustomArts(){
+  let raw=null;
+  try{ raw=JSON.parse(localStorage.getItem(LS_CUSTOM_ARTS)||'null'); }catch{}
+  CUSTOM_ARTS=(raw&&typeof raw==='object'&&!Array.isArray(raw))?raw:{};
+  Object.keys(CUSTOM_ARTS).forEach(art=>{
+    const rec=CUSTOM_ARTS[art];
+    if(rec&&rec.off!==true&&!ALL_ARTICLES.includes(art)) ALL_ARTICLES.push(art);
+  });
+}
+function saveCustomArts(map){
+  const was=CUSTOM_ARTS;
+  CUSTOM_ARTS=map;
+  localStorage.setItem(LS_CUSTOM_ARTS,JSON.stringify(map));
+  // удалённый товар убираем из списка сразу, иначе он остался бы плиткой без названия
+  ALL_ARTICLES=ALL_ARTICLES.filter(a=>!(was[a]||CUSTOM_ARTS[a])||isCustomArt(a));
+  loadCustomArts(); refreshFocus(); scheduleSave();
+}
+function isCustomArt(art){ return !!(CUSTOM_ARTS[art]&&CUSTOM_ARTS[art].off!==true); }
+// Список артикулов из облака или файла: удалённые свои товары назад не поднимаем.
+function addKnownArticles(list){
+  (list||[]).forEach(a=>{
+    if(!ALL_ARTICLES.includes(a)&&!(CUSTOM_ARTS[a]&&CUSTOM_ARTS[a].off===true)) ALL_ARTICLES.push(a);
+  });
+}
+function artName(art){ return NAMES[art]||(CUSTOM_ARTS[art]||{}).name||art; }
 // Названия для упаковщиков (картинка, текст, превью). В остальном дашборде и в ключах продаж — прежние имена.
 // Названия товаров для упаковщиков: правятся в ⚙ вместимость коробок, лежат в localStorage и в облаке.
 // Имена в остальном дашборде и ключи истории продаж не трогаем.
@@ -572,6 +602,7 @@ function refreshFocus(){
   const hidden=getHiddenArticles();
   FOCUS=ALL_ARTICLES.filter(a=>!hidden.has(a));
 }
+loadCustomArts();
 refreshFocus();
 setTimeout(()=>{ try{ leadDropLocal(); }catch(e){} },0);   // чистим ошибочные образцы при старте
 // ===== ТИПЫ КОРОБОК (данные, не хардкод) =====
@@ -2741,7 +2772,8 @@ function applyStateFile(rec){
   if(Array.isArray(rec.transportBoxes)&&rec.transportBoxes.length) put(LS_TBOX_LOG,rec.transportBoxes);
   if(Array.isArray(rec.boxTypes)&&rec.boxTypes.length) put(LS_BOX_TYPES,rec.boxTypes);
   if(rec.leadTimes&&typeof rec.leadTimes==='object') put(LS_LEAD,rec.leadTimes);
-  if(Array.isArray(rec.allArticles)) rec.allArticles.forEach(a=>{ if(!ALL_ARTICLES.includes(a)) ALL_ARTICLES.push(a); });
+  if(rec.customArticles&&typeof rec.customArticles==='object'){ put(LS_CUSTOM_ARTS,rec.customArticles); loadCustomArts(); }
+  if(Array.isArray(rec.allArticles)) addKnownArticles(rec.allArticles);
   // Остатки: в файле они лежат в сжатом виде — разворачиваем так же, как при чтении с Диска.
   let raw=null;
   if(Array.isArray(rec.rawDataC)&&rec.rawDataC.length){
@@ -3348,7 +3380,11 @@ function packTaskText(task){
   lines.push('');
   task.items.forEach((it,n)=>{
     lines.push(`${n+1}) ${packName(it.article)} — ${it.total} шт`);
-    if(notes[it.article]) lines.push(`✎ ${notes[it.article]}`);
+    if(notes[it.article]){
+      const nl=String(notes[it.article]).split('\n');
+      lines.push(`✎ ${nl[0]}`);
+      nl.slice(1).forEach(x=>lines.push(`  ${x}`));
+    }
     it.groupList.forEach(g=>{
       if(g.loose){ lines.push(`— остатки: ${g.qty} шт без большой коробки`); return; }
       if(g.unknown){ lines.push(`— ⚠ ${g.qty} шт${g.count>1?` × ${g.count}`:''} — пока непонятно, в какую коробку`); return; }
@@ -3477,7 +3513,11 @@ function buildPackPages(task){
     if(cont) return {h:56,draw:(ctx,y)=>{
       txt(ctx,`${n+1}. ${packName(it.article)} — продолжение`,P,y+36,`700 22px ${F}`,'#6b6e80');
     }};
-    const noteFont=`500 20px ${F}`, noteLines=notes[it.article]?wrap(notes[it.article],noteFont,W-2*P-34):[];
+    // Переносы из комментария сохраняем: это разделители смысловых кусков, а не случайность.
+    const noteFont=`500 20px ${F}`;
+    const noteLines=notes[it.article]
+      ? String(notes[it.article]).split('\n').flatMap(ln=>ln.trim()?wrap(ln,noteFont,W-2*P-34):[''])
+      : [];
     const nh=noteLines.length?noteLines.length*28+20:0;
     return {h:82+(nh?nh+10:0),draw:(ctx,y)=>{
       ctx.strokeStyle='#e4e6eb'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(P,y+14); ctx.lineTo(W-P,y+14); ctx.stroke();
@@ -3565,10 +3605,28 @@ function packSubtitle(task,d){
 function packTotalsLine(task){ return Object.entries(task.boxTotals).map(([b,c])=>`${TBOX[b].name} × ${c}`).join('   ·   '); }
 
 // Комментарий — contenteditable: высота сама по тексту, без замеров. Сохраняем при уходе из поля.
-function pkNoteSave(el){ const t=el.innerText.replace(/\s+/g,' ').trim(); if(!t) el.innerHTML=''; if((getPackNotes()[el.dataset.art]||'')!==t) setPackNote(el.dataset.art,t); }
+/* Комментарий бывает в несколько строк: «коробочки кончились», разделитель, «остатки — в
+   зиплоки». Поэтому Enter переносит строку, а поле закрывают Escape или клик мимо. */
+function pkNoteKey(e,el){
+  if(e.key==='Escape'){ e.preventDefault(); el.blur(); return; }
+  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); el.blur(); }
+}
+function pkNoteSave(el){
+  // Пробелы и табы схлопываем, переносы бережём; пустые строки подряд — не больше одной.
+  const t=el.innerText.replace(/\r/g,'')
+    .split('\n').map(s=>s.replace(/[ \t]+/g,' ').trim()).join('\n')
+    .replace(/\n{3,}/g,'\n\n').trim();
+  if(!t) el.innerHTML='';
+  if((getPackNotes()[el.dataset.art]||'')!==t) setPackNote(el.dataset.art,t);
+}
 let pkNoteTimer=null;
 function pkNoteInput(el){ clearTimeout(pkNoteTimer); pkNoteTimer=setTimeout(()=>pkNoteSave(el),600); } // сохраняем и во время набора
-function pkNotePaste(e){ e.preventDefault(); document.execCommand('insertText',false,(e.clipboardData||window.clipboardData).getData('text').replace(/\s+/g,' ')); }
+function pkNotePaste(e){
+  e.preventDefault();
+  const t=((e.clipboardData||window.clipboardData).getData('text')||'')
+    .replace(/\r/g,'').split('\n').map(s=>s.replace(/[ \t]+/g,' ').trim()).join('\n');
+  document.execCommand('insertText',false,t);
+}
 function paintPackCanvases(){
   const task=buildPackTask();
   // ряды коробок в блоках превью
@@ -3682,7 +3740,9 @@ function makePackDraft(){
   Object.keys(r).forEach(art=>(r[art]||[]).forEach(o=>rules.push({article:art,box:o.box,label:o.label||'',qty:o.qty})));
   const labels=getPackLabels();
   return {boxes:TRANSPORT_BOXES.map(b=>({id:b.id,name:b.name,w:b.w,d:b.d,h:b.h,color:b.color||'kraft'})),rules,
-    labels:ALL_ARTICLES.map(a=>({article:a,name:labels[a]||'',code:getSheetCodes()[a]||''}))};
+    labels:ALL_ARTICLES.filter(a=>!isCustomArt(a)).map(a=>({article:a,name:labels[a]||'',code:getSheetCodes()[a]||''})),
+    custom:Object.keys(CUSTOM_ARTS).filter(isCustomArt).map(a=>({article:a,name:CUSTOM_ARTS[a].name||'',code:getSheetCodes()[a]||''})),
+    del:[]};
 }
 // Конструктор живёт в отдельном окне: на странице он занимал половину экрана.
 let ctorTab='boxes';
@@ -3709,6 +3769,25 @@ function pdAddRule(){
   packDraft.rules.push({article:last?last.article:ALL_ARTICLES[0],box:last?last.box:(packDraft.boxes[0]||{}).id,label:'',qty:''});
   packDraftMsg=''; rerenderPackCtor();
 }
+function pdAddCustom(){
+  (packDraft.custom=packDraft.custom||[]).push({article:'',name:'',code:''});
+  packDraftMsg=''; rerenderPackCtor();
+}
+function pdDelCustom(i){
+  const row=(packDraft.custom||[])[i]; if(!row)return;
+  const art=row.article;
+  if(art){
+    const planned=getAdjs().filter(a=>a.article===art&&a.sent!==true&&a.packed!==true&&!adjHidden(a))
+      .reduce((s,a)=>s+a.qty,0);
+    const rules=packDraft.rules.filter(r=>r.article===art).length;
+    const what=[planned?planned+' шт в плане':'',
+      rules?rules+' '+pkPlural(rules,'укладка','укладки','укладок'):''].filter(Boolean).join(' и ');
+    if(what&&!confirm('У «'+(row.name||art)+'» есть '+what+' — удалятся тоже. Удалить товар?'))return;
+    packDraft.rules=packDraft.rules.filter(r=>r.article!==art);
+    packDraft.del=(packDraft.del||[]).concat(art);
+  }
+  packDraft.custom.splice(i,1); packDraftMsg=''; rerenderPackCtor();
+}
 function pdDel(kind,i){
   if(kind==='boxes'){
     const id=packDraft.boxes[i].id, used=packDraft.rules.filter(r=>r.box===id).length;
@@ -3734,6 +3813,16 @@ function pdSave(){
     if(seen.has(key)) err.push(`укладка №${i+1}: ${artName(r.article)} по ${r.qty} шт в этой коробке уже есть`);
     seen.add(key);
   });
+  const own=new Set();
+  (d.custom||[]).forEach((c,i)=>{
+    c.name=String(c.name||'').trim();
+    if(!c.name){ err.push('свой товар №'+(i+1)+': нет названия'); return; }
+    const key=c.name.toLowerCase();
+    if(own.has(key)) err.push('товар «'+c.name+'» в списке дважды');
+    own.add(key);
+    if(ALL_ARTICLES.some(a=>!isCustomArt(a)&&artName(a).toLowerCase()===key))
+      err.push('товар «'+c.name+'» уже есть среди товаров из Озона');
+  });
   if(err.length){ packDraftMsg='⚠ '+[...new Set(err)].join('; '); rerenderPackCtor(); return; }
   localStorage.setItem(LS_TBOX_TYPES,JSON.stringify(d.boxes.map(b=>({id:b.id,name:b.name,w:b.w,d:b.d,h:b.h,color:b.color}))));
   loadTransportBoxes();
@@ -3741,11 +3830,33 @@ function pdSave(){
   d.rules.forEach(r=>{ (rules[r.article]=rules[r.article]||[]).push(r.label.trim()?{box:r.box,qty:r.qty,label:r.label.trim()}:{box:r.box,qty:r.qty}); });
   Object.values(rules).forEach(list=>list.sort((a,b)=>TRANSPORT_BOXES.findIndex(x=>x.id===a.box)-TRANSPORT_BOXES.findIndex(x=>x.id===b.box)||b.qty-a.qty));
   savePackRules(rules);
+  /* Новому товару выдаём артикул сами: в Озоне его нет, а ключом он нужен — по нему живут
+     укладки, план остатков и строки в таблице. */
+  const cmap={};
+  Object.keys(CUSTOM_ARTS).forEach(a=>{ cmap[a]={...CUSTOM_ARTS[a]}; });
+  (d.custom||[]).forEach(c=>{
+    if(!c.article) c.article='SELF-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+    cmap[c.article]={name:c.name};
+  });
+  (d.del||[]).forEach(art=>{
+    const adjs=getAdjs(), left=adjs.filter(a=>!(a.article===art&&a.sent!==true&&a.packed!==true));
+    if(left.length!==adjs.length) saveAdjs(left);
+    // в истории товар остался — оставляем и имя, просто убираем из списков
+    if(left.some(a=>a.article===art)&&cmap[art]) cmap[art]={name:cmap[art].name,off:true};
+    else delete cmap[art];
+  });
+  d.del=[];
+  saveCustomArts(cmap);
+  // свой товар должен быть видно сразу, даже если галочки ещё ни разу не трогали
+  const hid=getHiddenArticles(); let hidChanged=false;
+  (d.custom||[]).forEach(c=>{ if(hid.delete(c.article)) hidChanged=true; });
+  if(hidChanged) saveHiddenArticles(hid);
   const labels={};
   (d.labels||[]).forEach(l=>{ const n=String(l.name||'').trim(); if(n&&n!==(PACK_NAMES[l.article]||artName(l.article))) labels[l.article]=n; });
   localStorage.setItem(LS_PACK_LABELS,JSON.stringify(labels));
   const codes={};
   (d.labels||[]).forEach(l=>{ const c=String(l.code||'').trim(); if(c&&c!==(DEFAULT_SHEET_CODES[l.article]||'')) codes[l.article]=c; });
+  (d.custom||[]).forEach(l=>{ const c=String(l.code||'').trim(); if(c) codes[l.article]=c; });
   localStorage.setItem(LS_SHEET_CODES,JSON.stringify(codes));
   packDraft=makePackDraft(); packDraftMsg='✓ сохранено';
   rerenderPackCtor();
@@ -3778,6 +3889,11 @@ function packRulesHtml(){
       <input class="fld" style="width:100%;min-width:0" value="${escHtml(l.name)}" placeholder="${escHtml(PACK_NAMES[l.article]||artName(l.article))}" oninput="pdSet('labels',${i},'name',this.value)">
       <input class="fld" style="width:100%;min-width:0" value="${escHtml(l.code||'')}" placeholder="${escHtml(DEFAULT_SHEET_CODES[l.article]||'')}" title="код для Google Таблицы" oninput="pdSet('labels',${i},'code',this.value)">
     </div>`).join('');
+  const customRows=(d.custom||[]).map((l,i)=>`<div class="pk-ctor-row pk-ctor-own">
+      <input class="fld" style="width:100%;min-width:0" value="${escHtml(l.name)}" placeholder="название товара" oninput="pdSet('custom',${i},'name',this.value)">
+      <input class="fld" style="width:100%;min-width:0" value="${escHtml(l.code||'')}" placeholder="код в таблице" oninput="pdSet('custom',${i},'code',this.value)">
+      <button style="${del}" title="удалить товар" onclick="pdDelCustom(${i})">✕</button>
+    </div>`).join('');
   const msgColor=packDraftMsg.startsWith('✓')?'var(--green)':'var(--red)';
   const tab=(id,label)=>`<button class="btn ${ctorTab===id?'on':'muted'}" onclick="setCtorTab('${id}')">${label}</button>`;
   return `<div>
@@ -3786,11 +3902,12 @@ function packRulesHtml(){
       .pk-ctor-box{grid-template-columns:minmax(120px,2fr) 64px 64px 64px minmax(100px,1fr) 36px}
       .pk-ctor-rule{grid-template-columns:minmax(120px,2fr) minmax(100px,1.2fr) minmax(120px,2fr) 72px 36px}
       .pk-ctor-label{grid-template-columns:minmax(120px,1fr) minmax(160px,2fr) 120px}
+      .pk-ctor-own{grid-template-columns:minmax(140px,2fr) minmax(100px,1fr) 36px}
       @media(max-width:640px){.pk-ctor-box{grid-template-columns:1fr 1fr 1fr 36px}.pk-ctor-box>:first-child,.pk-ctor-box>select{grid-column:1/-1}
         .pk-ctor-rule{grid-template-columns:1fr 1fr 36px}.pk-ctor-rule>input:nth-of-type(1){grid-column:1/3}}
     </style>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-      ${tab('boxes','Коробки')}${tab('rules','Варианты укладки')}${tab('names','Названия и коды')}
+      ${tab('boxes','Коробки')}${tab('rules','Варианты укладки')}${tab('names','Названия и коды')}${tab('own','Свои товары')}
     </div>
     ${ctorTab==='boxes'?`
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Размеры нужны только для пропорций иконок в задании. Удалить коробку можно, если ею никто не пакует.</div>
@@ -3807,6 +3924,11 @@ function packRulesHtml(){
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Название для упаковщика видно в задании: на картинке, в тексте и в превью. Код уходит в Google Таблицу. Пустое поле — значение по умолчанию (показано серым).</div>
       <div class="pk-ctor-row pk-ctor-label" style="${head}"><span>товар в дашборде</span><span>название для упаковщика</span><span>код в таблице</span></div>
       ${labelRows}`:''}
+    ${ctorTab==='own'?`
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Товары, которых нет в выгрузке Озона: новинки, образцы, то, что пакуем «на полку». После «Сохранить» товар появится в вариантах укладки, в задании упаковщику и плиткой в блоке «Остатки» — там и планируется его упаковка.</div>
+      <div class="pk-ctor-row pk-ctor-own" style="${head}"><span>название</span><span>код в таблице</span><span></span></div>
+      ${customRows||`<div style="font-size:12px;color:var(--muted);margin-top:6px">своих товаров нет</div>`}
+      <button class="btn" style="margin-top:8px" onclick="pdAddCustom()">＋ товар</button>`:''}
     ${ctorTab==='rules'?`
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px;line-height:1.5">Сколько штук товара кладём в коробку. Раскладка идёт только по этим вариантам: количество отправки должно точно совпасть со строкой. Самый большой вариант для пары «товар + коробка» считается полной коробкой.</div>
       <div class="pk-ctor-row pk-ctor-rule" style="${head}"><span>товар</span><span>коробка</span><span>название укладки</span><span>штук</span><span></span></div>
@@ -3833,7 +3955,7 @@ const PACK_SHEET_CSS=`<style>
 .pk-qty{font-size:22px;color:#6b6e80;font-weight:500;white-space:nowrap}
 .pk-grip{margin-left:8px;color:#b8bcc8;font-size:20px;line-height:1;user-select:none}
 .pk-sec:hover .pk-grip{color:#6b6e80}
-.pk-note{display:block;width:100%;min-height:1em;word-break:break-word;margin:10px 0 2px;border:0;border-left:4px solid #f2b705;border-radius:8px;background:#fff4c2;color:#2b2100;font:500 20px/1.4 "Golos Text","Segoe UI",Arial,sans-serif;padding:9px 14px;cursor:text}
+.pk-note{display:block;width:100%;min-height:1em;word-break:break-word;white-space:pre-wrap;margin:10px 0 2px;border:0;border-left:4px solid #f2b705;border-radius:8px;background:#fff4c2;color:#2b2100;font:500 20px/1.4 "Golos Text","Segoe UI",Arial,sans-serif;padding:9px 14px;cursor:text}
 .pk-note:empty{background:transparent;border-left-color:transparent;padding:4px 14px;font-size:16px}
 .pk-note:empty:hover,.pk-note:focus{background:#fff9dd;border-left-color:#f2b705}
 .pk-note:focus{outline:none;box-shadow:0 0 0 2px #f2b70566}
@@ -3857,7 +3979,7 @@ function packTaskHtml(){
     const secs=task.items.map((it,n)=>`<div class="pk-sec" data-art="${escHtml(it.article)}" title="перетащи, чтобы поменять порядок">
         <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(packName(it.article))}</span><span class="pk-qty">${it.total} шт</span>
           <span class="pk-grip">⠿</span></div>
-        <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${escHtml(notes[it.article]||'')}</div>
+        <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="pkNoteKey(event,this)">${escHtml(notes[it.article]||'')}</div>
         ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
         ${it.unmatched?`<div style="font-size:14px;color:#8a8fa8;margin:2px 0 4px">такого количества нет во вместимости — на картинке оно в пунктирном квадрате · <span style="color:#3a5ff0;cursor:pointer;text-decoration:underline" onclick="togglePackRules('rules')">добавить укладку</span></div>`:''}
       </div>`).join('');
@@ -4097,6 +4219,7 @@ async function saveToCloud(){
     // Галочки товаров и список найденных артикулов — чтобы вид совпадал на всех устройствах
     record.hiddenArticles=[...getHiddenArticles()];
     record.allArticles=ALL_ARTICLES;
+    record.customArticles=CUSTOM_ARTS; // свои товары: названия и пометки удалённых
     record.leadTimes=getLeadData();
     record.boxTypes=keepCloudLater(BOX_TYPES,DEFAULT_BOX_TYPES,existing.boxTypes); // пользовательские типы коробок
     // Настройки по умолчанию не должны затирать облако: после чистки хранилища браузер
@@ -4183,9 +4306,10 @@ async function loadFromCloud(){
     if(rec.salesNames){ salesNamesX={...salesNamesX,...rec.salesNames}; saveSalesNamesX(); }
     // Список артикулов и галочки из облака — ТОЛЬКО если облако новее (иначе затрёт свежий выбор).
     if(cloudIsNewer){
-      if(Array.isArray(rec.allArticles)) rec.allArticles.forEach(a=>{ if(!ALL_ARTICLES.includes(a)) ALL_ARTICLES.push(a); });
+      if(Array.isArray(rec.allArticles)) addKnownArticles(rec.allArticles);
       if(rec.leadTimes&&typeof rec.leadTimes==='object') localStorage.setItem(LS_LEAD,JSON.stringify(rec.leadTimes));
       if(Array.isArray(rec.hiddenArticles)) localStorage.setItem(LS_HIDDEN_ARTICLES,JSON.stringify(rec.hiddenArticles));
+      if(rec.customArticles&&typeof rec.customArticles==='object'){ localStorage.setItem(LS_CUSTOM_ARTS,JSON.stringify(rec.customArticles)); loadCustomArts(); }
       if(rec.packRules) localStorage.setItem(LS_PACK_RULES,JSON.stringify(rec.packRules));
       if(rec.packLabels) localStorage.setItem(LS_PACK_LABELS,JSON.stringify(rec.packLabels));
       if(Array.isArray(rec.packers)&&rec.packers.length) localStorage.setItem(LS_PACKERS,JSON.stringify(rec.packers));
@@ -4199,7 +4323,7 @@ async function loadFromCloud(){
       if(Array.isArray(rec.boxTypes)&&rec.boxTypes.length){ localStorage.setItem(LS_BOX_TYPES,JSON.stringify(rec.boxTypes)); loadBoxTypes(); }
     }else{
       // локальный выбор свежее — но новые артикулы из облака всё равно добавим в список (это не сбрасывает галочки)
-      if(Array.isArray(rec.allArticles)) rec.allArticles.forEach(a=>{ if(!ALL_ARTICLES.includes(a)) ALL_ARTICLES.push(a); });
+      if(Array.isArray(rec.allArticles)) addKnownArticles(rec.allArticles);
       if(rec.leadTimes&&typeof rec.leadTimes==='object') localStorage.setItem(LS_LEAD,JSON.stringify(rec.leadTimes));
     }
     refreshFocus();
