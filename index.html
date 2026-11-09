@@ -295,6 +295,8 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .adj-item:hover{background:var(--bg3);border-color:var(--border);}
 .adj-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
 .adj-where{color:var(--muted);}
+.adj-qty{cursor:pointer;border-bottom:1px dashed var(--border);}
+.adj-qty:hover{border-bottom-color:var(--accent);}
 .adj-spacer{margin-left:auto;}
 .adj-item .adj-qty{color:var(--green);}
 /* Иконка-действие: один размер и одна рамка во всём дашборде — в списке отправок,
@@ -396,7 +398,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.189</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.190</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3323,19 +3325,20 @@ function leftoversTilesHtml(){
 function buildPackTask(){
   const rules=getPackRules();
   const byArt={};
-  getPackAdjs().forEach(a=>{
+  // idx — номера строк плана, из которых собрана ячейка: по ним превью правит и убирает коробки
+  getPackAdjs().forEach((a,i)=>{
     if(a.sent===true||a.packed===true||a.later===true||adjHidden(a))return; // упакованное, отложенное и скрытое не пакуем
-    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,unknown:{},loose:0});
+    const t=byArt[a.article]||(byArt[a.article]={article:a.article,total:0,groups:{},unmatched:0,unknown:{},unknownIdx:{},loose:0,looseIdx:[]});
     t.total+=a.qty;
-    if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; return; }
+    if(a.cluster===LEFTOVER_CLUSTER){ t.loose+=a.qty; t.looseIdx.push(i); return; }
     // Отправка фасуется, только если её количество ровно совпадает с одной строкой вместимости
     // (одна коробка). Иначе — не расфасована: «пока непонятно, в какую коробку». Удалённые коробки не используем.
     const o=(rules[a.article]||[]).find(x=>TBOX[x.box]&&x.qty===a.qty);
-    if(!o){ t.unmatched+=a.qty; t.unknown[a.qty]=(t.unknown[a.qty]||0)+1; return; }
+    if(!o){ t.unmatched+=a.qty; t.unknown[a.qty]=(t.unknown[a.qty]||0)+1; (t.unknownIdx[a.qty]=t.unknownIdx[a.qty]||[]).push(i); return; }
     const key=o.box+'|'+o.qty, full=packOptionFull(rules,a.article,o);
     const g=t.groups[key]||(t.groups[key]={box:o.box,qty:o.qty,label:packOptionLabel(rules,a.article,o),full,
-      fill:full?1:o.qty/Math.max(...rules[a.article].filter(x=>x.box===o.box).map(x=>x.qty)),count:0});
-    g.count+=1;
+      fill:full?1:o.qty/Math.max(...rules[a.article].filter(x=>x.box===o.box).map(x=>x.qty)),count:0,idx:[]});
+    g.count+=1; g.idx.push(i);
   });
   const order=getPackOrder();
   const items=Object.values(byArt).sort((x,y)=>{
@@ -3349,8 +3352,8 @@ function buildPackTask(){
       TRANSPORT_BOXES.findIndex(x=>x.id===a.box)-TRANSPORT_BOXES.findIndex(x=>x.id===b.box)||b.qty-a.qty);
     it.groupList.forEach(g=>{ boxTotals[g.box]=(boxTotals[g.box]||0)+g.count; });
     // непонятные количества — пунктирными квадратами после коробок; остатки — последней ячейкой. В итог коробок не входят.
-    Object.entries(it.unknown).sort((a,b)=>b[0]-a[0]).forEach(([q,c])=>it.groupList.push({unknown:true,qty:+q,count:c}));
-    if(it.loose) it.groupList.push({loose:true,qty:it.loose});
+    Object.entries(it.unknown).sort((a,b)=>b[0]-a[0]).forEach(([q,c])=>it.groupList.push({unknown:true,qty:+q,count:c,idx:it.unknownIdx[q]||[]}));
+    if(it.loose) it.groupList.push({loose:true,qty:it.loose,idx:it.looseIdx});
   });
   const sortedTotals={};
   TRANSPORT_BOXES.forEach(b=>{ if(boxTotals[b.id]) sortedTotals[b.id]=boxTotals[b.id]; });
@@ -3626,6 +3629,67 @@ function pkNotePaste(e){
   const t=((e.clipboardData||window.clipboardData).getData('text')||'')
     .replace(/\r/g,'').split('\n').map(s=>s.replace(/[ \t]+/g,' ').trim()).join('\n');
   document.execCommand('insertText',false,t);
+}
+/* Коробку в задании иногда надо поправить на ходу: «в эту положили 60, а не 72» или
+   «эту не повезём». Клик по картинке коробки открывает её строки плана — те самые, из
+   которых ячейка собрана. Правка идёт в план, а не в картинку: PNG перерисуется сам. */
+let pkBoxEdit=null;   // {art, gi} — какая ячейка задания сейчас раскрыта
+function pkBoxClick(e,cv){
+  const it=buildPackTask().items.find(i=>i.article===cv.dataset.art);
+  if(!it)return;
+  const r=cv.getBoundingClientRect(), scale=r.width/(PK_IMG.W-2*PK_IMG.P);
+  const x=(e.clientX-r.left)/scale, y=(e.clientY-r.top)/scale;
+  const gi=Math.floor(y/PK_IMG.ROW)*pkCols()+Math.floor(x/PK_IMG.CELL);
+  const g=it.groupList[gi];
+  pkBoxEdit=(!g||!(g.idx||[]).length||(pkBoxEdit&&pkBoxEdit.art===it.article&&pkBoxEdit.gi===gi))
+    ?null:{art:it.article,gi};
+  renderPackTask();
+}
+function pkBoxClose(){ pkBoxEdit=null; renderPackTask(); }
+function pkEdSave(i,btn){
+  const inp=btn.closest('.pk-ed-row').querySelector('input');
+  setAdjQty(i,inp.value);
+}
+function pkEdKey(e,i,inp){
+  if(e.key==='Enter'){ e.preventDefault(); setAdjQty(i,inp.value); }
+  else if(e.key==='Escape'){ e.preventDefault(); pkBoxClose(); }
+}
+function pkEdDel(i){
+  const a=getAdjs()[i]; if(!a)return;
+  const where=a.cluster===LEFTOVER_CLUSTER?'остатки':a.cluster;
+  if(!confirm('Убрать коробку: '+packName(a.article)+' '+a.qty+' шт → '+where+'?\n\nКоробочки вернутся в остаток.'))return;
+  pkBoxEdit=null;
+  removeAdjustment(i);   // вернёт коробочки в остаток и перерисует всё
+}
+function pkBoxEditHtml(it){
+  if(!pkBoxEdit||pkBoxEdit.art!==it.article)return '';
+  const g=it.groupList[pkBoxEdit.gi]; if(!g)return '';
+  const adjs=getAdjs();
+  const title=g.loose?'Остатки · без большой коробки'
+    :g.unknown?g.qty+' шт · пока без коробки'
+    :(TBOX[g.box]?TBOX[g.box].name:'коробка')+' · '+g.qty+' шт';
+  const rows=(g.idx||[]).map(i=>{
+    const a=adjs[i]; if(!a)return '';
+    return `<div class="pk-ed-row">
+      <span class="pk-ed-where">${escHtml(a.cluster===LEFTOVER_CLUSTER?'на полку':a.cluster)}</span>
+      <input type="number" min="1" value="${a.qty}" onkeydown="pkEdKey(event,${i},this)">
+      <span class="pk-ed-unit">шт</span>
+      <button class="pk-ed-btn" title="сохранить количество" onclick="pkEdSave(${i},this)">✓</button>
+      <button class="pk-ed-btn red" title="убрать эту коробку из задания" onclick="pkEdDel(${i})">✕</button>
+    </div>`;
+  }).join('');
+  return `<div class="pk-ed">
+    <div class="pk-ed-h">${escHtml(title)}<span class="pk-ed-close" onclick="pkBoxClose()">закрыть</span></div>
+    ${rows||'<div class="pk-ed-hint">строк плана не осталось</div>'}
+    <div class="pk-ed-hint">Правка меняет запланированную отправку: коробочки вернутся в остаток или спишутся. ${g.loose?'':'Если новое количество не совпадёт ни с одной укладкой, коробка станет «пока непонятно, в какую коробку».'}</div>
+  </div>`;
+}
+// Перерисовать только задание упаковщику: правка коробки не трогает остальной дашборд.
+function renderPackTask(){
+  const el=document.getElementById('pack-task');
+  if(!el){ redraw(); return; }
+  el.innerHTML=packTaskHtml();
+  paintPackCanvases();
 }
 function paintPackCanvases(){
   const task=buildPackTask();
@@ -3961,7 +4025,20 @@ const PACK_SHEET_CSS=`<style>
 .pk-note:focus{outline:none;box-shadow:0 0 0 2px #f2b70566}
 .pk-note:empty::before{content:'✎ добавить комментарий';color:#a3a7b3}
 .pk-note:focus:empty::before{content:''}
-.pk-sec-boxes{width:100%;display:block;margin-top:8px;pointer-events:none}
+.pk-sec-boxes{width:100%;display:block;margin-top:8px;cursor:pointer}
+.pk-ed{margin:8px 0 2px;background:#f4f6fb;border:1px solid #dfe3ec;border-radius:10px;padding:10px 12px}
+.pk-ed-h{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700;color:#1a1d27}
+.pk-ed-close{margin-left:auto;font-size:13px;font-weight:500;color:#6b6e80;cursor:pointer}
+.pk-ed-close:hover{color:#1a1d27}
+.pk-ed-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.pk-ed-where{min-width:116px;font-size:15px;color:#6b6e80;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-ed-row input{width:78px;font:600 15px "Golos Text","Segoe UI",Arial,sans-serif;color:#1a1d27;background:#fff;border:1px solid #c9cedb;border-radius:6px;padding:4px 6px}
+.pk-ed-unit{font-size:14px;color:#6b6e80}
+.pk-ed-btn{font:500 14px "Golos Text","Segoe UI",Arial,sans-serif;color:#1a1d27;background:#fff;border:1px solid #c9cedb;border-radius:6px;padding:4px 10px;cursor:pointer}
+.pk-ed-btn:hover{background:#eef2ff;border-color:#3a5ff0}
+.pk-ed-btn.red{color:#d93025}
+.pk-ed-btn.red:hover{background:#fdf1f0;border-color:#d93025}
+.pk-ed-hint{font-size:13px;color:#8a8fa8;line-height:1.4;margin-top:8px}
 .pk-warn{color:#d93025;font-weight:600;font-size:19px;margin:4px 0}
 .pk-total{margin:-8px 0 12px}
 .pk-total-sub{font-size:17px;font-weight:500;color:#9ca0ad;line-height:1.35}
@@ -3980,7 +4057,8 @@ function packTaskHtml(){
         <div class="pk-sec-head"><span class="pk-num">${n+1}</span><span class="pk-name">${escHtml(packName(it.article))}</span><span class="pk-qty">${it.total} шт</span>
           <span class="pk-grip">⠿</span></div>
         <div class="pk-note" contenteditable="true" spellcheck="false" data-art="${escHtml(it.article)}" oninput="pkNoteInput(this)" onblur="clearTimeout(pkNoteTimer);pkNoteSave(this)" onpaste="pkNotePaste(event)" onkeydown="pkNoteKey(event,this)">${escHtml(notes[it.article]||'')}</div>
-        ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}"></canvas>`:''}
+        ${it.groupList.length?`<canvas class="pk-sec-boxes" data-art="${escHtml(it.article)}" title="нажми на коробку, чтобы поправить количество или убрать её" onclick="pkBoxClick(event,this)"></canvas>`:''}
+        ${pkBoxEditHtml(it)}
         ${it.unmatched?`<div style="font-size:14px;color:#8a8fa8;margin:2px 0 4px">такого количества нет во вместимости — на картинке оно в пунктирном квадрате · <span style="color:#3a5ff0;cursor:pointer;text-decoration:underline" onclick="togglePackRules('rules')">добавить укладку</span></div>`:''}
       </div>`).join('');
     const tot=packTotalsLine(task);
@@ -3998,7 +4076,7 @@ function packTaskHtml(){
         <button class="btn" onclick="downloadPackImage()">⬇ скачать PNG${pageCount>1?` (${pageCount} шт)`:''}</button>
         <button id="pack-copy-txt" class="btn" onclick="copyPackText()">📋 копировать текст</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);font-family:var(--font);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--font);margin-bottom:6px">↕ тяни блоки мышью, чтобы поменять порядок · ✎ комментарий пишется прямо в блоке · 📦 клик по коробке — поправить количество или убрать${pageCount>1?` · для телефона задание разбито на ${pageCount} ${pkPlural(pageCount,'картинку','картинки','картинок')}`:''}</div>
       <div id="pack-sheet">
         <div class="pk-h1">Что пакуем</div>
         <div class="pk-sub">${packSubtitle(task,new Date())}</div>
@@ -4569,6 +4647,64 @@ function setAdjStage(idx,stage){
   redraw();
 }
 // Имя подставляется из задания, но его можно быстро сменить прямо в списке отправок.
+/* Число коробочек правим прямо в строке. Удалить и завести заново — не то же самое:
+   со строкой уйдут дата планирования и baseTransit, по которому мы узнаём свою коробку
+   в чужом «в пути». Разницу коробочек возвращаем в остаток или списываем. */
+function setAdjQty(idx,qty){
+  const adjs=getAdjs(), a=adjs[idx];
+  if(!a)return;
+  qty=Math.round(Number(qty));
+  if(!Number.isFinite(qty)||qty<=0){ alert('Коробочек должно быть целое число больше нуля.'); return; }
+  if(qty===a.qty){ pkBoxEdit=null; renderAdjList(); redraw(); return; }
+  if(a.sent===true){ alert('Коробка уже отгружена: это количество лежит в заявке Ozon, здесь его менять нельзя.'); return; }
+  const was=a.qty;
+  a.qty=qty;
+  // упакованная коробка уже стоит на складе: при другой вместимости меняется и транспортная коробка
+  if(a.packed===true){
+    const nb=tboxOfAdj(a);
+    if((a.tbox||null)!==(nb||null)){
+      const log=getTboxLog(), ts=Date.now();
+      if(a.tbox) log.push({box:a.tbox,kind:'add',qty:1,ts,auto:true});
+      if(nb) log.push({box:nb,kind:'spend',qty:1,ts:ts+1,auto:true});
+      saveTboxLog(log);
+      if(nb) a.tbox=nb; else delete a.tbox;
+    }
+  }
+  saveAdjs(adjs);
+  const type=BOX_TYPE[a.article];
+  if(type){
+    const log=getBoxLog();
+    log.push({type,kind:qty>was?'spend':'add',qty:Math.abs(qty-was),ts:Date.now(),hidden:true});
+    saveBoxLog(log);
+  }
+  // правили из превью — держим открытой ту ячейку, куда коробка переехала после правки
+  if(pkBoxEdit&&pkBoxEdit.art===a.article){
+    const it=buildPackTask().items.find(x=>x.article===a.article);
+    const gi=it?it.groupList.findIndex(g=>(g.idx||[]).includes(idx)):-1;
+    pkBoxEdit=gi>=0?{art:a.article,gi}:null;
+  }
+  renderAdjList(); renderBoxes(); redraw();
+}
+// Клик по количеству превращает его в поле: Enter сохраняет, Escape возвращает как было.
+function editAdjQty(el,i){
+  if(el.querySelector('input'))return;
+  const was=parseInt(String(el.textContent).replace(/[^0-9]/g,''),10)||0;
+  el.innerHTML='<input type="number" min="1" value="'+was+'" style="width:64px;font-family:var(--mono);font-size:13px;background:var(--bg3);border:1px solid var(--accent);border-radius:4px;color:var(--text);padding:1px 4px">';
+  const inp=el.firstElementChild;
+  inp.focus(); inp.select();
+  let done=false;
+  const finish=ok=>{
+    if(done)return; done=true;
+    const v=Math.round(Number(inp.value));
+    if(ok&&Number.isFinite(v)&&v>0&&v!==was) setAdjQty(i,v);
+    else el.textContent=was+' шт';
+  };
+  inp.onkeydown=e=>{
+    if(e.key==='Enter'){ e.preventDefault(); finish(true); }
+    else if(e.key==='Escape'){ e.preventDefault(); finish(false); }
+  };
+  inp.onblur=()=>finish(true);
+}
 function setAdjPacker(idx,name){
   const adjs=getAdjs();
   if(!adjs[idx])return;
@@ -4655,7 +4791,9 @@ function adjRowsHtml(){
       <span class="adj-dot" style="background:${dot};${dim}"></span>
       <span style="font-weight:500;${textStyle}">${NAMES[a.article]||a.article}</span>
       <span class="adj-where" style="${textStyle}">${a.cluster}</span>
-      <span style="font-family:var(--mono);font-size:13px;${qtyStyle};${dim}">${a.qty} шт</span>
+      ${stage==='sent'
+        ?`<span style="font-family:var(--mono);font-size:13px;${qtyStyle};${dim}">${a.qty} шт</span>`
+        :`<span class="adj-qty" title="нажми, чтобы изменить число коробочек" onclick="editAdjQty(this,${i})" style="font-family:var(--mono);font-size:13px;${qtyStyle};${dim}">${a.qty} шт</span>`}
       ${adjHidden(a)?`<span style="font-size:11px;color:var(--amber)">скрыто</span>`:''}
       ${badge}
       <span class="adj-spacer"></span>
@@ -5806,7 +5944,7 @@ function render(data){
   if(adjLogHtml) html+=adjLogHtml('adj-list-inline');
 
   // Задание упаковщику — сразу под списком отправок
-  html+=packTaskHtml();
+  html+='<div id="pack-task">'+packTaskHtml()+'</div>';   // перерисовывается отдельно при правке коробки
 
   // Boxes — after priorities and adj log, before heatmap
   const boxCardsHtml=Object.keys(BOX_META).map(type=>{
