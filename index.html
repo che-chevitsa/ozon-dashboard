@@ -400,7 +400,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.191</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.192</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3200,9 +3200,27 @@ const LEFTOVER_CLUSTER='Остатки';
 let leftoversCollapsed=lsGet('ozon_leftovers_collapsed',false)===true;
 function toggleLeftovers(){ leftoversCollapsed=!leftoversCollapsed; localStorage.setItem('ozon_leftovers_collapsed',JSON.stringify(leftoversCollapsed)); redraw(); }
 // Краткая сводка для свёрнутого блока: «Форма 7 см 30 · Лилии 20».
-function leftoversSummary(){ return ALL_ARTICLES.map(a=>[a,plannedLeftover(a)]).filter(([,q])=>q>0).map(([a,q])=>`${artName(a)} ${q} шт`).join(' · '); }
-// Сколько остатков по товару уже запланировано (неотправленные).
-function plannedLeftover(art){ return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&a.sent!==true&&a.packed!==true&&!adjHidden(a)).reduce((s,a)=>s+a.qty,0); }
+function leftoversSummary(){
+  return leftoverKeys().map(k=>[k,plannedLeftoverKey(k)]).filter(([,q])=>q>0)
+    // запятая, а не «·»: у версий точка уже занята («Овальные · ZIP»)
+    .map(([k,q])=>`${leftoverName(k)} ${q} шт`).join(', ');
+}
+/* Остатки планируем так же, как коробки: у каждой версии своя плитка. Обычная и ZIP — это
+   разная упаковка, и «20 штук на полку» у них про разные вещи. */
+function leftoverKeys(){
+  const out=[];
+  ALL_ARTICLES.forEach(a=>variantsOf(a).forEach(v=>out.push(packKey(a,v.id))));
+  return out;
+}
+function leftoverName(key){
+  const art=keyArt(key), id=keyVar(key);
+  return hasVariants(art)?artName(art)+' · '+variantName(art,id):artName(art);
+}
+function plannedLeftoverKey(key){
+  const art=keyArt(key), id=keyVar(key);
+  return getAdjs().filter(a=>a.cluster===LEFTOVER_CLUSTER&&a.article===art&&(a.variant||'')===id
+    &&a.sent!==true&&a.packed!==true&&!adjHidden(a)).reduce((s,a)=>s+a.qty,0);
+}
 // Остатки — однотипные позиции по всем товарам. Плитками они видны разом, а строками
 // занимали одиннадцать рядов таблицы приоритетов и сбивали чтение.
 // Свёрнут ли блок колец — удобство этого браузера.
@@ -3379,13 +3397,13 @@ function leftoversTilesHtml(){
     return `<div class="block" style="padding:10px 14px;margin-top:10px">${head}
       <div style="font-family:var(--font);font-size:12px;margin-top:6px">${sum?`<span style="color:var(--green)">${escHtml(sum)}</span>`:'<span style="color:var(--muted)">не запланированы</span>'}</div></div>`;
   }
-  const tiles=ALL_ARTICLES.map(art=>{
-    const planned=plannedLeftover(art), fid=`${art.replace(/\W/g,'_')}_ostatki`;
-    return `<div class="lf-tile${planned?' on':''}" data-adj="${art}|${LEFTOVER_CLUSTER}" onclick="toggleMplForm('${fid}')" title="запланировать остатки: ${escHtml(artName(art))}">
-      <div class="lf-name">${artName(art)}</div>
+  const tiles=leftoverKeys().map(key=>{
+    const art=keyArt(key), vid=keyVar(key);
+    const planned=plannedLeftoverKey(key), fid=`${key.replace(/\W/g,'_')}_ostatki`;
+    return `<div class="lf-tile${planned?' on':''}" data-adj="${escHtml(key)}|${LEFTOVER_CLUSTER}" onclick="toggleMplForm('${fid}')" title="запланировать остатки: ${escHtml(leftoverName(key))}">
+      <div class="lf-name">${escHtml(leftoverName(key))}</div>
       <div class="lf-qty">${planned?planned+' шт':'+'}</div>
-      <div id="mpl-form-${fid}" data-article="${art}" data-cluster="${LEFTOVER_CLUSTER}" onclick="event.stopPropagation()" style="display:none;margin-top:6px;gap:4px;align-items:center;justify-content:center;flex-wrap:wrap">
-        ${variantSelectHtml(art)}
+      <div id="mpl-form-${fid}" data-article="${escHtml(art)}" data-variant="${escHtml(vid)}" data-cluster="${LEFTOVER_CLUSTER}" onclick="event.stopPropagation()" style="display:none;margin-top:6px;gap:4px;align-items:center;justify-content:center;flex-wrap:wrap">
         <input type="number" placeholder="шт" min="1" style="width:52px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:12px;padding:4px 6px">
         <button onclick="confirmMplSend(this.closest('[data-article]'))" style="font-family:var(--font);font-size:12px;background:rgba(61,204,122,0.15);border:1px solid rgba(61,204,122,0.3);color:var(--green);border-radius:6px;padding:4px 8px;cursor:pointer">✓</button>
       </div>
@@ -5223,7 +5241,8 @@ function confirmMplSend(formEl){
   const inp=formEl.querySelector('input');
   const qty=parseInt(inp?inp.value:0);
   if(!qty||qty<=0)return;
-  addAdjustmentInline(article,cluster,qty,variantOfForm(formEl));
+  const variant=formEl.dataset.variant!==undefined?formEl.dataset.variant:variantOfForm(formEl);
+  addAdjustmentInline(article,cluster,qty,variant);
   formEl.style.display='none';
 }
 
