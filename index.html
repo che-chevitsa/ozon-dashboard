@@ -400,7 +400,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.192</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.193</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -5101,8 +5101,9 @@ function orderHandedOver(a){
 }
 // Второй разовый ремонт: возвращаем отправки, списанные при том, что Ozon ещё не принял
 // заявку. Такие он в своих цифрах не учитывает, значит наша запись должна жить.
-function undoNotHandedOver(){
-  if(lsGet('ozon_fix_not_handed',false)===true)return 0;
+function undoNotHandedOver(flag){
+  flag=flag||'ozon_fix_not_handed';
+  if(lsGet(flag,false)===true)return 0;
   const adjs=getAdjs();
   let back=0;
   adjs.forEach(a=>{
@@ -5117,7 +5118,7 @@ function undoNotHandedOver(){
     const row=(rawData||[]).find(r=>r.article===a.article&&r.cluster===a.cluster);
     a.baseTransit=row?row.transit+(row.requested||0):0;
   });
-  localStorage.setItem('ozon_fix_not_handed','true');
+  localStorage.setItem(flag,'true');
   if(back){ saveAdjs(adjs); console.log('Возвращено в учёт непереданных отправок: '+back); }
   return back;
 }
@@ -5134,10 +5135,6 @@ function autoCleanAdjs(newData){
     (byKey[key]=byKey[key]||[]).push({...a,idx});
   });
 
-  // Если в данных есть графа «в заявках на поставку», оформленную заявку считает сам Ozon —
-  // и своя запись о ней становится лишней. Без этой графы (старый файл выгрузки) продолжаем
-  // судить по косвенным признакам, как раньше.
-  const hasRequested=newData.some(r=>typeof r.requested==='number');
   const liveOrder=a=>{
     if(!a.ozonOrderId)return false;
     const o=((getOzonCache().orders)||[]).find(x=>String(x.id)===String(a.ozonOrderId));
@@ -5161,13 +5158,12 @@ function autoCleanAdjs(newData){
     // показал нашу отправку в любой из этих граф, своя запись больше не нужна — иначе одно
     // и то же количество посчитается дважды.
     const pipeline=row.transit+(row.requested||0);
-    // Заявка оформлена в Ozon, и Ozon показывает такие в отдельной графе — считать её ещё и
-    // у себя значит удвоить количество.
-    if(hasRequested){
-      const inOzon=sorted.filter(a=>liveOrder(a));
-      inOzon.forEach(a=>{ toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty} (учтено Ozon)`); });
-      if(inOzon.length===sorted.length)continue;
-    }
+    /* Раньше запись списывалась по одному факту оформления заявки: раз заявка есть, значит
+       Ozon уже считает коробки сам. Но аналитика остатков обновляется с задержкой — между
+       оформлением и её обновлением в графе «в заявках на поставку» наших коробок ещё нет.
+       В этот промежуток они пропадали совсем: ни в наших цифрах, ни в его, и кластер с
+       оформленной поставкой выглядел пустым. Теперь решают только числа Ozon: как только он
+       показал количество в пути или в заявках, запись списывается правилами ниже. */
     if(pipeline===0){
       // Правило нулевого пути придумано для случая, когда весь цикл «в пути → приехало» прошёл
       // между выгрузками. У свежей отправки ноль означает другое: Ozon ещё не оприходовал коробки.
@@ -6349,7 +6345,9 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
   document.getElementById('dashboard').style.display='none';
   document.getElementById('reset-wrap').style.display='none';
   renderStocksBtn();
-  const backInPlay=undoEarlyArrivals()+undoNotHandedOver();
+  // Третий разовый ремонт: до версии 2.193 оформленная заявка списывала коробки сразу,
+  // не дожидаясь, пока Ozon покажет их в своих цифрах. Возвращаем такие в учёт.
+  const backInPlay=undoEarlyArrivals()+undoNotHandedOver()+undoNotHandedOver('ozon_fix_requested_rule');
   if(backInPlay) setTimeout(()=>saveWarn('вернул в учёт отправок: '+backInPlay+' — они были списаны как приехавшие, хотя Ozon их ещё не принял'),300);
   askPersistentStorage().then(()=>{ if(document.getElementById('backup-file')) redraw(); });
   const p=getProfile();
