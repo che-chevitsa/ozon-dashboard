@@ -402,7 +402,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.197</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.198</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -2714,6 +2714,57 @@ function downloadBackup(){
 }
 /* Хранилище сайта браузер чистит без спроса — дашборд уже дважды обнулялся. Пока нет ни
    облака, ни свежей копии, об этом должно быть видно на главном экране, а не в настройках. */
+/* Сверка с Озоном. Своя запись об отгруженной коробке живёт ровно до тех пор, пока Ozon не
+   покажет её у себя. Если она висит дольше, чем идёт дорога в этот кластер, значит показывать
+   её он уже не будет: коробка приехала и продаётся, а заявку, может, и вовсе отменили. Такая
+   запись молча завышает «в пути» и занижает потребность — из-за этого в ноябре 2026 кластеры
+   недополучали товар. Поэтому теперь дашборд сам про них говорит. */
+const LS_STALE_MUTE='ozon_stale_mute';
+function staleSentAdjs(){
+  const out=[];
+  getAdjs().forEach((a,i)=>{
+    if(a.sent!==true||a.arrived===true||adjHidden(a))return;
+    if(a.cluster===LEFTOVER_CLUSTER)return;
+    const when=Date.parse(a.sentAt||a.orderedAt||'')||a.ts||0;
+    if(!when)return;
+    const days=Math.round((Date.now()-when)/86400000);
+    // «Дольше, чем едет»: дорога в этот кластер плюс пять дней на приёмку и задержку выгрузки.
+    const limit=Math.max(7,Math.round((leadDays(a.cluster)||{}).days||LEAD_DEFAULT)+5);
+    if(days>limit) out.push({i,a,days,limit});
+  });
+  return out.sort((x,y)=>y.days-x.days);
+}
+function staleWarnHtml(){
+  const mute=Number(lsGet(LS_STALE_MUTE,0))||0;
+  if(Date.now()<mute) return '';
+  const list=staleSentAdjs();
+  if(!list.length) return '';
+  const qty=list.reduce((s,x)=>s+x.a.qty,0);
+  const top=list.slice(0,3).map(x=>`${escHtml(adjLabel(x.a))} → ${escHtml(x.a.cluster)} (${x.a.qty} шт, ${x.days} дн)`).join(', ');
+  return `<div class="alert amber" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 14px">
+    <span><b>Сверка с Озоном:</b> ${list.length} ${pkPlural(list.length,'коробка числится','коробки числятся','коробок числятся')} в пути дольше, чем идёт дорога — ${qty} шт. Ozon их у себя не показывает: скорее всего они уже приехали и продаются, или заявку отменили. Пока записи живы, они завышают «в пути» и занижают потребность.
+      <span style="display:block;color:var(--muted);margin-top:4px">${top}${list.length>3?' и ещё '+(list.length-3):''}</span></span>
+    <span style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn green" onclick="dropStaleAdjs()">списать ${list.length}</button>
+      <button class="btn" onclick="staleMute()">скрыть на неделю</button>
+    </span></div>`;
+}
+function dropStaleAdjs(){
+  const list=staleSentAdjs();
+  if(!list.length)return;
+  const qty=list.reduce((s,x)=>s+x.a.qty,0);
+  if(!confirm('Списать '+list.length+' '+pkPlural(list.length,'коробку','коробки','коробок')+' ('+qty+' шт) как приехавшие?'
+    +'\n\nОни уйдут из «в пути» и из расчёта потребности, записи останутся внизу списка отправок — оттуда их можно вернуть.'))return;
+  const adjs=getAdjs(), now=new Date().toISOString();
+  list.forEach(x=>{ if(adjs[x.i]){ adjs[x.i].arrived=true; adjs[x.i].arrivedAt=now; } });
+  saveAdjs(adjs);
+  saveToCloud();
+  renderAdjList(); redraw();
+}
+function staleMute(){
+  localStorage.setItem(LS_STALE_MUTE,JSON.stringify(Date.now()+7*86400000));
+  redraw();
+}
 function backupWarnHtml(){
   if(getSheetCfg()) return '';                       // облако настроено — копия не единственная
   const at=localStorage.getItem(LS_BACKUP_AT)||'';
@@ -5969,7 +6020,7 @@ function render(data){
       <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
   }
 
-  let html='<div class="dash-view" data-view="plan">'+backupWarnHtml();
+  let html='<div class="dash-view" data-view="plan">'+backupWarnHtml()+staleWarnHtml();
 
   // Панель галочек: какие артикулы участвуют в карточках, приоритетах и тепловой карте.
   // Данные по скрытым товарам остаются в rawData — прячется только отображение.
