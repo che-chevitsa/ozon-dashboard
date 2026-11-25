@@ -249,6 +249,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .alert{font-size:12px;line-height:1.5;padding:9px 11px;border-radius:8px;margin:10px 0;}
 .alert.red{background:var(--red-bg);color:var(--red);}
 .alert.amber{background:var(--amber-bg);color:var(--amber);}
+.alert.info{background:var(--bg3);color:var(--text);border:1px solid var(--border);}
 .boxes-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
 .box-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
 .box-card>*{margin:0!important;}
@@ -402,7 +403,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.198</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.199</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -2719,7 +2720,64 @@ function downloadBackup(){
    её он уже не будет: коробка приехала и продаётся, а заявку, может, и вовсе отменили. Такая
    запись молча завышает «в пути» и занижает потребность — из-за этого в ноябре 2026 кластеры
    недополучали товар. Поэтому теперь дашборд сам про них говорит. */
-const LS_STALE_MUTE='ozon_stale_mute';
+const LS_STALE_MUTE='ozon_stale_mute', LS_SYNC_NOTE='ozon_sync_note';
+/* Что сделала сверка — человек должен видеть: она меняет стадии коробок сама.
+   Записка живёт до закрытия крестиком. */
+function syncNote(text){
+  localStorage.setItem(LS_SYNC_NOTE,JSON.stringify({text,at:new Date().toISOString()}));
+}
+function dismissSyncNote(){ localStorage.removeItem(LS_SYNC_NOTE); redraw(); }
+function syncNoteHtml(){
+  const n=lsGet(LS_SYNC_NOTE,null);
+  if(!n||!n.text)return '';
+  return `<div class="alert info" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 14px">
+    <span><b>Сверка с Озоном</b> · ${escHtml(ozonWhen(n.at))} · ${escHtml(n.text)}</span>
+    <span style="margin-left:auto"><button class="btn" onclick="dismissSyncNote()">понятно</button></span></div>`;
+}
+/* Разбор по состоянию заявки. Отменённая, отклонённая и просроченная заявка означают одно:
+   коробки никуда не поехали и лежат у нас — значит стадия «отгружено» неверна, и их надо
+   вернуть в «упаковано», иначе они вечно висят в пути и занижают потребность. То же самое
+   дашборд делает, когда заявку отменяешь из него; теперь он замечает и отмену в кабинете.
+   Заявку, которая просто задержалась в «готова к отгрузке», автоматика не трогает: там
+   выбор за человеком — она ещё может уехать. */
+function reconcileOrders(){
+  const orders=(getOzonCache().orders)||[];
+  if(!orders.length)return 0;
+  const byId={}; orders.forEach(o=>byId[String(o.id)]=o);
+  const adjs=getAdjs(), back=[];
+  adjs.forEach(a=>{
+    if(a.sent!==true||a.arrived===true||!a.ozonOrderId)return;
+    const o=byId[String(a.ozonOrderId)];
+    if(!o)return;                                   // заявки нет в свежем списке — её судьбу решает autoCleanAdjs
+    const st=String(o.state||'').replace(/^ORDER_STATE_/,'');
+    if(st!=='CANCELLED'&&st!=='REJECTED_AT_SUPPLY_WAREHOUSE'&&st!=='OVERDUE')return;
+    delete a.ozonOrderId; delete a.cargoId; delete a.cargoSentAt;
+    delete a.sent; delete a.sentAt; delete a.orderedAt; delete a.arrived; delete a.arrivedAt;
+    delete a.sheetSentAt; delete a.sheetDateAt;     // заявки больше нет — строки учёта к ней не привязаны
+    a.packed=true;
+    back.push(adjLabel(a)+' → '+a.cluster+' '+a.qty+' шт ('+ozonState(st)+')');
+  });
+  if(!back.length)return 0;
+  saveAdjs(adjs); saveToCloud();
+  syncNote('вернул в «упаковано» '+back.length+' '+pkPlural(back.length,'коробку','коробки','коробок')
+    +': '+back.slice(0,3).join('; ')+(back.length>3?' и ещё '+(back.length-3):'')
+    +'. Заявки по ним не состоялись — коробки лежат у нас.');
+  console.log('Сверка заявок: вернул в упаковано '+back.length);
+  return back.length;
+}
+/* Состояния заявок меняются сами по себе: приняли груз, отменили, просрочили. Ждать, пока
+   человек откроет вкладку отгрузки, чтобы дашборд это заметил, — значит снова копить мусор
+   в «в пути». Поэтому при открытии дашборда, если данные о заявках старше шести часов,
+   тихо спрашиваем Ozon и сразу пересчитываем, что приехало, а что не уехало. */
+async function autoSyncOnOpen(){
+  try{
+    if(!getOzonKeys())return;
+    const at=Date.parse((getOzonCache().updatedAt)||'')||0;
+    if(Date.now()-at>6*3600*1000){ await ozonRefresh(); }
+    if(rawData&&rawData.length) autoCleanAdjs(rawData);
+    reconcileOrders();
+  }catch(e){ console.log('автосверка:',e&&e.message); }
+}
 function staleSentAdjs(){
   const out=[];
   getAdjs().forEach((a,i)=>{
@@ -2740,14 +2798,39 @@ function staleWarnHtml(){
   const list=staleSentAdjs();
   if(!list.length) return '';
   const qty=list.reduce((s,x)=>s+x.a.qty,0);
-  const top=list.slice(0,3).map(x=>`${escHtml(adjLabel(x.a))} → ${escHtml(x.a.cluster)} (${x.a.qty} шт, ${x.days} дн)`).join(', ');
+  // Заявка, которая так и висит в «готова к отгрузке», — это не приехавший товар, а
+  // несостоявшаяся отгрузка: такие коробки правильнее вернуть в «упаковано».
+  const notGone=list.filter(x=>['DATA_FILLING','READY_TO_SUPPLY'].includes(adjOrderState(x.a)));
+  const top=list.slice(0,3).map(x=>{
+    const st=adjOrderState(x.a);
+    return `${escHtml(adjLabel(x.a))} → ${escHtml(x.a.cluster)} (${x.a.qty} шт, ${x.days} дн${st?', заявка '+escHtml(ozonState(st)):''})`;
+  }).join(', ');
   return `<div class="alert amber" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 14px">
-    <span><b>Сверка с Озоном:</b> ${list.length} ${pkPlural(list.length,'коробка числится','коробки числятся','коробок числятся')} в пути дольше, чем идёт дорога — ${qty} шт. Ozon их у себя не показывает: скорее всего они уже приехали и продаются, или заявку отменили. Пока записи живы, они завышают «в пути» и занижают потребность.
+    <span><b>Сверка с Озоном:</b> ${list.length} ${pkPlural(list.length,'коробка числится','коробки числятся','коробок числятся')} в пути дольше, чем идёт дорога — ${qty} шт. Ozon их у себя не показывает: либо они уже приехали и продаются, либо отгрузка не состоялась. Пока записи живы, они завышают «в пути» и занижают потребность.
       <span style="display:block;color:var(--muted);margin-top:4px">${top}${list.length>3?' и ещё '+(list.length-3):''}</span></span>
     <span style="margin-left:auto;display:flex;gap:8px">
+      ${notGone.length?`<button class="btn accent" onclick="returnStaleAdjs()" title="заявка так и не уехала — коробки лежат у нас">вернуть в упаковано ${notGone.length}</button>`:''}
       <button class="btn green" onclick="dropStaleAdjs()">списать ${list.length}</button>
       <button class="btn" onclick="staleMute()">скрыть на неделю</button>
     </span></div>`;
+}
+// Коробки по заявке, которая так и не уехала, возвращаем в «упаковано»: они у нас на складе.
+function returnStaleAdjs(){
+  const list=staleSentAdjs().filter(x=>['DATA_FILLING','READY_TO_SUPPLY'].includes(adjOrderState(x.a)));
+  if(!list.length)return;
+  const qty=list.reduce((s,x)=>s+x.a.qty,0);
+  if(!confirm('Вернуть '+list.length+' '+pkPlural(list.length,'коробку','коробки','коробок')+' ('+qty+' шт) в «упаковано»?'
+    +'\n\nИх заявки так и не уехали. Коробки снова можно будет оформить на отправку; связь со старой заявкой пропадёт.'))return;
+  const adjs=getAdjs();
+  list.forEach(x=>{
+    const a=adjs[x.i]; if(!a)return;
+    delete a.ozonOrderId; delete a.cargoId; delete a.cargoSentAt;
+    delete a.sent; delete a.sentAt; delete a.orderedAt; delete a.arrived; delete a.arrivedAt;
+    delete a.sheetSentAt; delete a.sheetDateAt;
+    a.packed=true;
+  });
+  saveAdjs(adjs); saveToCloud();
+  renderAdjList(); redraw();
 }
 function dropStaleAdjs(){
   const list=staleSentAdjs();
@@ -6020,7 +6103,7 @@ function render(data){
       <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
   }
 
-  let html='<div class="dash-view" data-view="plan">'+backupWarnHtml()+staleWarnHtml();
+  let html='<div class="dash-view" data-view="plan">'+syncNoteHtml()+backupWarnHtml()+staleWarnHtml();
 
   // Панель галочек: какие артикулы участвуют в карточках, приоритетах и тепловой карте.
   // Данные по скрытым товарам остаются в rawData — прячется только отображение.
@@ -6453,6 +6536,7 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
   const backInPlay=undoEarlyArrivals()+undoNotHandedOver()+undoNotHandedOver('ozon_fix_requested_rule');
   if(backInPlay) setTimeout(()=>saveWarn('вернул в учёт отправок: '+backInPlay+' — они были списаны как приехавшие, хотя Ozon их ещё не принял'),300);
   askPersistentStorage().then(()=>{ if(document.getElementById('backup-file')) redraw(); });
+  setTimeout(()=>{ autoSyncOnOpen(); },1200);   // тихая сверка с Ozon, не мешая первой отрисовке
   const p=getProfile();
   const count=Object.keys(p).length;
   if(count>0){
