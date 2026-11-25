@@ -402,7 +402,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.194</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.197</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4328,6 +4328,12 @@ function loadLocal(){
     const pr=localStorage.getItem(LS_PERIOD);
     if(pr) currentPeriod=parseInt(pr)||currentPeriod;
   }catch(e){ console.log('loadLocal error:',e); }
+  /* Сверку с Ozon делаем и при открытии: выгрузка остатков могла не меняться, а заявки за это
+     время приняли — значит, свои записи о тех коробках пора списать. Ждать новой выгрузки,
+     чтобы перестать считать приехавшее, было бы странно. */
+  if(rawData&&rawData.length&&((getOzonCache().orders)||[]).length){
+    try{ autoCleanAdjs(rawData); }catch(e){ console.log('autoClean on load:',e); }
+  }
   return loadedAny;
 }
 
@@ -4681,10 +4687,14 @@ function applyAdjustments(data){
   const adjs=getAdjs();
   if(!adjs.length)return data;
   return data.map(row=>{
-    const extra=adjs.filter(a=>a.article===row.article&&a.cluster===row.cluster&&!a.arrived&&!adjHidden(a)).reduce((s,a)=>s+a.qty,0);
+    const mine=adjs.filter(a=>a.article===row.article&&a.cluster===row.cluster&&!a.arrived&&!adjHidden(a));
+    const extra=mine.reduce((s,a)=>s+a.qty,0);
     if(!extra)return row;
     const nt=row.transit+extra,tt=row.fbo+nt+(row.requested||0);
-    return{...row,transit:nt,total:tt,days:row.sales>0?tt/row.sales:99};
+    // ours/oursBoxes — чтобы в таблице было видно, какая часть «в пути» это наши записи,
+    // а не цифра Ozon: расхождение с кабинетом перестаёт быть загадкой.
+    return{...row,transit:nt,total:tt,days:row.sales>0?tt/row.sales:99,
+      ours:extra,oursBoxes:mine.length,ozonTransit:row.transit};
   });
 }
 
@@ -4952,7 +4962,14 @@ function adjRowsHtml(){
     const qtyStyle=stage==='sent'?'text-decoration:line-through;opacity:0.45':'color:var(--green)';
     const badge=stage==='packed'
       ?`<span style="font-size:10px;font-family:var(--font);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px">упаковано</span>`
-      :stage==='sent'?`<span style="font-size:10px;font-family:var(--font);color:var(--muted)">${a.arrived?'приехало на склад':'отгружено'}</span>`:'';
+      :stage==='sent'?(()=>{
+        // Заявку отменили в кабинете — коробки никуда не поехали и всё ещё лежат у нас.
+        const st=adjOrderState(a);
+        if(st==='CANCELLED'||st==='REJECTED_AT_SUPPLY_WAREHOUSE'){
+          return `<span style="font-size:10px;font-family:var(--font);color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:1px 5px" title="Заявка в Ozon ${escHtml(ozonState(st))}. Коробки всё ещё у нас: верни их в «упаковано» кнопкой ↩, иначе они так и будут считаться в пути.">заявка ${escHtml(ozonState(st))}</span>`;
+        }
+        return `<span style="font-size:10px;font-family:var(--font);color:var(--muted)">${a.arrived?'приехало на склад':'отгружено'}</span>`;
+      })():'';
     // «Кто паковал» нужен только там, где уже паковали: в плане и в следующей партии его нет.
     const who=(stage!=='packed'&&stage!=='sent')?'':`<select title="кто паковал" onchange="setAdjPacker(${i},this.value)" style="font-family:var(--font);font-size:11px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;color:${a.packedBy?'var(--text)':'var(--muted)'};padding:1px 4px;cursor:pointer">
         <option value="" ${!a.packedBy?'selected':''}>— кто паковал</option>
@@ -5111,6 +5128,12 @@ function undoEarlyArrivals(){
 }
 // Статусы, начиная с которых Ozon уже считает коробки своими: до них товар в его цифрах
 // не появляется, и списывать нашу запись нельзя — иначе кластер выглядит пустым.
+// Состояние заявки Ozon у этой отправки — пусто, если заявки нет или её не видно в кэше.
+function adjOrderState(a){
+  if(!a||!a.ozonOrderId)return '';
+  const o=((getOzonCache().orders)||[]).find(x=>String(x.id)===String(a.ozonOrderId));
+  return o?String(o.state||'').replace(/^ORDER_STATE_/,''):'';
+}
 function orderHandedOver(a){
   if(!a.ozonOrderId)return true;                       // заявки нет — судим по прежним признакам
   const o=((getOzonCache().orders)||[]).find(x=>String(x.id)===String(a.ozonOrderId));
@@ -5153,13 +5176,6 @@ function autoCleanAdjs(newData){
     (byKey[key]=byKey[key]||[]).push({...a,idx});
   });
 
-  const liveOrder=a=>{
-    if(!a.ozonOrderId)return false;
-    const o=((getOzonCache().orders)||[]).find(x=>String(x.id)===String(a.ozonOrderId));
-    if(!o)return true;                                   // заявка есть, состояние неизвестно
-    const st=String(o.state||'').replace(/^ORDER_STATE_/,'');
-    return st!=='CANCELLED'&&st!=='REJECTED_AT_SUPPLY_WAREHOUSE';
-  };
   const toMark=new Set();
   const markedList=[];
 
@@ -5176,19 +5192,35 @@ function autoCleanAdjs(newData){
     // показал нашу отправку в любой из этих граф, своя запись больше не нужна — иначе одно
     // и то же количество посчитается дважды.
     const pipeline=row.transit+(row.requested||0);
-    /* Раньше запись списывалась по одному факту оформления заявки: раз заявка есть, значит
-       Ozon уже считает коробки сам. Но аналитика остатков обновляется с задержкой — между
-       оформлением и её обновлением в графе «в заявках на поставку» наших коробок ещё нет.
-       В этот промежуток они пропадали совсем: ни в наших цифрах, ни в его, и кластер с
-       оформленной поставкой выглядел пустым. Теперь решают только числа Ozon: как только он
-       показал количество в пути или в заявках, запись списывается правилами ниже. */
+    /* Главный признак — состояние заявки, а не цифры выгрузки. Как только Ozon принял груз
+       (принято на складе поставки, в пути, идёт приёмка, завершена), коробки считает он сам:
+       сначала в «товарах в пути», потом в остатке FBO. Своя запись с этого момента — двойной
+       счёт, из-за которого «в пути» в дашборде росло над цифрой кабинета, а потребность
+       занижалась. Сравнивать тут прирост пути нельзя: в большом кластере всегда что-то едет,
+       «бюджет» не сходится никогда, и запись висела бы вечно.
+       А вот просто оформленная заявка (заполняется, готова к отгрузке) ничего не значит:
+       коробки ещё у нас, и в цифрах Ozon их нет, пока он не покажет их в заявках на поставку. */
+    const handed=[], waiting=[], noOrder=[];
+    sorted.forEach(a=>{
+      if(!a.ozonOrderId) noOrder.push(a);
+      else if(orderHandedOver(a)) handed.push(a);
+      else waiting.push(a);
+    });
+    handed.forEach(a=>{ toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty} (Ozon принял заявку)`); });
+    // Заявка ещё у нас, но Ozon уже показал её в «заявках на поставку» — считать ещё и у себя значит удвоить.
+    let reqPool=row.requested||0;
+    waiting.forEach(a=>{
+      if(reqPool>=a.qty){ reqPool-=a.qty; toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty} (видно в заявках)`); }
+    });
+    // Ниже — записи без заявки в Ozon (отметил «отгружено» руками): по ним судим по цифрам.
+    const sortedNoOrder=noOrder;
+    if(!sortedNoOrder.length)continue;
     if(pipeline===0){
       // Правило нулевого пути придумано для случая, когда весь цикл «в пути → приехало» прошёл
       // между выгрузками. У свежей отправки ноль означает другое: Ozon ещё не оприходовал коробки.
       // Раньше такие отправки объявлялись приехавшими и исчезали из покрытия — и кластер выглядел
       // пустым, хотя поставка туда уже едет.
-      for(const a of sorted){
-        if(!orderHandedOver(a))continue;                               // заявка ещё у нас на руках
+      for(const a of sortedNoOrder){
         const when=Date.parse(a.sentAt||a.orderedAt||'')||a.ts||0;
         if(when&&Date.now()-when<ARRIVE_GRACE_MS)continue;             // свежую не трогаем
         toMark.add(a.idx); markedList.push(`${article.split('-').slice(0,2).join('-')} → ${cluster} +${a.qty}`);
@@ -5200,9 +5232,11 @@ function autoCleanAdjs(newData){
       // Здесь проверка по статусу заявки не нужна: цифры Ozon сами показывают, что он
       // принял отправку в учёт — неважно, как называется её статус.
       let pool=pipeline;
-      for(const a of sorted){
+      for(const a of sortedNoOrder){
         const base=typeof a.baseTransit==='number'?a.baseTransit:0;
-        if(pool-base>=a.qty){ toMark.add(a.idx); pool-=a.qty; }
+        const old=(Date.parse(a.sentAt||a.orderedAt||'')||a.ts||0);
+        // Запись без заявки, которой больше двух недель: дольше коробки не едут никуда.
+        if(pool-base>=a.qty||(old&&Date.now()-old>ARRIVE_GRACE_MS)){ toMark.add(a.idx); pool-=a.qty; }
       }
     }
   }
@@ -6059,7 +6093,7 @@ function render(data){
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.sales.toFixed(1)}${r.fromProfile?'<span style="font-size:9px;color:var(--amber);margin-left:3px" title="историческое">~</span>':''}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт${sugBtnHtml(r)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
-        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}">${Math.round(r.transit+(r.requested||0))}${r.requested?`<span style="display:block;font-size:10px;margin-top:2px;opacity:0.75">${Math.round(r.requested)} в заявках</span>`:''}</td>
+        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}"${r.ours?` title="Ozon показывает в пути ${Math.round(r.ozonTransit)}${r.requested?' и ещё '+Math.round(r.requested)+' в заявках на поставку':''}. Сверху дашборд добавляет свои записи об отгруженных коробках: ${Math.round(r.ours)} шт (${r.oursBoxes} ${pkPlural(r.oursBoxes,'коробка','коробки','коробок')}) — они уйдут, как только Ozon примет заявку."`:''}>${Math.round(r.transit+(r.requested||0))}${(r.requested||r.ours)?`<span style="display:block;font-size:10px;margin-top:2px;opacity:0.75">${[r.requested?Math.round(r.requested)+' в заявках':'',r.ours?Math.round(r.ours)+' наши':''].filter(Boolean).join(' · ')}</span>`:''}</td>
         <td><span class="badge ${dc}">${daysLabel}</span></td>
         <td><button class="ibtn" onclick="showInlineSend('${r.article}','${r.cluster}')" title="записать отправку в этот кластер">+</button></td>
       </tr>`;
