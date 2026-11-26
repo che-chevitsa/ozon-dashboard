@@ -138,6 +138,8 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .ny-card b{display:block;font-size:19px;font-weight:600;margin-top:2px;}
 .ny-cap{font-family:var(--font);font-size:11px;color:var(--muted);}
 .ny-note{font-size:12px;line-height:1.55;color:var(--muted);margin-top:10px;}
+.ny-fold{font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;margin-top:10px;}
+.ny-fold:hover{text-decoration:underline;}
 .ny-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;font-family:var(--font);font-size:11px;color:var(--muted);}
 .ny-cfg input{font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:3px 6px;}
 .main-tabs{display:flex;gap:6px;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0;}
@@ -417,7 +419,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.206</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.207</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4873,6 +4875,8 @@ function nyBlockHtml(){
         <span class="ny-cap">обычный расход ${Math.round(n.dailySales)} шт/день</span></div>
     </div>
     ${top?`<div class="ny-note" style="color:var(--text)">${top}</div>`:''}
+    <div class="ny-fold" onclick="toggleNyNotes()">${nyNotesOpen()?'▾ свернуть объяснение и настройки':'▸ как это посчитано · настроить даты и запас'}</div>
+    ${!nyNotesOpen()?'':`
     <div class="ny-note">Арифметика: на горизонт нужно <b>${n.coverQty.toLocaleString('ru')} шт</b>; уже есть ${n.haveStock.toLocaleString('ru')} на складах${n.haveTransit?' + '+n.haveTransit.toLocaleString('ru')+' в пути у Ozon':''}${n.haveOurs?' + '+n.haveOurs.toLocaleString('ru')+' свои отгруженные':''}; к отгрузке остаётся <b>${n.qty.toLocaleString('ru')} шт</b>. Простое вычитание даст меньше: в кластерах, где товара с избытком, лишнее не идёт в зачёт другим — излишек в одном кластере не закрывает нехватку в другом.</div>
     <div class="ny-note">100% в кольцах покрытия — это и есть цель: столько, чтобы хватило до ${dm(n.res)}, плюс дорога первой январской поставки и запас ${n.buffer} ${pkPlural(n.buffer,'день','дня','дней')}. Горизонт тает каждый день: сегодня это ${n.period} дн продаж плюс дорога, а к ${dm(n.last)} останется ${Math.max(1,n.period-n.daysLeft)} + дорога ≈ <b>${Math.max(1,n.period-n.daysLeft+n.avgLead)} ${pkPlural(Math.max(1,n.period-n.daysLeft+n.avgLead),'день','дня','дней')} запаса</b> — столько и должно лежать на складах в день последней отгрузки (дорога в среднем ${n.avgLead} дн, по кластерам своя).</div>
     <div class="ny-note">Как запас тает: ${dm(n.last)} — ${Math.max(1,n.period-n.daysLeft+n.avgLead)} ${pkPlural(Math.max(1,n.period-n.daysLeft+n.avgLead),'день','дня','дней')} продаж на складах; ${dm(n.res)} (выход с каникул) — ${Math.max(0,n.buffer+n.avgLead)} ${pkPlural(Math.max(0,n.buffer+n.avgLead),'день','дня','дней')}; в день, когда первая январская поставка доедет, — ровно запас, ${n.buffer} ${pkPlural(n.buffer,'день','дня','дней')}. Это низшая точка: в ноль склады не уходят. Хочешь подстраховаться — подними «запас в низшей точке»: каждый лишний день стоит ещё ${Math.round(n.dailySales).toLocaleString('ru')} шт к декабрьской отгрузке, это +${Math.round(n.dailySales/Math.max(1,n.daysLeft))} шт к дневному темпу.</div>
@@ -4883,7 +4887,7 @@ function nyBlockHtml(){
       <label title="Сколько дней продаж должно остаться в самый низкий момент — в день, когда доедет первая январская поставка. На выходе с каникул будет больше: это число плюс дорога.">запас в низшей точке, дней <input type="number" min="0" max="60" style="width:56px" value="${n.buffer}" onchange="setNyCfg('buffer',this.value)"></label>
       <label>каникулы ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kHol}" onchange="setNyCfg('kHol',this.value)"></label>
       <label>предновогодние ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kPre}" onchange="setNyCfg('kPre',this.value)"></label>
-    </div>
+    </div>`}
   </div>`;
 }
 function plannedOffWarnHtml(){
@@ -6076,6 +6080,8 @@ function setNyCfg(k,v){
   localStorage.setItem(LS_NY,JSON.stringify(c)); scheduleSave(); redraw();
 }
 function nyOn(){ return lsGet(LS_NY_ON,false)===true&&nySeason(); }
+function nyNotesOpen(){ return lsGet('ozon_ny_notes',false)===true; }
+function toggleNyNotes(){ localStorage.setItem('ozon_ny_notes',JSON.stringify(!nyNotesOpen())); redraw(); }
 /** Подпись периода: обычный — «28 дней», новогодний — чем он кончается. */
 function periodLabel(){
   if(!nyOn()) return currentPeriod+' дней';
