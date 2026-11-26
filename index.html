@@ -419,7 +419,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.208</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.210</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3455,6 +3455,7 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
         <span style="color:var(--muted)">· ${periodLabel()} · все товары</span></span>
+      ${paceChipsHtml()}
       <label class="tgl" style="margin-left:auto" title="Запланированные и упакованные отправки дашборд считает как «в пути». Выключи, чтобы увидеть только то, что реально на складах Ozon.">
         <input type="checkbox" ${countPlanned()?'checked':''} onchange="toggleCountPlanned()">
         <span class="tgl-track"><span class="tgl-knob"></span></span>
@@ -4826,13 +4827,49 @@ function toggleCountPlanned(){
   try{ localStorage.setItem(LS_COUNT_PLANNED,countPlanned()?'0':'1'); }catch(e){}
   redraw();
 }
+/* Продажи в выгрузке — средние Ozon за 28 дней. В декабре и на распродажах они отстают от
+   жизни: спрос уже другой, а средняя догоняет его неделями. Поэтому дашборд умеет считать
+   темп по своей истории продаж за последние две недели и этой поправкой растягивать все
+   цифры сразу — дефицит, дни остатка, кольца и новогодний план. Поправка одна на всё:
+   считать её по каждому товару отдельно нельзя — история продаж не знает кластеров. */
+const LS_PACE='ozon_sales_pace';
+function paceDays(){
+  const v=Number(lsGet(LS_PACE,14));
+  return v===0?0:(Number.isFinite(v)&&v>=3&&v<=28?v:14);
+}
+function setPaceDays(d){ localStorage.setItem(LS_PACE,JSON.stringify(d)); scheduleSave(); redraw(); }
+function salesPaceRatio(days){
+  if(!salesDaily||!days) return null;
+  const day=d=>new Date(Date.now()-d*86400000).toISOString().slice(0,10);
+  const recent=nySalesAvg(day(days),day(1)), base=nySalesAvg(day(28),day(1));
+  if(!recent||!base||!(base.avg>0)) return null;
+  return {k:Math.round(recent.avg/base.avg*100)/100,avgN:Math.round(recent.avg),avg28:Math.round(base.avg),days};
+}
+function salesPace(){ return salesPaceRatio(paceDays()); }
+function applyPace(data){
+  const p=salesPace();
+  if(!p||p.k===1) return data;
+  return data.map(r=>{
+    const s=r.sales*p.k;
+    return {...r,sales:s,salesRaw:r.sales,days:s>0?r.total/s:99};
+  });
+}
+function paceChipsHtml(){
+  const p=salesPaceRatio(paceDays()||14), on=!!paceDays();
+  const chip=(d,label,title)=>`<span class="chip${(on?paceDays()===d:d===0)?' on':''}" title="${escHtml(title)}" onclick="setPaceDays(${d})">${label}</span>`;
+  return `<span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:11px;color:var(--muted)">темп продаж:
+    ${chip(0,'Ozon · 28 дн','Среднесуточные продажи как в выгрузке Ozon — среднее за 28 дней')}
+    ${chip(14,'последние 14 дней','Пересчитать все цифры по твоей истории продаж за последние две недели')}
+    ${on&&p?`<span style="color:${p.k>=1?'var(--green)':'var(--amber)'}" title="за последние ${p.days} дней ${p.avgN} шт/день против ${p.avg28} шт/день в среднем за 28">×${p.k}</span>`:''}
+    ${on&&!p?`<span style="color:var(--amber)" title="нужна история продаж по дням — загрузи её на вкладке «Продажи»">нет данных</span>`:''}</span>`;
+}
 function redraw(){
   // Новогодний горизонт тает с каждым днём — пересчитываем его перед каждой отрисовкой.
   if(nyOn()) currentPeriod=nyPlan().period;
   const tab=document.getElementById('ny-tab');
   if(tab) tab.style.display=nySeason()?'':'none';
   markPeriodTabs();
-  if(rawData) render(countPlanned()?applyAdjustments(rawData):rawData);
+  if(rawData) render(applyPace(countPlanned()?applyAdjustments(rawData):rawData));
 }
 /* Тумблер «считать запланированное» выключает учёт запланированных и упакованных коробок во
    всей таблице сразу. Снаружи это выглядит как «запланировал пять коробок, а в пути по-прежнему
@@ -4860,9 +4897,12 @@ function nyBlockHtml(){
   const src=n.auto.base
     ? `коэффициенты из твоей истории: каникулы ${n.kHol} и предновогодние дни ${n.kPre} относительно обычных продаж (январь ${n.auto.year})`
     : 'истории за прошлый январь нет — каникулы и предновогодние дни считаю как обычные, поправь коэффициенты руками';
-  const nowSrc=n.now
-    ? `Текущий темп ×${n.kNow}: за последние 7 дней продавалось ${n.now.avg7} шт/день против ${n.now.avg28} шт/день в среднем за 28 дней. Продажи в таблице — средние Ozon за 28 дней, поэтому весь горизонт умножается на эту поправку.`
-    : 'Поправку на текущий темп посчитать не из чего — загрузи продажи по дням на вкладке «Продажи», и дашборд сам увидит, разгоняется спрос или нет.';
+  const pace=salesPace();
+  const nowSrc=pace
+    ? `Темп считается по последним ${pace.days} дням: ${pace.avgN} шт/день против ${pace.avg28} шт/день в среднем за 28 дней у Ozon (×${pace.k}). Поправка уже применена ко всем цифрам дашборда, поэтому в плане она не повторяется.`
+    : (n.now
+      ? `Текущий темп ×${n.kNow}: за последние ${n.now.days} дней продавалось ${n.now.avgN} шт/день против ${n.now.avg28} шт/день в среднем за 28 дней. В таблицах стоят средние Ozon, поэтому новогодний горизонт умножается на эту поправку.`
+      : 'Поправку на текущий темп посчитать не из чего — загрузи продажи по дням на вкладке «Продажи», и дашборд сам увидит, разгоняется спрос или нет.');
   const top=n.list.slice(0,6).map(a=>`<span style="margin-right:14px">${escHtml(artName(a.article))} <b>${a.qty}</b> шт${a.boxes?` · ${a.boxes} ${pkPlural(a.boxes,'коробка','коробки','коробок')}`:''}</span>`).join('');
   return `<div class="ny-block">
     <div class="ny-h">🎄 Новогодний план
@@ -6126,19 +6166,12 @@ function nyAuto(){
    спрос уже разгоняется, а средняя его догоняет неделями. Сравниваем последние семь полных
    дней с этой же средней и получаем поправку на текущий темп. Это единственный коэффициент,
    который считается без прошлогодней истории — а её у большинства нет. */
-function nyNowCoef(){
-  if(!salesDaily) return null;
-  const day=d=>new Date(Date.now()-d*86400000).toISOString().slice(0,10);
-  const last7=nySalesAvg(day(7),day(1));
-  const last28=nySalesAvg(day(28),day(1));
-  if(!last7||!last28||!(last28.avg>0)) return null;
-  return {k:Math.round(last7.avg/last28.avg*100)/100,avg7:Math.round(last7.avg),avg28:Math.round(last28.avg)};
-}
+function nyNowCoef(){ return salesPaceRatio(paceDays()||14); }
 function nyPlan(){
   const cfg=getNyCfg(), auto=nyAuto(), now=nyNowCoef();
   const kHol=cfg.kHol>0?cfg.kHol:(auto.kHol||1);
   const kPre=cfg.kPre>0?cfg.kPre:(auto.kPre||1);
-  const kNow=cfg.kNow>0?cfg.kNow:(now?now.k:1);
+  const kNow=cfg.kNow>0?cfg.kNow:(paceDays()&&salesPace()?1:(now?now.k:1));
   const DAY=86400000;
   const today=new Date(); today.setHours(0,0,0,0);
   const res=new Date(cfg.resume+'T00:00:00');
@@ -6158,7 +6191,8 @@ function nyPlan(){
 /** Что и сколько отгрузить к каникулам: по строкам доступности, с учётом дороги в каждый кластер. */
 function nyNeed(){
   const p=nyPlan();
-  const rows=(countPlanned()?applyAdjustments(rawData||[]):(rawData||[]));
+  // те же строки, что видит таблица: с поправкой на текущий темп, иначе план разойдётся с ней
+  const rows=applyPace(countPlanned()?applyAdjustments(rawData||[]):(rawData||[]));
   const byArt={}; let qty=0, boxes=0, dailySales=0, clusters=new Set();
   let coverQty=0, haveStock=0, haveTransit=0, haveOurs=0, leadW=0;
   rows.forEach(r=>{
