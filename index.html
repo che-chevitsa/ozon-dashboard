@@ -403,7 +403,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.199</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.200</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4809,6 +4809,34 @@ function toggleCountPlanned(){
   redraw();
 }
 function redraw(){ if(rawData) render(countPlanned()?applyAdjustments(rawData):rawData); }
+/* Тумблер «считать запланированное» выключает учёт запланированных и упакованных коробок во
+   всей таблице сразу. Снаружи это выглядит как «запланировал пять коробок, а в пути по-прежнему
+   ноль» — и человек ищет ошибку в планировании. Поэтому, пока тумблер выключен, таблица прямо
+   говорит, сколько она не показывает, и даёт включить обратно одним нажатием. */
+function ownInFlight(article,cluster){
+  let qty=0,boxes=0;
+  getAdjs().forEach(a=>{
+    if(a.article===article&&a.cluster===cluster&&a.arrived!==true&&!adjHidden(a)){ qty+=a.qty; boxes++; }
+  });
+  return {qty,boxes};
+}
+function plannedHiddenTotal(){
+  let qty=0,boxes=0;
+  getAdjs().forEach(a=>{
+    if(a.cluster===LEFTOVER_CLUSTER||a.arrived===true||adjHidden(a))return;
+    qty+=a.qty; boxes++;
+  });
+  return {qty,boxes};
+}
+function plannedOffWarnHtml(){
+  if(countPlanned())return '';
+  const t=plannedHiddenTotal();
+  if(!t.boxes)return '';
+  return `<div class="alert amber" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:6px 0 10px">
+    <span><b>Запланированное не учитывается</b> — тумблер «считать запланированное» выключен.
+      В таблице не видно ${t.boxes} ${pkPlural(t.boxes,'коробку','коробки','коробок')} на ${t.qty} шт: они не попадают ни в «в пути», ни в «нужно отправить».</span>
+    <span style="margin-left:auto"><button class="btn accent" onclick="toggleCountPlanned()">учитывать</button></span></div>`;
+}
 
 function pctClass(p){return p>=60?'green':p>=35?'amber':'red';}
 function dayClass(d){return d<=0?'red':d<7?'red':d<14?'amber':'green';}
@@ -6185,6 +6213,7 @@ function render(data){
     : groupOrder;
 
   html+=`<div class="section-label" style="margin-top:2rem">Топ приоритеты · по дефициту за ${period} дней</div>`;
+  html+=plannedOffWarnHtml();
   html+=filterBar;
   html+='<div class="table-wrap"><table><thead><tr><th>Группа</th><th style="width:118px">Когда</th><th>Товар</th><th>Кластер</th><th>Продаж/день</th><th>Нужно отправить</th><th>На складе</th><th>В пути</th><th>Дней</th><th></th></tr></thead><tbody>';
 
@@ -6227,7 +6256,11 @@ function render(data){
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.sales.toFixed(1)}${r.fromProfile?'<span style="font-size:9px;color:var(--amber);margin-left:3px" title="историческое">~</span>':''}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${r.needed} шт${sugBtnHtml(r)}</td>
         <td class="mono" style="${isTop?'':'opacity:0.7'}">${Math.round(r.fbo)}</td>
-        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}"${r.ours?` title="Ozon показывает в пути ${Math.round(r.ozonTransit)}${r.requested?' и ещё '+Math.round(r.requested)+' в заявках на поставку':''}. Сверху дашборд добавляет свои записи об отгруженных коробках: ${Math.round(r.ours)} шт (${r.oursBoxes} ${pkPlural(r.oursBoxes,'коробка','коробки','коробок')}) — они уйдут, как только Ozon примет заявку."`:''}>${Math.round(r.transit+(r.requested||0))}${(r.requested||r.ours)?`<span style="display:block;font-size:10px;margin-top:2px;opacity:0.75">${[r.requested?Math.round(r.requested)+' в заявках':'',r.ours?Math.round(r.ours)+' наши':''].filter(Boolean).join(' · ')}</span>`:''}</td>
+        <td class="mono" style="color:var(--muted);${isTop?'':'opacity:0.7'}"${r.ours?` title="Ozon показывает в пути ${Math.round(r.ozonTransit)}${r.requested?' и ещё '+Math.round(r.requested)+' в заявках на поставку':''}. Сверху дашборд добавляет свои записи об отгруженных коробках: ${Math.round(r.ours)} шт (${r.oursBoxes} ${pkPlural(r.oursBoxes,'коробка','коробки','коробок')}) — они уйдут, как только Ozon примет заявку."`:''}>${Math.round(r.transit+(r.requested||0))}${(r.requested||r.ours)?`<span style="display:block;font-size:10px;margin-top:2px;opacity:0.75">${[r.requested?Math.round(r.requested)+' в заявках':'',r.ours?Math.round(r.ours)+' наши':''].filter(Boolean).join(' · ')}</span>`:''}${(()=>{
+          if(countPlanned())return '';
+          const o=ownInFlight(r.article,r.cluster);
+          return o.qty?`<span style="display:block;font-size:10px;margin-top:2px;color:var(--amber)" title="Тумблер «считать запланированное» выключен, поэтому эти коробки не попали ни в «в пути», ни в «нужно отправить».">+${o.qty} не учтено</span>`:'';
+        })()}</td>
         <td><span class="badge ${dc}">${daysLabel}</span></td>
         <td><button class="ibtn" onclick="showInlineSend('${r.article}','${r.cluster}')" title="записать отправку в этот кластер">+</button></td>
       </tr>`;
