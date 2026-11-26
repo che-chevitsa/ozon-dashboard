@@ -139,6 +139,12 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .ny-cap{font-family:var(--font);font-size:11px;color:var(--muted);}
 .ny-note{font-size:12px;line-height:1.55;color:var(--muted);margin-top:10px;}
 .ny-fold{font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;margin-top:10px;}
+.ap-row{display:grid;grid-template-columns:minmax(120px,1.4fr) minmax(90px,1.2fr) minmax(120px,1.2fr) 92px 30px;gap:10px;align-items:center;
+  font-size:13px;padding:7px 0;border-bottom:1px solid var(--border);}
+.ap-cl{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ap-days{font-family:var(--mono);font-size:12px;color:var(--green);text-align:right;}
+.ap-hot{color:var(--red);font-size:10px;vertical-align:middle;}
+@media(max-width:640px){.ap-row{grid-template-columns:1fr 1fr 30px}.ap-row>:nth-child(3){grid-column:1/3}.ap-days{text-align:left}}
 .ny-fold:hover{text-decoration:underline;}
 .ny-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;font-family:var(--font);font-size:11px;color:var(--muted);}
 .ny-cfg input{font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:3px 6px;}
@@ -261,6 +267,11 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .chip.on{border-color:var(--accent);background:rgba(91,127,255,0.15);color:var(--accent);}
 .chip.off{opacity:0.55;text-decoration:line-through;}
 .chip.warn{color:var(--amber);}
+/* Строка управления блоком: подпись, чипы и тумблер стоят на одной линии по центру */
+.cov-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.blk-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto;}
+.ctl{display:inline-flex;align-items:center;gap:6px;}
+.ctl-cap{font-family:var(--font);font-size:11px;color:var(--muted);}
 /* Плашка с сообщением: ошибки Ozon, предупреждения. Одна рамка и один отступ везде. */
 .alert{font-size:12px;line-height:1.5;padding:9px 11px;border-radius:8px;margin:10px 0;}
 .alert.red{background:var(--red-bg);color:var(--red);}
@@ -419,7 +430,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.212</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.215</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -441,6 +452,14 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
     </div>
   </header>
 
+  <dialog id="autoplan-dlg" style="width:min(760px,94vw);max-height:90vh;margin:auto;border:1px solid var(--border);border-radius:14px;padding:0;background:var(--bg2);color:var(--text);overflow:hidden">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">
+      <b style="font-size:15px">План на день</b>
+      <span class="ny-cap">сначала то, где склад кончится раньше и потери больше</span>
+      <button onclick="closeAutoPlan()" style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div id="autoplan-body" style="padding:14px 18px 18px;overflow:auto;max-height:calc(90vh - 56px)"></div>
+  </dialog>
   <dialog id="pack-ctor-dlg" style="width:min(900px,94vw);max-height:90vh;margin:auto;border:1px solid var(--border);border-radius:14px;padding:0;background:var(--bg2);color:var(--text);overflow:hidden">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">
       <b style="font-size:15px">Вместимость коробок</b>
@@ -3452,15 +3471,17 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   const clusters=[...new Set(data.map(r=>r.cluster))].filter(c=>c&&c!==LEFTOVER_CLUSTER&&!isClusterHidden(c,hiddenGroups,hiddenClusters));
   const total=clusters.length;
   if(!total)return '';
-  const head=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+  const head=`<div class="cov-head">
       <span style="font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
         <span style="color:var(--muted)">· ${periodLabel()} · все товары</span></span>
-      ${paceChipsHtml()}
-      <label class="tgl" style="margin-left:auto" title="Запланированные и упакованные отправки дашборд считает как «в пути». Выключи, чтобы увидеть только то, что реально на складах Ozon.">
-        <input type="checkbox" ${countPlanned()?'checked':''} onchange="toggleCountPlanned()">
-        <span class="tgl-track"><span class="tgl-knob"></span></span>
-        <span class="tgl-text">считать запланированное</span></label>
-      <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;margin-left:12px" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
+      <span class="blk-ctl">
+        ${paceChipsHtml()}
+        <label class="tgl" title="Запланированные и упакованные отправки дашборд считает как «в пути». Выключи, чтобы увидеть только то, что реально на складах Ozon.">
+          <input type="checkbox" ${countPlanned()?'checked':''} onchange="toggleCountPlanned()">
+          <span class="tgl-track"><span class="tgl-knob"></span></span>
+          <span class="tgl-text">считать запланированное</span></label>
+        <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
+      </span>
     </div>`;
   const stat=art=>{
     const rows=data.filter(r=>r.article===art&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)&&r.cluster!==LEFTOVER_CLUSTER);
@@ -4856,12 +4877,13 @@ function applyPace(data){
 }
 function paceChipsHtml(){
   const p=salesPaceRatio(paceDays()||14), on=!!paceDays();
-  const chip=(d,label,title)=>`<span class="chip${(on?paceDays()===d:d===0)?' on':''}" title="${escHtml(title)}" onclick="setPaceDays(${d})">${label}</span>`;
-  return `<span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--font);font-size:11px;color:var(--muted)">темп продаж:
-    ${chip(0,'Ozon · 28 дн','Среднесуточные продажи как в выгрузке Ozon — среднее за 28 дней')}
-    ${chip(14,'последние 14 дней','Пересчитать все цифры по твоей истории продаж за последние две недели')}
-    ${on&&p?`<span style="color:${p.k>=1?'var(--green)':'var(--amber)'}" title="за последние ${p.days} дней ${p.avgN} шт/день против ${p.avg28} шт/день в среднем за 28">×${p.k}</span>`:''}
-    ${on&&!p?`<span style="color:var(--amber)" title="нужна история продаж по дням — загрузи её на вкладке «Продажи»">нет данных</span>`:''}</span>`;
+  // Те же кнопки-чипы, что в фильтрах приоритетов: один вид на весь дашборд.
+  const chip=(d,label,title)=>`<button class="chip${(on?paceDays()===d:d===0)?' on':''}" title="${escHtml(title)}" onclick="setPaceDays(${d})">${label}</button>`;
+  return `<span class="ctl"><span class="ctl-cap">темп продаж</span>
+    ${chip(0,'28 дней','Среднесуточные продажи как в выгрузке Ozon — среднее за 28 дней')}
+    ${chip(14,'14 дней','Пересчитать все цифры по своей истории продаж за последние две недели')}
+    ${on&&p?`<span class="ctl-cap" style="color:${p.k>=1?'var(--green)':'var(--amber)'}" title="за последние ${p.days} дней ${p.avgN} шт/день против ${p.avg28} шт/день в среднем за 28">×${p.k}</span>`:''}
+    ${on&&!p?`<span class="ctl-cap" style="color:var(--amber)" title="нужна история продаж по дням — загрузи её на вкладке «Продажи»">нет данных</span>`:''}</span>`;
 }
 function redraw(){
   // Новогодний горизонт тает с каждым днём — пересчитываем его перед каждой отрисовкой.
@@ -4890,6 +4912,149 @@ function plannedHiddenTotal(){
   });
   return {qty,boxes};
 }
+/* ===== ПЛАН НА ДЕНЬ =====
+   Вопрос «что паковать сегодня» — это не доля товара в обороте, а срочность: где склад
+   кончится раньше, чем туда доедет следующая поставка, и где за это время будет потеряно
+   больше всего штук. Поэтому вес строки — недопродажи за горизонт: продажи в день × на
+   сколько дней не хватает. Большие продажи и пустые кластеры оказываются впереди сами,
+   без отдельных «весов кластеров».
+   Коробки набираем по одной: после каждой строка пересчитывается и очередь меняется —
+   иначе один огромный кластер забрал бы всю смену. */
+let autoPlanList=null, autoPlanTarget=null;
+function autoPlanTargetBoxes(){
+  const v=Number(lsGet('ozon_autoplan_boxes',0));
+  if(v>0) return v;
+  if(nyOn()&&rawData&&rawData.length){ const n=nyNeed(); if(n.perDayBoxes>0) return Math.max(1,Math.round(n.perDayBoxes)); }
+  return 10;
+}
+function autoPlanBuild(maxBoxes){
+  const hiddenGroups=getHiddenGroups(), hiddenClusters=getHiddenClusters();
+  const src=applyPace(countPlanned()?applyAdjustments(rawData||[]):(rawData||[]));
+  const rows=src.filter(r=>r.sales>0&&r.cluster!==LEFTOVER_CLUSTER
+      &&priorityFilters.articles.has(r.article)
+      &&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters))
+    .map(r=>({article:r.article,cluster:r.cluster,sales:r.sales,total:r.total,
+      lead:(leadDays(r.cluster)||{}).days||LEAD_DEFAULT,opts:null,done:false}));
+  const off=getBoxesOff();
+  rows.forEach(r=>{
+    // Укладки этого товара: обычная версия впереди, внутри — от большой коробки к меньшей.
+    r.opts=packOptionsOf(r.article).filter(o=>TBOX[o.box]&&!off.has(o.box))
+      .sort((a,b)=>(a.variant?1:0)-(b.variant?1:0)||b.qty-a.qty);
+    if(!r.opts.length) r.done=true;
+  });
+  // Товар, которому нужна отправка, но у которого нет ни одной укладки, молча пропадать
+  // не должен: именно он обычно и стоит в нуле.
+  const noRules=rows.filter(r=>r.done&&r.total<r.sales*(currentPeriod+r.lead))
+    .map(r=>({article:r.article,cluster:r.cluster,days:Math.round(r.total/r.sales)}));
+  const out=[];
+  let placed=0;
+  for(let step=0;step<600&&placed<maxBoxes;step++){
+    /* Две очереди. Первая — дыра: если остатка меньше, чем дорога, склад будет стоять
+       пустым, даже если отправить прямо сейчас. Вес — штуки, которые за эту дыру потеряем.
+       Когда дыр не осталось, работает вторая очередь — добор до горизонта, там вперёд
+       выходят большие продажи. Так ноль по «форме 6 см» обгоняет добор Овальных,
+       но между двумя нулями первым идёт тот, где продаж больше. */
+    let best=null, bestScore=0, urgent=false;
+    rows.forEach(r=>{
+      if(r.done)return;
+      const days=r.total/r.sales;
+      const gap=Math.max(0,r.lead-days)*r.sales;
+      if(gap>bestScore){ bestScore=gap; best=r; urgent=true; }
+    });
+    if(!best){
+      rows.forEach(r=>{
+        if(r.done)return;
+        const hor=currentPeriod+r.lead;
+        const score=Math.max(0,hor-r.total/r.sales)*r.sales;
+        if(score>bestScore){ bestScore=score; best=r; }
+      });
+    }
+    if(!best)break;
+    const hor=currentPeriod+best.lead;
+    const need=best.sales*hor-best.total;
+    // Самая большая укладка, которая влезает в нехватку; если не влезает ни одна —
+    // наименьшая, и только если она закрывает хотя бы две трети: иначе уедет лишнее.
+    let opt=best.opts.find(o=>o.qty<=need);
+    if(!opt){ const min=best.opts[best.opts.length-1]; if(need>=min.qty*0.66) opt=min; }
+    if(!opt){ best.done=true; continue; }
+    best.total+=opt.qty; placed++;
+    const hit=out.find(x=>x.article===best.article&&x.cluster===best.cluster&&x.qty===opt.qty&&(x.variant||'')===(opt.variant||''));
+    if(hit) hit.boxes+=1;
+    else out.push({article:best.article,cluster:best.cluster,variant:opt.variant||'',box:opt.box,
+      qty:opt.qty,boxes:1,label:packOptionLabel(getPackRules(),opt.key,opt),urgent,
+      daysBefore:Math.round((best.total-opt.qty)/best.sales),lead:best.lead,sales:best.sales});
+    const last=hit||out[out.length-1];
+    last.daysAfter=Math.round(best.total/best.sales);
+  }
+  out.noRules=noRules;
+  return out;
+}
+function openAutoPlan(){
+  autoPlanTarget=autoPlanTargetBoxes();
+  autoPlanList=autoPlanBuild(autoPlanTarget);
+  renderAutoPlan();
+  const dlg=document.getElementById('autoplan-dlg');
+  if(dlg&&!dlg.open) dlg.showModal();
+}
+function closeAutoPlan(){ const d=document.getElementById('autoplan-dlg'); if(d&&d.open) d.close(); autoPlanList=null; }
+function autoPlanSetTarget(v){
+  const n=Math.max(1,Math.min(200,Math.round(Number(v)||0)));
+  localStorage.setItem('ozon_autoplan_boxes',JSON.stringify(n));
+  autoPlanTarget=n; autoPlanList=autoPlanBuild(n); renderAutoPlan();
+}
+function autoPlanDrop(i){ if(!autoPlanList)return; autoPlanList.splice(i,1); renderAutoPlan(); }
+function renderAutoPlan(){
+  const el=document.getElementById('autoplan-body');
+  if(el) el.innerHTML=autoPlanHtml();
+}
+function autoPlanHtml(){
+  const list=autoPlanList||[];
+  const boxes=list.reduce((s,x)=>s+x.boxes,0), qty=list.reduce((s,x)=>s+x.qty*x.boxes,0);
+  const rows=list.map((x,i)=>`<div class="ap-row">
+      <span>${x.urgent?'<span class="ap-hot" title="остатка меньше, чем дорога: склад будет стоять пустым">●</span> ':''}${escHtml(artName(x.article))}${x.variant&&hasVariants(x.article)?` <span class="ny-cap">${escHtml(variantName(x.article,x.variant))}</span>`:''}</span>
+      <span class="ap-cl">${escHtml(x.cluster)}</span>
+      <span class="ny-cap">${escHtml((TBOX[x.box]||{}).name||'')} · ${x.qty} шт${x.boxes>1?' × '+x.boxes:''}</span>
+      <span class="ap-days" title="дней остатка было → станет">${x.daysBefore} → ${x.daysAfter} дн</span>
+      <button class="adj-del" title="убрать из плана" onclick="autoPlanDrop(${i})">✕</button>
+    </div>`).join('');
+  return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span class="ny-cap">сколько коробок собираем</span>
+      <input class="fld" type="number" min="1" max="200" style="width:70px" value="${autoPlanTarget}" onchange="autoPlanSetTarget(this.value)">
+      <span class="ny-cap">${nyOn()?'по новогоднему плану на день':'обычная норма'}</span>
+    </div>
+    ${rows||'<div class="ny-cap">нечего планировать: по видимым товарам и кластерам нехватки нет</div>'}
+    ${(list.noRules&&list.noRules.length)?`<div class="alert amber" style="margin-top:12px">
+      <b>Не попали в план — нет вместимости:</b> ${list.noRules.slice(0,8).map(x=>escHtml(artName(x.article))+' → '+escHtml(x.cluster)+' ('+x.days+' дн)').join(', ')}${list.noRules.length>8?' и ещё '+(list.noRules.length-8):''}.
+      Дашборд не знает, по сколько штук класть этот товар в коробку — задай укладку, и он встанет в очередь наравне со всеми.
+      <span style="color:var(--accent);cursor:pointer;text-decoration:underline" onclick="closeAutoPlan();togglePackRules('rules')">добавить укладку</span></div>`:''}
+    ${list.length?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <b>${boxes} ${pkPlural(boxes,'коробка','коробки','коробок')} · ${qty.toLocaleString('ru')} шт</b>
+      <button class="btn green" style="margin-left:auto" onclick="autoPlanApply()">запланировать</button>
+      <button class="btn muted" onclick="closeAutoPlan()">отмена</button>
+    </div>`:''}`;
+}
+function autoPlanApply(){
+  const list=autoPlanList||[];
+  if(!list.length)return;
+  const boxes=list.reduce((s,x)=>s+x.boxes,0), qty=list.reduce((s,x)=>s+x.qty*x.boxes,0);
+  if(!confirm('Запланировать '+boxes+' '+pkPlural(boxes,'коробку','коробки','коробок')+' на '+qty+' шт?\n\nОни появятся в плане и в задании упаковщику — как будто ты добавил их руками.'))return;
+  const adjs=getAdjs();
+  let t=Date.now();
+  list.forEach(x=>{
+    for(let i=0;i<x.boxes;i++){
+      const row=(rawData||[]).find(r=>r.article===x.article&&r.cluster===x.cluster);
+      const rec={article:x.article,cluster:x.cluster,qty:x.qty,ts:t++,
+        baseTransit:row?row.transit+(row.requested||0):0};
+      if(x.variant) rec.variant=x.variant;
+      if(planToNext()) rec.later=true;
+      adjs.push(rec);
+    }
+  });
+  saveAdjs(adjs);
+  list.forEach(x=>{ for(let i=0;i<x.boxes;i++) spendBoxes(x.article,x.qty,x.variant); });
+  closeAutoPlan();
+  renderAdjList(); redraw();
+}
 function nyBlockHtml(){
   if(!nyOn()||!rawData||!rawData.length) return '';
   const n=nyNeed();
@@ -4897,17 +5062,14 @@ function nyBlockHtml(){
   const src=n.auto.base
     ? `коэффициенты из твоей истории: каникулы ${n.kHol} и предновогодние дни ${n.kPre} относительно обычных продаж (январь ${n.auto.year})`
     : 'истории за прошлый январь нет — каникулы и предновогодние дни считаю как обычные, поправь коэффициенты руками';
-  const pace=salesPace();
+  const pace=salesPace(), paceHint=salesPaceRatio(14);
   const nowSrc=pace
-    ? `Темп считается по последним ${pace.days} дням: ${pace.avgN} шт/день против ${pace.avg28} шт/день в среднем за 28 дней у Ozon (×${pace.k}). Поправка уже применена ко всем цифрам дашборда, поэтому в плане она не повторяется.`
-    : (n.now
-      ? `Текущий темп ×${n.kNow}: за последние ${n.now.days} дней продавалось ${n.now.avgN} шт/день против ${n.now.avg28} шт/день в среднем за 28 дней. В таблицах стоят средние Ozon, поэтому новогодний горизонт умножается на эту поправку.`
-      : 'Поправку на текущий темп посчитать не из чего — загрузи продажи по дням на вкладке «Продажи», и дашборд сам увидит, разгоняется спрос или нет.');
-  /* Сумма по товарам за весь декабрь мало что говорит: работают по дневной норме.
-     Поэтому показываем, сколько чего паковать в день, — это и есть задание на смену. */
-  const d1=Math.max(1,n.daysLeft);
-  const num=v=>v>=10?Math.round(v):Math.round(v*10)/10;
-  const top=n.list.slice(0,6).map(a=>`<span style="margin-right:14px">${escHtml(artName(a.article))} <b>${num(a.qty/d1)}</b> шт${a.boxes?` · ${num(a.boxes/d1)} ${pkPlural(Math.round(a.boxes/d1),'коробка','коробки','коробок')}`:''}</span>`).join('');
+    ? `Продажи взяты по последним ${pace.days} дням: ${pace.avgN} шт/день против ${pace.avg28} шт/день в среднем за 28 дней у Ozon (×${pace.k}). Переключатель «темп продаж» стоит в блоке «Покрытие потребности».`
+    : (paceHint&&paceHint.k!==1
+      ? `Сейчас считаю по средней Ozon за 28 дней — ${paceHint.avg28} шт/день. За последние 14 дней продавалось ${paceHint.avgN} шт/день (×${paceHint.k}): если это и есть твой декабрьский темп, переключи «темп продаж» на 14 дней в блоке «Покрытие потребности» — план пересчитается.`
+      : 'Продажи — средние Ozon за 28 дней. Чтобы считать по свежим данным, загрузи продажи по дням на вкладке «Продажи» и переключи «темп продаж» на 14 дней.');
+  /* Разбивки по товарам тут нет намеренно: что паковать первым, решает не доля в общем
+     объёме, а срочность по кластерам — это считает «собрать план на день». */
   return `<div class="ny-block">
     <div class="ny-h">🎄 Новогодний план</div>
     <div class="ny-grid">
@@ -4920,14 +5082,13 @@ function nyBlockHtml(){
       <div class="ny-card" title="Во сколько раз в день надо отгружать больше, чем продаётся. 1.0 — просто довозить проданное, всё сверх идёт в запас на каникулы."><span class="ny-cap">темп</span><b>${n.ratio?'×'+n.ratio:'—'}</b>
         <span class="ny-cap">расход ${Math.round(n.dailySales)} шт/день${(()=>{const p=salesPace();return p?' · по '+p.days+' дням':' · средняя Ozon за 28 дн';})()}</span></div>
     </div>
-    ${top?`<div class="ny-note" style="color:var(--text)"><span class="ny-cap">в день, по товарам:</span> ${top}</div>`:''}
+
     <div class="ny-cfg">
       <label>последняя отгрузка <input type="date" value="${escHtml(n.cfg.lastShip)}" onchange="setNyCfg('lastShip',this.value)"></label>
       <label>выходим <input type="date" value="${escHtml(n.cfg.resume)}" onchange="setNyCfg('resume',this.value)"></label>
       <label title="Сколько дней продаж должно остаться в самый низкий момент — в день, когда доедет первая январская поставка. На выходе с каникул будет больше: это число плюс дорога.">запас в низшей точке, дней <input type="number" min="0" max="60" style="width:56px" value="${n.buffer}" onchange="setNyCfg('buffer',this.value)"></label>
       <label>каникулы ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kHol}" onchange="setNyCfg('kHol',this.value)"></label>
       <label>предновогодние ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kPre}" onchange="setNyCfg('kPre',this.value)"></label>
-      <label title="Поправка на то, что продажи уже идут быстрее средней за 28 дней. Считается по последним дням; поставь своё число, если ждёшь другого.">текущий темп ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kNow}" onchange="setNyCfg('kNow',this.value)"></label>
     </div>
     <div class="ny-fold" onclick="toggleNyNotes()">${nyNotesOpen()?'▾ свернуть объяснение':'▸ как это посчитано'}</div>
     ${!nyNotesOpen()?'':`
@@ -6175,7 +6336,9 @@ function nyPlan(){
   const cfg=getNyCfg(), auto=nyAuto(), now=nyNowCoef();
   const kHol=cfg.kHol>0?cfg.kHol:(auto.kHol||1);
   const kPre=cfg.kPre>0?cfg.kPre:(auto.kPre||1);
-  const kNow=cfg.kNow>0?cfg.kNow:(paceDays()&&salesPace()?1:(now?now.k:1));
+  // Темпом продаж управляет один переключатель в «Покрытии потребности» — здесь своей
+  // поправки нет, иначе одно и то же задавалось бы в двух местах и расходилось.
+  const kNow=1;
   const DAY=86400000;
   const today=new Date(); today.setHours(0,0,0,0);
   const res=new Date(cfg.resume+'T00:00:00');
@@ -6452,7 +6615,9 @@ function render(data){
     ? [...groupOrder].sort((a,b)=>slackOf(a)-slackOf(b))
     : groupOrder;
 
-  html+=`<div class="section-label" style="margin-top:2rem">Топ приоритеты · ${nyOn()?'по нехватке к каникулам':'по дефициту за '+period+' дней'}</div>`;
+  html+=`<div class="section-label" style="margin-top:2rem;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <span>Топ приоритеты · ${nyOn()?'по нехватке к каникулам':'по дефициту за '+period+' дней'}</span>
+    <span style="margin-left:auto;text-transform:none;letter-spacing:0"><button class="btn accent" onclick="openAutoPlan()" title="Собрать коробки на смену по срочности: где склад кончится раньше всего и где теряем больше штук">📦 собрать план на день</button></span></div>`;
   html+=plannedOffWarnHtml();
   html+=filterBar;
   html+='<div class="table-wrap"><table><thead><tr><th>Группа</th><th style="width:118px">Когда</th><th>Товар</th><th>Кластер</th><th>Продаж/день</th><th>Нужно отправить</th><th>На складе</th><th>В пути</th><th>Дней</th><th></th></tr></thead><tbody>';
