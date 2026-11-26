@@ -419,7 +419,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.210</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.211</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4914,8 +4914,8 @@ function nyBlockHtml(){
         <span class="ny-cap">до ${dm(n.last)} включительно</span></div>
       <div class="ny-card"><span class="ny-cap">в день</span><b>${n.perDay.toLocaleString('ru')} шт</b>
         <span class="ny-cap">≈ ${n.perDayBoxes} ${pkPlural(Math.round(n.perDayBoxes),'коробка','коробки','коробок')} в день</span></div>
-      <div class="ny-card"><span class="ny-cap">темп</span><b>${n.ratio?'×'+n.ratio:'—'}</b>
-        <span class="ny-cap">обычный расход ${Math.round(n.dailySales)} шт/день</span></div>
+      <div class="ny-card" title="Во сколько раз в день надо отгружать больше, чем продаётся. 1.0 — просто довозить проданное, всё сверх идёт в запас на каникулы."><span class="ny-cap">темп</span><b>${n.ratio?'×'+n.ratio:'—'}</b>
+        <span class="ny-cap">расход ${Math.round(n.dailySales)} шт/день${(()=>{const p=salesPace();return p?' · по '+p.days+' дням':' · средняя Ozon за 28 дн';})()}</span></div>
     </div>
     ${top?`<div class="ny-note" style="color:var(--text)">${top}</div>`:''}
     <div class="ny-fold" onclick="toggleNyNotes()">${nyNotesOpen()?'▾ свернуть объяснение и настройки':'▸ как это посчитано · настроить даты и запас'}</div>
