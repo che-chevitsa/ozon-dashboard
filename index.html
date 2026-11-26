@@ -430,7 +430,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.216</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.217</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4938,9 +4938,14 @@ function autoPlanTargetUnits(){
 function autoPlanBuild(targetUnits){
   const hiddenGroups=getHiddenGroups(), hiddenClusters=getHiddenClusters();
   const src=applyPace(countPlanned()?applyAdjustments(rawData||[]):(rawData||[]));
-  const rows=src.filter(r=>r.sales>0&&r.cluster!==LEFTOVER_CLUSTER
-      &&priorityFilters.articles.has(r.article)
-      &&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters))
+  const why={артикул:0,кластер:0,беззпродаж:0};
+  const rows=src.filter(r=>{
+      if(r.cluster===LEFTOVER_CLUSTER)return false;
+      if(!(r.sales>0)){ why.беззпродаж++; return false; }
+      if(!priorityFilters.articles.has(r.article)){ why.артикул++; return false; }
+      if(isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)){ why.кластер++; return false; }
+      return true;
+    })
     .map(r=>({article:r.article,cluster:r.cluster,sales:r.sales,total:r.total,
       lead:(leadDays(r.cluster)||{}).days||LEAD_DEFAULT,opts:null,done:false}));
   const off=getBoxesOff();
@@ -4994,6 +4999,10 @@ function autoPlanBuild(targetUnits){
     last.daysAfter=Math.round(best.total/best.sales);
   }
   out.noRules=noRules;
+  out.why=why;
+  out.covered=rows.filter(r=>!r.done&&r.total/r.sales>=currentPeriod+r.lead).length
+    +rows.filter(r=>r.done&&r.opts.length).length;
+  out.rows=rows.length;
   return out;
 }
 function openAutoPlan(){
@@ -5036,7 +5045,15 @@ function autoPlanHtml(){
         :(nyOn()?'дневная норма новогоднего плана':'дневной расход — чтобы не проседать')}
         ${boxes?` · набралось ${boxes} ${pkPlural(boxes,'коробка','коробки','коробок')}`:''}</span>
     </div>
-    ${rows||'<div class="ny-cap">нечего планировать: по видимым товарам и кластерам нехватки нет</div>'}
+    ${rows||(()=>{
+      const w=(list.why)||{};
+      const parts=[];
+      if(w.артикул) parts.push(`${w.артикул} ${pkPlural(w.артикул,'строка скрыта','строки скрыты','строк скрыто')} галочками товаров`);
+      if(w.кластер) parts.push(`${w.кластер} ${pkPlural(w.кластер,'строка','строки','строк')} в скрытых кластерах`);
+      if(list.rows&&list.covered) parts.push(`${list.covered} ${pkPlural(list.covered,'строке','строкам','строкам')} хватает до горизонта`);
+      return `<div class="ny-cap">Нечего планировать.${parts.length?' Что осталось за бортом: '+parts.join(', ')+'.':''}
+        ${w.артикул?' Галочки товаров — в блоке «Покрытие потребности».':''}</div>`;
+    })()}
     ${(list.noRules&&list.noRules.length)?`<div class="alert amber" style="margin-top:12px">
       <b>Не попали в план — нет вместимости:</b> ${list.noRules.slice(0,8).map(x=>escHtml(artName(x.article))+' → '+escHtml(x.cluster)+' ('+x.days+' дн)').join(', ')}${list.noRules.length>8?' и ещё '+(list.noRules.length-8):''}.
       Дашборд не знает, по сколько штук класть этот товар в коробку — задай укладку, и он встанет в очередь наравне со всеми.
