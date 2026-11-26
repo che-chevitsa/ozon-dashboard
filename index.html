@@ -430,7 +430,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.215</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.216</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4921,13 +4921,21 @@ function plannedHiddenTotal(){
    Коробки набираем по одной: после каждой строка пересчитывается и очередь меняется —
    иначе один огромный кластер забрал бы всю смену. */
 let autoPlanList=null, autoPlanTarget=null;
-function autoPlanTargetBoxes(){
-  const v=Number(lsGet('ozon_autoplan_boxes',0));
+/* Цель смены — в штуках, а не в коробках: коробки у разных товаров разные (24, 68, 105),
+   и «девять коробок» может значить и 600 штук, и полторы тысячи. По умолчанию берём
+   дневную норму новогоднего плана, а вне его — дневной расход: столько, сколько продаётся,
+   чтобы хотя бы не проседать. */
+function autoPlanTargetUnits(){
+  const v=Number(lsGet('ozon_autoplan_units',0));
   if(v>0) return v;
-  if(nyOn()&&rawData&&rawData.length){ const n=nyNeed(); if(n.perDayBoxes>0) return Math.max(1,Math.round(n.perDayBoxes)); }
-  return 10;
+  if(!rawData||!rawData.length) return 500;
+  if(nyOn()){ const n=nyNeed(); if(n.perDay>0) return n.perDay; }
+  const src=applyPace(rawData);
+  const daily=src.filter(r=>r.sales>0&&r.cluster!==LEFTOVER_CLUSTER&&priorityFilters.articles.has(r.article))
+    .reduce((s,r)=>s+r.sales,0);
+  return Math.max(50,Math.round(daily));
 }
-function autoPlanBuild(maxBoxes){
+function autoPlanBuild(targetUnits){
   const hiddenGroups=getHiddenGroups(), hiddenClusters=getHiddenClusters();
   const src=applyPace(countPlanned()?applyAdjustments(rawData||[]):(rawData||[]));
   const rows=src.filter(r=>r.sales>0&&r.cluster!==LEFTOVER_CLUSTER
@@ -4947,28 +4955,26 @@ function autoPlanBuild(maxBoxes){
   const noRules=rows.filter(r=>r.done&&r.total<r.sales*(currentPeriod+r.lead))
     .map(r=>({article:r.article,cluster:r.cluster,days:Math.round(r.total/r.sales)}));
   const out=[];
-  let placed=0;
-  for(let step=0;step<600&&placed<maxBoxes;step++){
-    /* Две очереди. Первая — дыра: если остатка меньше, чем дорога, склад будет стоять
-       пустым, даже если отправить прямо сейчас. Вес — штуки, которые за эту дыру потеряем.
-       Когда дыр не осталось, работает вторая очередь — добор до горизонта, там вперёд
-       выходят большие продажи. Так ноль по «форме 6 см» обгоняет добор Овальных,
-       но между двумя нулями первым идёт тот, где продаж больше. */
-    let best=null, bestScore=0, urgent=false;
+  let units=0, placed=0;
+  for(let step=0;step<800&&units<targetUnits;step++){
+    /* Очередь — по запасу дней до «поздно»: сколько дней остатка минус дорога. Отрицательный
+       запас значит, что склад кончится раньше, чем туда доедет отправленное сегодня. Берём
+       самый малый запас, при равном — где продажи больше: так ноль с девятью продажами в день
+       обгоняет ноль с одной, а между «ноль» и «десять дней» первым идёт ноль, каким бы крупным
+       ни был второй кластер. Сравниваем запас целыми днями, иначе соседние строки с 4.1 и 4.3
+       дня выглядели бы разными и очередь дробилась.
+       Раньше здесь были «недопродажи за горизонт» — крупный кластер забирал всю смену,
+       потому что его дефицит в штуках всегда больше. */
+    let best=null, bestSlack=0, bestSales=0, urgent=false;
     rows.forEach(r=>{
       if(r.done)return;
-      const days=r.total/r.sales;
-      const gap=Math.max(0,r.lead-days)*r.sales;
-      if(gap>bestScore){ bestScore=gap; best=r; urgent=true; }
+      const days=r.total/r.sales, hor=currentPeriod+r.lead;
+      if(days>=hor){ r.done=true; return; }            // до горизонта уже хватает
+      const slack=Math.round(days-r.lead);
+      if(!best||slack<bestSlack||(slack===bestSlack&&r.sales>bestSales)){
+        best=r; bestSlack=slack; bestSales=r.sales; urgent=slack<0;
+      }
     });
-    if(!best){
-      rows.forEach(r=>{
-        if(r.done)return;
-        const hor=currentPeriod+r.lead;
-        const score=Math.max(0,hor-r.total/r.sales)*r.sales;
-        if(score>bestScore){ bestScore=score; best=r; }
-      });
-    }
     if(!best)break;
     const hor=currentPeriod+best.lead;
     const need=best.sales*hor-best.total;
@@ -4977,12 +4983,13 @@ function autoPlanBuild(maxBoxes){
     let opt=best.opts.find(o=>o.qty<=need);
     if(!opt){ const min=best.opts[best.opts.length-1]; if(need>=min.qty*0.66) opt=min; }
     if(!opt){ best.done=true; continue; }
-    best.total+=opt.qty; placed++;
+    best.total+=opt.qty; placed++; units+=opt.qty;
     const hit=out.find(x=>x.article===best.article&&x.cluster===best.cluster&&x.qty===opt.qty&&(x.variant||'')===(opt.variant||''));
     if(hit) hit.boxes+=1;
     else out.push({article:best.article,cluster:best.cluster,variant:opt.variant||'',box:opt.box,
       qty:opt.qty,boxes:1,label:packOptionLabel(getPackRules(),opt.key,opt),urgent,
-      daysBefore:Math.round((best.total-opt.qty)/best.sales),lead:best.lead,sales:best.sales});
+      daysBefore:Math.round((best.total-opt.qty)/best.sales),lead:best.lead,sales:best.sales,
+      slackBefore:Math.round((best.total-opt.qty)/best.sales-best.lead)});
     const last=hit||out[out.length-1];
     last.daysAfter=Math.round(best.total/best.sales);
   }
@@ -4990,7 +4997,7 @@ function autoPlanBuild(maxBoxes){
   return out;
 }
 function openAutoPlan(){
-  autoPlanTarget=autoPlanTargetBoxes();
+  autoPlanTarget=autoPlanTargetUnits();
   autoPlanList=autoPlanBuild(autoPlanTarget);
   renderAutoPlan();
   const dlg=document.getElementById('autoplan-dlg');
@@ -4998,9 +5005,13 @@ function openAutoPlan(){
 }
 function closeAutoPlan(){ const d=document.getElementById('autoplan-dlg'); if(d&&d.open) d.close(); autoPlanList=null; }
 function autoPlanSetTarget(v){
-  const n=Math.max(1,Math.min(200,Math.round(Number(v)||0)));
-  localStorage.setItem('ozon_autoplan_boxes',JSON.stringify(n));
+  const n=Math.max(10,Math.min(100000,Math.round(Number(v)||0)));
+  localStorage.setItem('ozon_autoplan_units',JSON.stringify(n));
   autoPlanTarget=n; autoPlanList=autoPlanBuild(n); renderAutoPlan();
+}
+function autoPlanResetTarget(){
+  localStorage.removeItem('ozon_autoplan_units');
+  autoPlanTarget=autoPlanTargetUnits(); autoPlanList=autoPlanBuild(autoPlanTarget); renderAutoPlan();
 }
 function autoPlanDrop(i){ if(!autoPlanList)return; autoPlanList.splice(i,1); renderAutoPlan(); }
 function renderAutoPlan(){
@@ -5014,13 +5025,16 @@ function autoPlanHtml(){
       <span>${x.urgent?'<span class="ap-hot" title="остатка меньше, чем дорога: склад будет стоять пустым">●</span> ':''}${escHtml(artName(x.article))}${x.variant&&hasVariants(x.article)?` <span class="ny-cap">${escHtml(variantName(x.article,x.variant))}</span>`:''}</span>
       <span class="ap-cl">${escHtml(x.cluster)}</span>
       <span class="ny-cap">${escHtml((TBOX[x.box]||{}).name||'')} · ${x.qty} шт${x.boxes>1?' × '+x.boxes:''}</span>
-      <span class="ap-days" title="дней остатка было → станет">${x.daysBefore} → ${x.daysAfter} дн</span>
+      <span class="ap-days" title="дней остатка было → станет; дорога ${x.lead} дн">${x.daysBefore} → ${x.daysAfter} дн</span>
       <button class="adj-del" title="убрать из плана" onclick="autoPlanDrop(${i})">✕</button>
     </div>`).join('');
+  const custom=Number(lsGet('ozon_autoplan_units',0))>0;
   return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-      <span class="ny-cap">сколько коробок собираем</span>
-      <input class="fld" type="number" min="1" max="200" style="width:70px" value="${autoPlanTarget}" onchange="autoPlanSetTarget(this.value)">
-      <span class="ny-cap">${nyOn()?'по новогоднему плану на день':'обычная норма'}</span>
+      <span class="ny-cap">сколько штук пакуем сегодня</span>
+      <input class="fld" type="number" min="10" step="10" style="width:84px" value="${autoPlanTarget}" onchange="autoPlanSetTarget(this.value)">
+      <span class="ny-cap">${custom?`своя норма · <span style="color:var(--accent);cursor:pointer" onclick="autoPlanResetTarget()">вернуть расчётную</span>`
+        :(nyOn()?'дневная норма новогоднего плана':'дневной расход — чтобы не проседать')}
+        ${boxes?` · набралось ${boxes} ${pkPlural(boxes,'коробка','коробки','коробок')}`:''}</span>
     </div>
     ${rows||'<div class="ny-cap">нечего планировать: по видимым товарам и кластерам нехватки нет</div>'}
     ${(list.noRules&&list.noRules.length)?`<div class="alert amber" style="margin-top:12px">
