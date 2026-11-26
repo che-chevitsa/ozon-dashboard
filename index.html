@@ -126,6 +126,20 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 .lf-tile.on .lf-qty{color:var(--green);}
 .period-tab{font-family:var(--font);font-size:11px;color:var(--muted);background:none;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;}
 .period-tab.active{background:var(--bg2);color:var(--text);border:1px solid var(--border);}
+/* Новогодняя кнопка: ёлочно-зелёная, в выбранном виде — ёлка с огоньками */
+.period-tab.ny{color:#1f9254;font-weight:600;}
+.period-tab.ny.active{background:linear-gradient(135deg,#1f9254 0%,#2fa968 45%,#d6453d 100%);color:#fff;border:none;
+  box-shadow:0 1px 8px rgba(214,69,61,0.35);}
+.ny-block{background:linear-gradient(135deg,rgba(31,146,84,0.10),rgba(214,69,61,0.10));
+  border:1px solid rgba(31,146,84,0.35);border-radius:12px;padding:14px 16px;margin:0 0 14px;}
+.ny-h{font-family:var(--font);font-size:13px;font-weight:600;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.ny-grid{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+.ny-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 14px;min-width:140px;}
+.ny-card b{display:block;font-size:19px;font-weight:600;margin-top:2px;}
+.ny-cap{font-family:var(--font);font-size:11px;color:var(--muted);}
+.ny-note{font-size:12px;line-height:1.55;color:var(--muted);margin-top:10px;}
+.ny-cfg{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;font-family:var(--font);font-size:11px;color:var(--muted);}
+.ny-cfg input{font-family:var(--font);font-size:12px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:3px 6px;}
 .main-tabs{display:flex;gap:6px;margin-bottom:1rem;border-bottom:1px solid var(--border);padding-bottom:0;}
 .main-tab{font-family:var(--font);font-size:13px;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;padding:10px 18px;cursor:pointer;margin-bottom:-1px;}
 .main-tab.active{color:var(--text);border-bottom:2px solid var(--accent);}
@@ -403,12 +417,13 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.200</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.201</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
         <button class="period-tab" onclick="setPeriod(14)">14 дн</button>
         <button class="period-tab active" onclick="setPeriod(28)">28 дн</button>
+        <button class="period-tab ny" id="ny-tab" onclick="setNyPeriod()" title="Горизонт до выхода с январских каникул: сколько нужно отгрузить в декабре">🎄 Новый год</button>
       </div>
       <button class="reset-btn" id="stocks-btn" onclick="ozonLoadStocks()" title="Взять остатки и продажи прямо из Ozon вместо выгрузки файла">⟳ обновить</button>
       <button class="reset-btn" onclick="resetDashboard()" title="Загрузить свежую выгрузку: Аналитика → Планирование поставок → Доступность товаров">↑ файл</button>
@@ -2914,6 +2929,7 @@ function applyStateFile(rec){
   if(Array.isArray(rec.boxTypes)&&rec.boxTypes.length) put(LS_BOX_TYPES,rec.boxTypes);
   if(rec.leadTimes&&typeof rec.leadTimes==='object') put(LS_LEAD,rec.leadTimes);
   if(rec.customArticles&&typeof rec.customArticles==='object'){ put(LS_CUSTOM_ARTS,rec.customArticles); loadCustomArts(); }
+  if(rec.nyPlan&&typeof rec.nyPlan==='object') put(LS_NY,rec.nyPlan);
   if(Array.isArray(rec.allArticles)) addKnownArticles(rec.allArticles);
   // Остатки: в файле они лежат в сжатом виде — разворачиваем так же, как при чтении с Диска.
   let raw=null;
@@ -4605,6 +4621,7 @@ async function saveToCloud(){
     record.hiddenArticles=[...getHiddenArticles()];
     record.allArticles=ALL_ARTICLES;
     record.customArticles=CUSTOM_ARTS; // свои товары: названия и пометки удалённых
+    record.nyPlan=getNyCfg();            // настройки новогоднего плана
     record.leadTimes=getLeadData();
     record.boxTypes=keepCloudLater(BOX_TYPES,DEFAULT_BOX_TYPES,existing.boxTypes); // пользовательские типы коробок
     // Настройки по умолчанию не должны затирать облако: после чистки хранилища браузер
@@ -4696,6 +4713,7 @@ async function loadFromCloud(){
       if(rec.leadTimes&&typeof rec.leadTimes==='object') localStorage.setItem(LS_LEAD,JSON.stringify(rec.leadTimes));
       if(Array.isArray(rec.hiddenArticles)) localStorage.setItem(LS_HIDDEN_ARTICLES,JSON.stringify(rec.hiddenArticles));
       if(rec.customArticles&&typeof rec.customArticles==='object'){ localStorage.setItem(LS_CUSTOM_ARTS,JSON.stringify(rec.customArticles)); loadCustomArts(); }
+      if(rec.nyPlan&&typeof rec.nyPlan==='object') localStorage.setItem(LS_NY,JSON.stringify(rec.nyPlan));
       if(rec.packRules) localStorage.setItem(LS_PACK_RULES,JSON.stringify(rec.packRules));
       if(rec.packVariants&&typeof rec.packVariants==='object') localStorage.setItem(LS_VARIANTS,JSON.stringify(rec.packVariants));
       if(rec.packLabels) localStorage.setItem(LS_PACK_LABELS,JSON.stringify(rec.packLabels));
@@ -4733,9 +4751,7 @@ async function loadFromCloud(){
         if(rec.period)currentPeriod=rec.period;
         populateClusterSelect(rawData);
         redraw();
-        document.querySelectorAll('.period-tab').forEach(btn=>{
-          btn.classList.toggle('active',btn.textContent.trim()===currentPeriod+' дн');
-        });
+        markPeriodTabs();
         persistLocal(); // синхронизируем локал с тем, что пришло из облака
       }else{
         cloudDiag(diag+' | ⚠ локальные поставки новее облака — оставлены локальные');
@@ -4808,7 +4824,14 @@ function toggleCountPlanned(){
   try{ localStorage.setItem(LS_COUNT_PLANNED,countPlanned()?'0':'1'); }catch(e){}
   redraw();
 }
-function redraw(){ if(rawData) render(countPlanned()?applyAdjustments(rawData):rawData); }
+function redraw(){
+  // Новогодний горизонт тает с каждым днём — пересчитываем его перед каждой отрисовкой.
+  if(nyOn()) currentPeriod=nyPlan().period;
+  const tab=document.getElementById('ny-tab');
+  if(tab) tab.style.display=nySeason()?'':'none';
+  markPeriodTabs();
+  if(rawData) render(countPlanned()?applyAdjustments(rawData):rawData);
+}
 /* Тумблер «считать запланированное» выключает учёт запланированных и упакованных коробок во
    всей таблице сразу. Снаружи это выглядит как «запланировал пять коробок, а в пути по-прежнему
    ноль» — и человек ищет ошибку в планировании. Поэтому, пока тумблер выключен, таблица прямо
@@ -4827,6 +4850,38 @@ function plannedHiddenTotal(){
     qty+=a.qty; boxes++;
   });
   return {qty,boxes};
+}
+function nyBlockHtml(){
+  if(!nyOn()||!rawData||!rawData.length) return '';
+  const n=nyNeed();
+  const dm=d=>String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0');
+  const src=n.auto.base
+    ? `коэффициенты из твоей истории: каникулы ${n.kHol} и предновогодние дни ${n.kPre} относительно обычных продаж (январь ${n.auto.year})`
+    : 'истории за прошлый январь нет — каникулы считаю как обычные дни, поправь коэффициент руками';
+  const top=n.list.slice(0,6).map(a=>`<span style="margin-right:14px">${escHtml(artName(a.article))} <b>${a.qty}</b> шт${a.boxes?` · ${a.boxes} ${pkPlural(a.boxes,'коробка','коробки','коробок')}`:''}</span>`).join('');
+  return `<div class="ny-block">
+    <div class="ny-h">🎄 Новогодний план
+      <span class="ny-cap">последняя отгрузка ${dm(n.last)} · выходим ${dm(n.res)} · горизонт ${n.period} дн продаж + дорога</span></div>
+    <div class="ny-grid">
+      <div class="ny-card"><span class="ny-cap">отгрузить до ${dm(n.last)}</span><b>${n.qty.toLocaleString('ru')} шт</b>
+        <span class="ny-cap">${n.boxes} ${pkPlural(n.boxes,'коробка','коробки','коробок')} · ${n.clusters} ${pkPlural(n.clusters,'кластер','кластера','кластеров')}</span></div>
+      <div class="ny-card"><span class="ny-cap">осталось дней</span><b>${n.daysLeft}</b>
+        <span class="ny-cap">до ${dm(n.last)} включительно</span></div>
+      <div class="ny-card"><span class="ny-cap">в день</span><b>${n.perDay.toLocaleString('ru')} шт</b>
+        <span class="ny-cap">≈ ${n.perDayBoxes} ${pkPlural(Math.round(n.perDayBoxes),'коробка','коробки','коробок')} в день</span></div>
+      <div class="ny-card"><span class="ny-cap">темп</span><b>${n.ratio?'×'+n.ratio:'—'}</b>
+        <span class="ny-cap">обычный расход ${Math.round(n.dailySales)} шт/день</span></div>
+    </div>
+    ${top?`<div class="ny-note" style="color:var(--text)">${top}</div>`:''}
+    <div class="ny-note">Считаю так: до ${dm(n.res)} склады живут только тем, что уедет до ${dm(n.last)}. Это ${n.plain} обычных ${pkPlural(n.plain,'день','дня','дней')}, ${n.pre} предновогодних ×${n.kPre} и ${n.hol} ${pkPlural(n.hol,'день','дня','дней')} каникул ×${n.kHol}, плюс запас ${n.buffer} ${pkPlural(n.buffer,'день','дня','дней')} на выходе — чтобы склад не опустел, пока первая январская поставка едет (её дорогу дашборд добавляет по каждому кластеру свою). ${src}.</div>
+    <div class="ny-cfg">
+      <label>последняя отгрузка <input type="date" value="${escHtml(n.cfg.lastShip)}" onchange="setNyCfg('lastShip',this.value)"></label>
+      <label>выходим <input type="date" value="${escHtml(n.cfg.resume)}" onchange="setNyCfg('resume',this.value)"></label>
+      <label>запас на выходе, дней <input type="number" min="0" max="60" style="width:56px" value="${n.buffer}" onchange="setNyCfg('buffer',this.value)"></label>
+      <label>каникулы ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kHol}" onchange="setNyCfg('kHol',this.value)"></label>
+      <label>предновогодние ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kPre}" onchange="setNyCfg('kPre',this.value)"></label>
+    </div>
+  </div>`;
 }
 function plannedOffWarnHtml(){
   if(countPlanned())return '';
@@ -5977,13 +6032,119 @@ function processRows(rows,useProfile=true){
 }
 
 // RENDER
-function setPeriod(days){
+function setPeriod(days,ny){
   currentPeriod=days;
-  document.querySelectorAll('.period-tab').forEach(btn=>{
-    btn.classList.toggle('active',btn.textContent.trim()===days+' дн');
-  });
+  if(!ny) localStorage.setItem(LS_NY_ON,'false');
   localStorage.setItem(LS_PERIOD,String(days)); // запоминаем выбор периода
+  markPeriodTabs();
   redraw();
+}
+function markPeriodTabs(){
+  document.querySelectorAll('.period-tab').forEach(btn=>{
+    btn.classList.toggle('active',btn.classList.contains('ny')?nyOn():(!nyOn()&&btn.textContent.trim()===currentPeriod+' дн'));
+  });
+}
+
+/* ===== НОВОГОДНИЙ ПЛАН =====
+   В январе никто не пакует и не возит: отгрузки встают примерно на две недели, а продажи
+   идут. Значит до каникул на складах должно лежать столько, чтобы хватило: на остаток
+   декабря, на сами каникулы и ещё на дорогу — первая январская поставка приедет только
+   через столько дней, сколько едет в этот кластер. Плюс запас, чтобы выйти с каникул не
+   в ноль, пока она едет.
+   Считаем это обычным механизмом дашборда: потребность = продажи × (период + дорога) − есть.
+   Нужно лишь подобрать «период» — горизонт в днях обычных продаж. Дорога из него сокращается
+   сама (её дашборд и так прибавляет), остаётся: дни до возобновления отгрузок, где каникулы
+   и предновогодние дни считаются со своими коэффициентами, плюс запас на выходе. */
+const LS_NY='ozon_ny_plan', LS_NY_ON='ozon_ny_on';
+function nyYear(){ const d=new Date(); return d.getMonth()>=6?d.getFullYear()+1:d.getFullYear(); }
+function nyDefaults(){
+  const y=nyYear();
+  return {lastShip:(y-1)+'-12-29', resume:y+'-01-11', buffer:7, kHol:0, kPre:0}; // 0 — взять из истории
+}
+function getNyCfg(){
+  const d=nyDefaults(), c=lsGet(LS_NY,null);
+  if(!c||typeof c!=='object') return d;
+  // прошлогодние настройки не тянем: даты в них уже не про эти каникулы
+  return String(c.resume||'').slice(0,4)===String(nyYear())?Object.assign(d,c):d;
+}
+function setNyCfg(k,v){
+  const c=getNyCfg();
+  c[k]=(k==='buffer'||k==='kHol'||k==='kPre')?Number(String(v).replace(',','.'))||0:v;
+  localStorage.setItem(LS_NY,JSON.stringify(c)); scheduleSave(); redraw();
+}
+function nyOn(){ return lsGet(LS_NY_ON,false)===true&&nySeason(); }
+// Кнопка нужна только пока каникулы впереди: после выхода считать нечего.
+function nySeason(){ return new Date()<new Date(getNyCfg().resume+'T23:59:59'); }
+function setNyPeriod(){
+  localStorage.setItem(LS_NY_ON,'true');
+  setPeriod(nyPlan().period,true);
+}
+// Средние продажи в день за отрезок — по той же истории, что и график продаж.
+function nySalesAvg(from,to){
+  if(!salesDaily) return null;
+  let s=0,n=0;
+  Object.keys(salesDaily).forEach(d=>{
+    if(d>=from&&d<=to){ s+=Object.values(salesDaily[d]||{}).reduce((x,c)=>x+(c.q||0),0); n++; }
+  });
+  return n>=3?{avg:s/n,days:n}:null;
+}
+/** Коэффициенты из собственной истории: насколько прошлые каникулы и предновогодние дни
+ *  отличались от обычного декабря-ноября. Нет данных — вернём пусто, и будем считать как обычные дни. */
+function nyAuto(){
+  const y=nyYear()-1;                                   // прошлый Новый год
+  const base=nySalesAvg((y-1)+'-11-10',(y-1)+'-12-10');
+  const hol=nySalesAvg(y+'-01-01',y+'-01-10');
+  const pre=nySalesAvg((y-1)+'-12-15',(y-1)+'-12-31');
+  if(!base||!(base.avg>0)) return {};
+  const r={base,year:y};
+  if(hol) { r.kHol=Math.round(hol.avg/base.avg*100)/100; r.holDays=hol.days; }
+  if(pre) { r.kPre=Math.round(pre.avg/base.avg*100)/100; r.preDays=pre.days; }
+  return r;
+}
+function nyPlan(){
+  const cfg=getNyCfg(), auto=nyAuto();
+  const kHol=cfg.kHol>0?cfg.kHol:(auto.kHol||1);
+  const kPre=cfg.kPre>0?cfg.kPre:(auto.kPre||1);
+  const DAY=86400000;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const res=new Date(cfg.resume+'T00:00:00');
+  const last=new Date(cfg.lastShip+'T00:00:00');
+  // Горизонт по дням: январские дни до возобновления — каникулы, вторая половина декабря —
+  // предновогодний спрос, остальные — обычные.
+  let plain=0, hol=0, pre=0;
+  for(let t=new Date(today); t<res; t=new Date(+t+DAY)){
+    const m=t.getMonth(), d=t.getDate();
+    if(m===0) hol++; else if(m===11&&d>=15) pre++; else plain++;
+  }
+  const buffer=Math.max(0,Number(cfg.buffer)||0);
+  const period=Math.max(1,Math.round(plain+pre*kPre+hol*kHol+buffer));
+  const daysLeft=Math.max(0,Math.round((last-today)/DAY));
+  return {cfg,auto,kHol,kPre,plain,pre,hol,buffer,period,daysLeft,last,res,today};
+}
+/** Что и сколько отгрузить к каникулам: по строкам доступности, с учётом дороги в каждый кластер. */
+function nyNeed(){
+  const p=nyPlan();
+  const rows=(countPlanned()?applyAdjustments(rawData||[]):(rawData||[]));
+  const byArt={}; let qty=0, boxes=0, dailySales=0, clusters=new Set();
+  rows.forEach(r=>{
+    if(!r.sales||r.cluster===LEFTOVER_CLUSTER)return;
+    dailySales+=r.sales;
+    const lead=(leadDays(r.cluster)||{}).days||LEAD_DEFAULT;
+    const need=Math.max(0,Math.round(r.sales*(p.period+lead)-r.total));
+    if(!need)return;
+    // Коробки считаем по самой большой укладке товара — так их обычно и возят.
+    const opts=packOptionsOf(r.article).map(o=>o.qty).filter(q=>q>0);
+    const big=opts.length?Math.max(...opts):0;
+    const b=big?Math.ceil(need/big):0;
+    qty+=need; boxes+=b; clusters.add(r.cluster);
+    const a=byArt[r.article]||(byArt[r.article]={article:r.article,qty:0,boxes:0,clusters:0});
+    a.qty+=need; a.boxes+=b; a.clusters++;
+  });
+  const list=Object.values(byArt).sort((x,y)=>y.qty-x.qty);
+  const days=Math.max(1,p.daysLeft);
+  return {...p,qty,boxes,list,clusters:clusters.size,dailySales,
+    perDay:Math.round(qty/days),perDayBoxes:Math.round(boxes/days*10)/10,
+    ratio:dailySales>0?Math.round(qty/days/dailySales*10)/10:0};
 }
 
 // Когда загружен файл — показываем его дату рядом с кнопкой загрузки.
@@ -6131,7 +6292,7 @@ function render(data){
       <div class="adj-list" style="margin-top:0" id="${id}">${adjRows}</div></div>`;
   }
 
-  let html='<div class="dash-view" data-view="plan">'+syncNoteHtml()+backupWarnHtml()+staleWarnHtml();
+  let html='<div class="dash-view" data-view="plan">'+syncNoteHtml()+backupWarnHtml()+staleWarnHtml()+nyBlockHtml();
 
   // Панель галочек: какие артикулы участвуют в карточках, приоритетах и тепловой карте.
   // Данные по скрытым товарам остаются в rawData — прячется только отображение.
@@ -6580,8 +6741,7 @@ document.getElementById('fileInput').addEventListener('change',e=>{if(e.target.f
   // В try/catch: если рендер упадёт (например, Chart.js не загрузился без VPN) — init не оборвётся.
   try{
     if(loadLocal()){
-      if(rawData){ populateClusterSelect(rawData); redraw();
-        document.querySelectorAll('.period-tab').forEach(btn=>btn.classList.toggle('active',btn.textContent.trim()===currentPeriod+' дн')); }
+      if(rawData){ populateClusterSelect(rawData); redraw(); markPeriodTabs(); }
       if(salesDaily) rebuildSalesFromDaily();
       renderLog();   // показать «Лог загрузок» и при восстановлении из локала (без облака/VPN)
       renderBoxes(); // и коробки тоже
