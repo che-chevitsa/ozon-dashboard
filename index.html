@@ -419,7 +419,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.207</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.208</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -4859,11 +4859,14 @@ function nyBlockHtml(){
   const dm=d=>String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0');
   const src=n.auto.base
     ? `коэффициенты из твоей истории: каникулы ${n.kHol} и предновогодние дни ${n.kPre} относительно обычных продаж (январь ${n.auto.year})`
-    : 'истории за прошлый январь нет — каникулы считаю как обычные дни, поправь коэффициент руками';
+    : 'истории за прошлый январь нет — каникулы и предновогодние дни считаю как обычные, поправь коэффициенты руками';
+  const nowSrc=n.now
+    ? `Текущий темп ×${n.kNow}: за последние 7 дней продавалось ${n.now.avg7} шт/день против ${n.now.avg28} шт/день в среднем за 28 дней. Продажи в таблице — средние Ozon за 28 дней, поэтому весь горизонт умножается на эту поправку.`
+    : 'Поправку на текущий темп посчитать не из чего — загрузи продажи по дням на вкладке «Продажи», и дашборд сам увидит, разгоняется спрос или нет.';
   const top=n.list.slice(0,6).map(a=>`<span style="margin-right:14px">${escHtml(artName(a.article))} <b>${a.qty}</b> шт${a.boxes?` · ${a.boxes} ${pkPlural(a.boxes,'коробка','коробки','коробок')}`:''}</span>`).join('');
   return `<div class="ny-block">
     <div class="ny-h">🎄 Новогодний план
-      <span class="ny-cap">последняя отгрузка ${dm(n.last)} · выходим ${dm(n.res)} · горизонт ${n.period} дн продаж + дорога</span></div>
+      <span class="ny-cap">последняя отгрузка ${dm(n.last)} · выходим ${dm(n.res)} · горизонт ${n.period} дн продаж + дорога${n.kNow!==1?` · текущий темп ×${n.kNow}`:''}</span></div>
     <div class="ny-grid">
       <div class="ny-card"><span class="ny-cap">отгрузить до ${dm(n.last)}</span><b>${n.qty.toLocaleString('ru')} шт</b>
         <span class="ny-cap">${n.boxes} ${pkPlural(n.boxes,'коробка','коробки','коробок')} · ${n.clusters} ${pkPlural(n.clusters,'кластер','кластера','кластеров')}</span></div>
@@ -4880,6 +4883,7 @@ function nyBlockHtml(){
     <div class="ny-note">Арифметика: на горизонт нужно <b>${n.coverQty.toLocaleString('ru')} шт</b>; уже есть ${n.haveStock.toLocaleString('ru')} на складах${n.haveTransit?' + '+n.haveTransit.toLocaleString('ru')+' в пути у Ozon':''}${n.haveOurs?' + '+n.haveOurs.toLocaleString('ru')+' свои отгруженные':''}; к отгрузке остаётся <b>${n.qty.toLocaleString('ru')} шт</b>. Простое вычитание даст меньше: в кластерах, где товара с избытком, лишнее не идёт в зачёт другим — излишек в одном кластере не закрывает нехватку в другом.</div>
     <div class="ny-note">100% в кольцах покрытия — это и есть цель: столько, чтобы хватило до ${dm(n.res)}, плюс дорога первой январской поставки и запас ${n.buffer} ${pkPlural(n.buffer,'день','дня','дней')}. Горизонт тает каждый день: сегодня это ${n.period} дн продаж плюс дорога, а к ${dm(n.last)} останется ${Math.max(1,n.period-n.daysLeft)} + дорога ≈ <b>${Math.max(1,n.period-n.daysLeft+n.avgLead)} ${pkPlural(Math.max(1,n.period-n.daysLeft+n.avgLead),'день','дня','дней')} запаса</b> — столько и должно лежать на складах в день последней отгрузки (дорога в среднем ${n.avgLead} дн, по кластерам своя).</div>
     <div class="ny-note">Как запас тает: ${dm(n.last)} — ${Math.max(1,n.period-n.daysLeft+n.avgLead)} ${pkPlural(Math.max(1,n.period-n.daysLeft+n.avgLead),'день','дня','дней')} продаж на складах; ${dm(n.res)} (выход с каникул) — ${Math.max(0,n.buffer+n.avgLead)} ${pkPlural(Math.max(0,n.buffer+n.avgLead),'день','дня','дней')}; в день, когда первая январская поставка доедет, — ровно запас, ${n.buffer} ${pkPlural(n.buffer,'день','дня','дней')}. Это низшая точка: в ноль склады не уходят. Хочешь подстраховаться — подними «запас в низшей точке»: каждый лишний день стоит ещё ${Math.round(n.dailySales).toLocaleString('ru')} шт к декабрьской отгрузке, это +${Math.round(n.dailySales/Math.max(1,n.daysLeft))} шт к дневному темпу.</div>
+    <div class="ny-note">${nowSrc}</div>
     <div class="ny-note">Считаю так: до ${dm(n.res)} склады живут только тем, что уедет до ${dm(n.last)}. Это ${n.plain} обычных ${pkPlural(n.plain,'день','дня','дней')}, ${n.pre} предновогодних ×${n.kPre} и ${n.hol} ${pkPlural(n.hol,'день','дня','дней')} каникул ×${n.kHol}, плюс запас ${n.buffer} ${pkPlural(n.buffer,'день','дня','дней')} в низшей точке — чтобы склад не опустел, пока первая январская поставка едет (её дорогу дашборд добавляет по каждому кластеру свою). ${src}.</div>
     <div class="ny-cfg">
       <label>последняя отгрузка <input type="date" value="${escHtml(n.cfg.lastShip)}" onchange="setNyCfg('lastShip',this.value)"></label>
@@ -4887,6 +4891,7 @@ function nyBlockHtml(){
       <label title="Сколько дней продаж должно остаться в самый низкий момент — в день, когда доедет первая январская поставка. На выходе с каникул будет больше: это число плюс дорога.">запас в низшей точке, дней <input type="number" min="0" max="60" style="width:56px" value="${n.buffer}" onchange="setNyCfg('buffer',this.value)"></label>
       <label>каникулы ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kHol}" onchange="setNyCfg('kHol',this.value)"></label>
       <label>предновогодние ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kPre}" onchange="setNyCfg('kPre',this.value)"></label>
+      <label title="Поправка на то, что продажи уже идут быстрее средней за 28 дней. Считается по последним 7 дням; поставь своё число, если ждёшь другого.">текущий темп ×<input type="number" step="0.05" min="0.1" max="3" style="width:62px" value="${n.kNow}" onchange="setNyCfg('kNow',this.value)"></label>
     </div>`}
   </div>`;
 }
@@ -6066,7 +6071,7 @@ const LS_NY='ozon_ny_plan', LS_NY_ON='ozon_ny_on';
 function nyYear(){ const d=new Date(); return d.getMonth()>=6?d.getFullYear()+1:d.getFullYear(); }
 function nyDefaults(){
   const y=nyYear();
-  return {lastShip:(y-1)+'-12-29', resume:y+'-01-11', buffer:7, kHol:0, kPre:0}; // 0 — взять из истории
+  return {lastShip:(y-1)+'-12-29', resume:y+'-01-11', buffer:7, kHol:0, kPre:0, kNow:0}; // 0 — считать самому
 }
 function getNyCfg(){
   const d=nyDefaults(), c=lsGet(LS_NY,null);
@@ -6076,7 +6081,7 @@ function getNyCfg(){
 }
 function setNyCfg(k,v){
   const c=getNyCfg();
-  c[k]=(k==='buffer'||k==='kHol'||k==='kPre')?Number(String(v).replace(',','.'))||0:v;
+  c[k]=(k==='buffer'||k==='kHol'||k==='kPre'||k==='kNow')?Number(String(v).replace(',','.'))||0:v;
   localStorage.setItem(LS_NY,JSON.stringify(c)); scheduleSave(); redraw();
 }
 function nyOn(){ return lsGet(LS_NY_ON,false)===true&&nySeason(); }
@@ -6117,10 +6122,23 @@ function nyAuto(){
   if(pre) { r.kPre=Math.round(pre.avg/base.avg*100)/100; r.preDays=pre.days; }
   return r;
 }
+/* Продажи в строках доступности — средние Ozon за 28 дней. К декабрю они отстают от жизни:
+   спрос уже разгоняется, а средняя его догоняет неделями. Сравниваем последние семь полных
+   дней с этой же средней и получаем поправку на текущий темп. Это единственный коэффициент,
+   который считается без прошлогодней истории — а её у большинства нет. */
+function nyNowCoef(){
+  if(!salesDaily) return null;
+  const day=d=>new Date(Date.now()-d*86400000).toISOString().slice(0,10);
+  const last7=nySalesAvg(day(7),day(1));
+  const last28=nySalesAvg(day(28),day(1));
+  if(!last7||!last28||!(last28.avg>0)) return null;
+  return {k:Math.round(last7.avg/last28.avg*100)/100,avg7:Math.round(last7.avg),avg28:Math.round(last28.avg)};
+}
 function nyPlan(){
-  const cfg=getNyCfg(), auto=nyAuto();
+  const cfg=getNyCfg(), auto=nyAuto(), now=nyNowCoef();
   const kHol=cfg.kHol>0?cfg.kHol:(auto.kHol||1);
   const kPre=cfg.kPre>0?cfg.kPre:(auto.kPre||1);
+  const kNow=cfg.kNow>0?cfg.kNow:(now?now.k:1);
   const DAY=86400000;
   const today=new Date(); today.setHours(0,0,0,0);
   const res=new Date(cfg.resume+'T00:00:00');
@@ -6133,9 +6151,9 @@ function nyPlan(){
     if(m===0) hol++; else if(m===11&&d>=15) pre++; else plain++;
   }
   const buffer=Math.max(0,Number(cfg.buffer)||0);
-  const period=Math.max(1,Math.round(plain+pre*kPre+hol*kHol+buffer));
+  const period=Math.max(1,Math.round((plain+pre*kPre+hol*kHol+buffer)*kNow));
   const daysLeft=Math.max(0,Math.round((last-today)/DAY));
-  return {cfg,auto,kHol,kPre,plain,pre,hol,buffer,period,daysLeft,last,res,today};
+  return {cfg,auto,now,kHol,kPre,kNow,plain,pre,hol,buffer,period,daysLeft,last,res,today};
 }
 /** Что и сколько отгрузить к каникулам: по строкам доступности, с учётом дороги в каждый кластер. */
 function nyNeed(){
