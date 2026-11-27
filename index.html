@@ -116,10 +116,9 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 /* Плитки остатков: по товару на плитку, шесть в ряд (на телефоне три — в медиазапросе ниже) */
 .lf-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px;}
 .lf-tile{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:border-color 0.15s;}
-/* Выключенный товар: вместо галочки в углу — сама плитка гаснет, рамка пунктиром,
-   название зачёркнуто. Клик по плитке возвращает товар в расчёты. */
+/* Выключенный товар: вместо галочки в углу — сама плитка гаснет и рамка идёт пунктиром.
+   Зачёркивания нет намеренно: названия становятся трудночитаемыми. */
 .lf-tile.off{opacity:0.4;border-style:dashed;}
-.lf-tile.off .lf-name{text-decoration:line-through;}
 .lf-tile:hover{border-color:rgba(128,128,128,0.35);}
 .lf-tile.on{border-color:rgba(61,204,122,0.45);}
 .lf-name{font-size:11px;color:var(--text);line-height:1.25;}
@@ -269,10 +268,17 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
 .chip.off{opacity:0.55;text-decoration:line-through;}
 .chip.warn{color:var(--amber);}
 /* Строка управления блоком: подпись, чипы и тумблер стоят на одной линии по центру */
-.cov-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .blk-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto;}
 .ctl{display:inline-flex;align-items:center;gap:6px;}
 .ctl-cap{font-family:var(--font);font-size:11px;color:var(--muted);}
+/* Шапка покрытия: заголовок с периодом сверху, органы управления — своей строкой справа.
+   Разделители нужны, чтобы «все / ни одного» не читались как часть темпа продаж. */
+.cov-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.cov-title{font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer;flex:1 1 220px;min-width:0;}
+.cov-fold{font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer;margin-left:auto;}
+.cov-ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-top:8px;}
+.ctl-sep{width:1px;height:16px;align-self:center;background:var(--border);}
+@media(max-width:700px){.cov-ctl{justify-content:flex-start;}.ctl-sep{display:none;}}
 /* Плашка с сообщением: ошибки Ozon, предупреждения. Одна рамка и один отступ везде. */
 .alert{font-size:12px;line-height:1.5;padding:9px 11px;border-radius:8px;margin:10px 0;}
 .alert.red{background:var(--red-bg);color:var(--red);}
@@ -431,7 +437,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.219</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.220</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3485,20 +3491,25 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
   const clusters=[...new Set(data.map(r=>r.cluster))].filter(c=>c&&c!==LEFTOVER_CLUSTER&&!isClusterHidden(c,hiddenGroups,hiddenClusters));
   const total=clusters.length;
   if(!total)return '';
+  /* Две строки вместо одной. Раньше название с новогодним периодом и пять органов управления
+     стояли в один ряд: на широком экране они слипались, на узком — рвались как попало.
+     Теперь сверху — что это за блок, снизу — чем в нём управляют, прижато вправо. */
   const head=`<div class="cov-head">
-      <span style="font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
-        <span style="color:var(--muted)">· ${periodLabel()} · все товары</span></span>
-      <span class="blk-ctl">
-        <span class="ctl"><span class="ctl-cap">товары ${FOCUS.length}/${ALL_ARTICLES.length}</span>
-          <button class="chip" onclick="setAllArticles(true)" title="Включить в приоритеты и карту все товары">все</button>
-          <button class="chip" onclick="setAllArticles(false)" title="Снять все: списки останутся пустыми, пока не вернёшь товары">ни одного</button></span>
-        ${paceChipsHtml()}
-        <label class="tgl" title="Запланированные и упакованные отправки дашборд считает как «в пути». Выключи, чтобы увидеть только то, что реально на складах Ozon.">
-          <input type="checkbox" ${countPlanned()?'checked':''} onchange="toggleCountPlanned()">
-          <span class="tgl-track"><span class="tgl-knob"></span></span>
-          <span class="tgl-text">считать запланированное</span></label>
-        <span style="font-family:var(--font);font-size:11px;color:var(--accent);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
-      </span>
+      <span class="cov-title" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
+        <span style="color:var(--muted)">· ${periodLabel()}</span></span>
+      <span class="cov-fold" onclick="toggleRings()">${ringsCollapsed?'развернуть':'свернуть'}</span>
+    </div>
+    <div class="cov-ctl">
+      <span class="ctl"><span class="ctl-cap">товары ${FOCUS.length}/${ALL_ARTICLES.length}</span>
+        <button class="chip" onclick="setAllArticles(true)" title="Включить в приоритеты и карту все товары">все</button>
+        <button class="chip" onclick="setAllArticles(false)" title="Снять все: списки останутся пустыми, пока не вернёшь товары">ни одного</button></span>
+      <span class="ctl-sep"></span>
+      ${paceChipsHtml()}
+      <span class="ctl-sep"></span>
+      <label class="tgl" title="Запланированные и упакованные отправки дашборд считает как «в пути». Выключи, чтобы увидеть только то, что реально на складах Ozon.">
+        <input type="checkbox" ${countPlanned()?'checked':''} onchange="toggleCountPlanned()">
+        <span class="tgl-track"><span class="tgl-knob"></span></span>
+        <span class="tgl-text">считать запланированное</span></label>
     </div>`;
   const stat=art=>{
     const rows=data.filter(r=>r.article===art&&!isClusterHidden(r.cluster,hiddenGroups,hiddenClusters)&&r.cluster!==LEFTOVER_CLUSTER);
@@ -6655,6 +6666,7 @@ function render(data){
     }).join('')}
     <button class="chip${clustersOff?' warn':''}" style="margin-left:4px" onclick="toggleFiltersOpen()">
       ${filtersOpen?'скрыть настройку кластеров':'кластеры'+(clustersOff?': выключено '+clustersOff:'')}</button>
+    <button class="btn accent" style="margin-left:auto" onclick="openAutoPlan()" title="Собрать коробки на смену по срочности: где склад кончится раньше всего и где теряем больше штук">📦 собрать план на день</button>
   </div>
   ${filtersOpen?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
     <span style="font-size:12px;color:var(--muted)">группы:</span>
@@ -6693,9 +6705,8 @@ function render(data){
     ? [...groupOrder].sort((a,b)=>slackOf(a)-slackOf(b))
     : groupOrder;
 
-  html+=`<div class="section-label" style="margin-top:2rem;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-    <span>Топ приоритеты · ${nyOn()?'по нехватке к каникулам':'по дефициту за '+period+' дней'}</span>
-    <span style="margin-left:auto;text-transform:none;letter-spacing:0"><button class="btn accent" onclick="openAutoPlan()" title="Собрать коробки на смену по срочности: где склад кончится раньше всего и где теряем больше штук">📦 собрать план на день</button></span></div>`;
+  // Кнопка плана стоит в строке с сортировкой: отдельным рядом она висела в пустоте.
+  html+=`<div class="section-label" style="margin-top:2rem">Топ приоритеты · ${nyOn()?'по нехватке к каникулам':'по дефициту за '+period+' дней'}</div>`;
   html+=plannedOffWarnHtml();
   html+=filterBar;
   html+='<div class="table-wrap"><table><thead><tr><th>Группа</th><th style="width:118px">Когда</th><th>Товар</th><th>Кластер</th><th>Продаж/день</th><th>Нужно отправить</th><th>На складе</th><th>В пути</th><th>Дней</th><th></th></tr></thead><tbody>';
