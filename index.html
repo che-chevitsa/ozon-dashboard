@@ -116,9 +116,10 @@ h1{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-0.02em
 /* Плитки остатков: по товару на плитку, шесть в ряд (на телефоне три — в медиазапросе ниже) */
 .lf-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px;}
 .lf-tile{position:relative;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 6px;text-align:center;cursor:pointer;transition:border-color 0.15s;}
-.lf-tile.off{opacity:0.45;}
-.lf-check-wrap{position:absolute;top:0;left:0;padding:7px 9px 9px 7px;cursor:pointer;line-height:0;}
-.lf-check{width:17px;height:17px;cursor:pointer;accent-color:var(--accent);margin:0;}
+/* Выключенный товар: вместо галочки в углу — сама плитка гаснет, рамка пунктиром,
+   название зачёркнуто. Клик по плитке возвращает товар в расчёты. */
+.lf-tile.off{opacity:0.4;border-style:dashed;}
+.lf-tile.off .lf-name{text-decoration:line-through;}
 .lf-tile:hover{border-color:rgba(128,128,128,0.35);}
 .lf-tile.on{border-color:rgba(61,204,122,0.45);}
 .lf-name{font-size:11px;color:var(--text);line-height:1.25;}
@@ -430,7 +431,7 @@ tbody tr:hover{background:rgba(255,255,255,0.02);}
   <header>
     <h1>supply.dashboard</h1>
     <span class="tag">ozon FBO/FBS</span>
-    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.218</span>
+    <span class="version" title="Номер сборки: растёт на единицу с каждой правкой, без переноса в старшую цифру. Сверяй с задеплоенной на GitHub">v2.219</span>
     <div class="header-right" id="reset-wrap" style="display:none">
       <div class="period-tabs">
         <button class="period-tab" onclick="setPeriod(7)">7 дн</button>
@@ -3407,9 +3408,14 @@ function plannedLeftoverKey(key){
 // Свёрнут ли блок колец — удобство этого браузера.
 let ringsCollapsed=lsGet('ozon_rings_collapsed',false)===true;
 function toggleRings(){ ringsCollapsed=!ringsCollapsed; localStorage.setItem('ozon_rings_collapsed',JSON.stringify(ringsCollapsed)); redraw(); }
-// Какие кластеры раскрыты: клик по кольцу показывает, где товара нет.
-let ringOpen=null;
-function toggleRing(art){ ringOpen=ringOpen===art?null:art; redraw(); }
+/* Раскрытия у плитки больше нет: всё, что в нём было — кластеры без товара, склад и путь —
+   ушло в подсказку при наведении, а клик по плитке теперь включает и выключает товар.
+   Галочка в углу была мелкой мишенью на плитке, которая и так ничего другого не делала. */
+function setAllArticles(on){
+  saveHiddenArticles(on?new Set():new Set(ALL_ARTICLES));
+  priorityFilters.articles=new Set(FOCUS);
+  redraw();
+}
 // Кольцо на товар вместо карточек процентов: в центре то же покрытие потребности и те же
 // цвета, что были в карточках, но показываются ВСЕ товары — включая те, за которыми не
 // следишь в таблице. Дуга — покрытие, светлая дуга — сколько из него едет.
@@ -3483,6 +3489,9 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
       <span style="font-family:var(--font);font-size:12px;color:var(--text);cursor:pointer" onclick="toggleRings()">${ringsCollapsed?'▸':'▾'} Покрытие потребности
         <span style="color:var(--muted)">· ${periodLabel()} · все товары</span></span>
       <span class="blk-ctl">
+        <span class="ctl"><span class="ctl-cap">товары ${FOCUS.length}/${ALL_ARTICLES.length}</span>
+          <button class="chip" onclick="setAllArticles(true)" title="Включить в приоритеты и карту все товары">все</button>
+          <button class="chip" onclick="setAllArticles(false)" title="Снять все: списки останутся пустыми, пока не вернёшь товары">ни одного</button></span>
         ${paceChipsHtml()}
         <label class="tgl" title="Запланированные и упакованные отправки дашборд считает как «в пути». Выключи, чтобы увидеть только то, что реально на складах Ozon.">
           <input type="checkbox" ${countPlanned()?'checked':''} onchange="toggleCountPlanned()">
@@ -3536,13 +3545,19 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
     const label=pct===null?(empty?'нет':'—'):Math.round(pct)+'%';
     const arc=s.pctCovered===null?0:C*Math.min(100,s.pctCovered)/100;     // дуга — покрытие по кластерам
     const arcNow=s.pctNow===null?0:C*Math.min(100,s.pctNow)/100;          // плотная часть — что уже на складе
-    const open=ringOpen===art;
     const focus=FOCUS.includes(art);
     const off=getHiddenArticles().has(art);
-    return `<div class="lf-tile${open?' on':''}${off?' off':''}" onclick="toggleRing('${escHtml(art)}')" title="${escHtml(artName(art))}: ${label}${s.coming.length?' с учётом запланированного':''}, есть в ${s.haveClusters.length} из ${total} кластеров${s.coming.length?`, едет ещё в ${s.coming.length}`:''}${s.covered<s.have?`. Кольцо показывает покрытие по кластерам — ${Math.round(s.pctCovered)}%: излишек в одном кластере не закрывает нехватку в другом`:''}">
-      <span class="lf-check-wrap" onclick="event.stopPropagation()" title="${off?'вернуть товар в расчёты':'убрать товар из приоритетов и карты'}">
-        <input type="checkbox" class="lf-check" ${off?'':'checked'} onchange="toggleHiddenArticle('${art}')">
-      </span>
+    // Подсказка собирает то, что раньше пришлось бы раскрывать: охват, склад, путь и дыры.
+    const tip=[`${artName(art)}: ${label}${s.coming.length?' с учётом запланированного':''}`,
+      `есть в ${s.haveClusters.length} из ${total} ${pkPlural(total,'кластера','кластеров','кластеров')}${s.coming.length?`, едет ещё в ${s.coming.length}`:''}`,
+      s.sales>0?`${s.sales.toFixed(1)} шт/день · есть ${s.have} из ${s.need}${s.covered<s.have?` · по кластерам закрыто ${s.covered}`:''}`:'',
+      `${s.fbo} на складе · ${s.transit} в пути и в плане`,
+      s.covered<s.have?`кольцо показывает покрытие по кластерам — ${Math.round(s.pctCovered)}%: излишек в одном кластере не закрывает нехватку в другом`:'',
+      s.miss.length?`нет: ${s.miss.join(', ')}`:'',
+      s.coming.length?`закрыто отправкой: ${s.coming.join(', ')}`:'',
+      off?'— клик вернёт товар в приоритеты и карту':'— клик уберёт товар из приоритетов и карты'
+    ].filter(Boolean).join(String.fromCharCode(10));
+    return `<div class="lf-tile${off?' off':''}" onclick="toggleHiddenArticle('${escHtml(art)}')" title="${escHtml(tip)}">
       <svg width="46" height="46" viewBox="0 0 46 46" style="display:block;margin:0 auto">
         <circle cx="23" cy="23" r="${R}" fill="none" stroke="${arc?'var(--bg2)':col}" stroke-opacity="${arc?1:0.25}" stroke-width="5"/>
         ${arc?`<circle cx="23" cy="23" r="${R}" fill="none" stroke="${col}" stroke-opacity="0.3" stroke-width="5"
@@ -3554,12 +3569,6 @@ function coverageRingsHtml(data,period,hiddenGroups,hiddenClusters){
       <div class="lf-name" style="margin-top:4px;${focus?'':'color:var(--muted)'}">${artName(art)}</div>
       <div class="lf-qty" style="color:var(--muted)">${s.need>0?`${s.have} из ${s.need} шт`:'нет продаж'}</div>
       ${s.miss.length?`<div style="font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:1px">нет в ${s.miss.length} ${pkPlural(s.miss.length,'кластере','кластерах','кластерах')}</div>`:''}
-      ${open?`<div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.45;text-align:left">
-        ${s.sales>0?`${s.sales.toFixed(1)} шт/день · есть ${s.have} из ${s.need}${s.covered<s.have?` · по кластерам закрыто ${s.covered}`:''}<br>`:''}
-        ${s.fbo} на складе · ${s.transit} в пути и в плане
-        ${s.miss.length?`<br><span style="color:var(--amber)">нет: ${s.miss.map(escHtml).join(', ')}</span>`:''}
-        ${s.coming.length?`<br><span style="color:var(--green)">закрыто отправкой: ${s.coming.map(escHtml).join(', ')}</span>`:''}
-      </div>`:''}
     </div>`;
   };
   const withData=ALL_ARTICLES.filter(hasData), noData=ALL_ARTICLES.filter(a=>!hasData(a));
